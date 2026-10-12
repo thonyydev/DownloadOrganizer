@@ -1,0 +1,247 @@
+# ============================================================
+# Node.js / Package Managers
+# ============================================================
+
+node_modules/
+
+.pnpm-store/
+.npm/
+.yarn/cache/
+.yarn/unplugged/
+.yarn/build-state.yml
+.yarn/install-state.gz
+
+.pnp.*
+.bun/install/cache/
+
+
+# ============================================================
+# Frontend - Vite / TypeScript
+# ============================================================
+
+dist/
+dist-ssr/
+
+*.tsbuildinfo
+vite.svg
+
+.vite/
+.vite-inspect/
+
+*.local
+
+
+# ============================================================
+# Rust / Cargo
+# ============================================================
+
+target/
+**/target/
+
+# Keep Cargo.lock tracked for reproducible application builds
+# Do not ignore Cargo.toml or Cargo.lock
+
+
+# ============================================================
+# Tauri
+# ============================================================
+
+# Generated Tauri schemas
+src-tauri/gen/schemas/
+
+# Temporary build outputs
+src-tauri/.tauri/
+
+
+# ============================================================
+# Environment Variables / Secrets
+# ============================================================
+
+.env
+.env.*
+
+# Allow example environment files
+!.env.example
+!.env.sample
+!.env.template
+
+# Local secrets
+*.pem
+*.key
+*.p12
+*.pfx
+
+
+# ============================================================
+# Logs
+# ============================================================
+
+logs/
+*.log
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+debug.log
+error.log
+
+
+# ============================================================
+# Testing / Coverage
+# ============================================================
+
+coverage/
+.nyc_output/
+
+playwright-report/
+test-results/
+blob-report/
+
+vitest.config.ts.timestamp-*
+
+
+# ============================================================
+# Cache / Temporary Files
+# ============================================================
+
+.cache/
+.parcel-cache/
+.turbo/
+
+.eslintcache
+.stylelintcache
+
+*.tmp
+*.temp
+*.bak
+*.orig
+*.swp
+*.swo
+
+*.stackdump
+
+
+# ============================================================
+# Local Application Data
+# ============================================================
+
+# Local-only development data, if these directories are used
+/data/local/
+/tmp/
+/temp/
+
+# Do not globally ignore *.db, *.sqlite or *.sqlite3.
+# Database fixtures may be needed for automated tests.
+# Prefer adding explicit paths for runtime-generated databases.
+
+
+# ============================================================
+# VS Code
+# ============================================================
+
+.vscode/*
+
+# Allow shared extension recommendations
+!.vscode/extensions.json
+
+
+# ============================================================
+# JetBrains IDEs
+# ============================================================
+
+.idea/
+*.iml
+*.ipr
+*.iws
+
+
+# ============================================================
+# Visual Studio
+# ============================================================
+
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.ntvs*
+*.njsproj
+
+
+# ============================================================
+# Windows
+# ============================================================
+
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+
+Desktop.ini
+$RECYCLE.BIN/
+
+*.lnk
+
+
+# ============================================================
+# macOS
+# ============================================================
+
+.DS_Store
+.AppleDouble
+.LSOverride
+
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+
+
+# ============================================================
+# Linux
+# ============================================================
+
+*~
+.directory
+.nfs*
+
+
+# ============================================================
+# Python (local development scripts)
+# ============================================================
+
+__pycache__/
+*.py[cod]
+
+.venv/
+venv/
+env/
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+
+# ============================================================
+# AI Agent Skills
+# ============================================================
+
+.agents
+
+
+# ============================================================
+# Local Notes / Scratch Files
+# ============================================================
+
+scratch/
+.scratch/
+
+
+# ==========================================
+# Internal Documentation
+# ==========================================
+
+docs/
