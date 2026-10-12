@@ -22,13 +22,18 @@ describe.each(["escuro", "claro"])("legibilidade no tema %s", theme => {
   const index = theme === "escuro" ? 0 : 1;
   const tokens = { ...blocks[0], ...blocks[index] };
   it("mantém contraste AA nos textos funcionais e botões", () => {
-    for (const background of ["background", "card", "sidebar", "accent"]) {
+    for (const background of ["background", "card", "sidebar", "accent", "surface-selected"]) {
       for (const foreground of ["foreground", "muted", "primary", "success-foreground", "warning-foreground", "error-foreground"]) {
         expect(contrast(tokens[foreground], rgb(tokens[background])), `${foreground} em ${background}`).toBeGreaterThanOrEqual(4.5);
       }
     }
     expect(contrast(tokens["primary-foreground"], rgb(tokens.primary))).toBeGreaterThanOrEqual(4.5);
     expect(contrast(tokens["secondary-foreground"], rgb(tokens.secondary))).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(tokens["control-border"], rgb(tokens.card))).toBeGreaterThanOrEqual(3);
+    expect(contrast(tokens.foreground, rgb(tokens["control-border"]))).toBeGreaterThanOrEqual(3);
+    for (const [foreground, background] of [["success-foreground", "success-surface"], ["warning-foreground", "warning-surface"], ["error-foreground", "error-surface"], ["primary", "surface-selected"]]) {
+      expect(contrast(tokens[foreground], rgb(tokens[background])), foreground + " em " + background).toBeGreaterThanOrEqual(4.5);
+    }
   });
   it("mantém contraste AA nas categorias e nos fundos translúcidos dos estados", () => {
     const allTones = [...css.matchAll(/\.tone-\w+ \{ --tone: (#[\da-f]+); \}/g)].map(match => match[1]);
