@@ -6,6 +6,7 @@ Download Organizer is a lightweight desktop app that helps you keep your Downloa
 
 Sort files into categories, preview changes before applying them, and undo previous actions — all from a simple, intuitive interface.
 
+[![CI](https://github.com/thonyydev/DownloadOrganizer/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/thonyydev/DownloadOrganizer/actions/workflows/ci.yml)
 ![Windows](https://img.shields.io/badge/Windows-11-0078D4?logo=windows11&logoColor=white)
 ![Status](https://img.shields.io/badge/Status-In%20Development-orange)
 
