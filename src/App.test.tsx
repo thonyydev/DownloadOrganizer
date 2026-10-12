@@ -261,6 +261,42 @@ describe("prévia e operações", () => {
 });
 
 describe("avisos e clareza", () => {
+  it("aguarda 500 ms na primeira dica, reabre sem atraso e encerra a sequência após inatividade", async () => {
+    await start(); vi.useFakeTimers();
+    const trigger = screen.getByText(initial.source);
+    fireEvent.pointerMove(trigger, { pointerType: "mouse" });
+    act(() => { vi.advanceTimersByTime(499); });
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    act(() => { vi.advanceTimersByTime(1); });
+    expect(screen.getByRole("tooltip").textContent).toBe(initial.source);
+    fireEvent.keyDown(trigger, { key: "Escape" });
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    fireEvent.pointerLeave(trigger);
+    fireEvent.pointerMove(trigger, { pointerType: "mouse" });
+    expect(screen.getByRole("tooltip").textContent).toBe(initial.source);
+    fireEvent.keyDown(trigger, { key: "Escape" });
+    fireEvent.pointerLeave(trigger);
+    act(() => { vi.advanceTimersByTime(301); });
+    fireEvent.pointerMove(trigger, { pointerType: "mouse" });
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    act(() => { vi.advanceTimersByTime(500); });
+    expect(screen.getByRole("tooltip")).toBeTruthy();
+  });
+  it("não mostra dicas ao atravessar o caminho e abre imediatamente pelo foco de teclado", async () => {
+    await start(); vi.useFakeTimers();
+    const trigger = screen.getByText(initial.source);
+    fireEvent.pointerMove(trigger, { pointerType: "mouse" });
+    act(() => { vi.advanceTimersByTime(100); });
+    fireEvent.pointerLeave(trigger);
+    act(() => { vi.advanceTimersByTime(500); });
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    act(() => { trigger.focus(); });
+    expect(screen.getByRole("tooltip").textContent).toBe(initial.source);
+    expect(trigger.getAttribute("aria-describedby")).toBe(screen.getByRole("tooltip").id);
+    fireEvent.keyDown(trigger, { key: "Escape" });
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
   it("mantém o aviso durante recuperação falha e só o remove após confirmação do backend", async () => {
     snapshot.preferences.automatic = true; snapshot.watch_error = "Monitoramento indisponível";
     await start();
