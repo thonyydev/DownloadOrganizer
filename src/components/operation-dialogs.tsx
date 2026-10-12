@@ -1,4 +1,4 @@
-import { Loader2, Sparkles, Undo2 } from "lucide-react";
+import { FolderDown, Loader2, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -35,12 +35,12 @@ export function OperationDialogs({ preview, undoTarget, categories, action, busy
           <Button variant="outline" disabled={busy} onClick={onClose}>Cancelar</Button>
           {previewAction?.phase === "error" && operation && <Button variant="outline" onClick={onViewResult}>Ver resultado no histórico</Button>}
           <Button variant="outline" disabled={working} onClick={onUpdate}>Atualizar prévia</Button>
-          <Button disabled={working || !ready || !reviewed || !!issue} onClick={onOrganize}>{busy ? <Loader2 className="spin" aria-hidden="true" /> : <Sparkles aria-hidden="true" />}{busy ? "Aguarde a operação…" : "Confirmar organização"}</Button>
+          <Button disabled={working || !ready || !reviewed || !!issue} onClick={onOrganize}>{busy ? <Loader2 className="spin" aria-hidden="true" /> : <FolderDown aria-hidden="true" />}{busy ? "Aguarde a operação…" : "Confirmar organização"}</Button>
         </>}</DialogFooter>
       </DialogContent>
     </Dialog>
     <Dialog open={!!undoTarget} onOpenChange={close}>
-      <DialogContent showCloseButton={!busy} onCloseAutoFocus={e => { e.preventDefault(); onRestoreFocus(); }} onEscapeKeyDown={e => { if (busy) e.preventDefault(); }} onPointerDownOutside={e => { if (busy) e.preventDefault(); }}>
+      <DialogContent className="undo-dialog" showCloseButton={!busy} onCloseAutoFocus={e => { e.preventDefault(); onRestoreFocus(); }} onEscapeKeyDown={e => { if (busy) e.preventDefault(); }} onPointerDownOutside={e => { if (busy) e.preventDefault(); }}>
         <DialogHeader><DialogTitle>{done(undoAction) ? "Resultado da restauração" : "Restaurar os arquivos à origem?"}</DialogTitle><DialogDescription>Arquivos alterados, ausentes ou com conflitos serão preservados. O resultado individual ficará no histórico.</DialogDescription></DialogHeader>
         <OperationFeedback action={undoAction} operation={done(undoAction) || undoAction?.phase === "error" ? operation : undefined} />
         {!done(undoAction) && <div className="undo-files">{undoable?.movements.filter(m => m.status === "moved").map(m => <div key={m.id}><Undo2 size={16} aria-hidden="true" /><span><strong>{m.source.split(/[\\/]/).pop()}</strong><small>Restaurar para: {m.source}</small></span></div>)}</div>}

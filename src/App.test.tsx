@@ -66,6 +66,37 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers(); });
 
+describe("composição desktop", () => {
+  it("leva da categoria real à tabela filtrada e mantém os nomes de navegação estáveis", async () => {
+    await start();
+    expect(screen.getByRole("heading", { name: "source" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Documentos.*Habilitada/ }));
+    expect(screen.getByRole("button", { name: "Arquivos" }).getAttribute("aria-current")).toBe("page");
+    expect((screen.getByRole("combobox", { name: "Filtrar por categoria" }) as HTMLSelectElement).value).toBe("documents");
+    expect(screen.getByRole("table", { name: "Arquivos da pasta de origem" })).toBeTruthy();
+    expect(screen.getAllByRole("columnheader").every(header => header.getAttribute("scope") === "col")).toBe(true);
+    navigate("Configurações");
+    fireEvent.click(screen.getByRole("button", { name: "Claro" }));
+    const settings = screen.getByRole("button", { name: "Configurações" });
+    expect(settings.getAttribute("aria-describedby")).toBe("pending-preferences");
+    expect(document.getElementById("pending-preferences")?.textContent).toBe("Alterações não salvas");
+  });
+  it("mostra identidade e ocorrências da operação sem ocultar detalhes ou desfazer", async () => {
+    snapshot.history = [structuredClone(operation)];
+    snapshot.history[0].movements.push({ ...operation.movements[0], id: 2, source: "/isolated/source/locked.txt", status: "failed", error: "Arquivo ocupado" });
+    await start(); navigate("Histórico");
+    const row = screen.getByRole("region", { name: "Operação 42" });
+    expect(within(row).getByText("#42")).toBeTruthy();
+    expect(within(row).getByText("1 ocorrência(s)")).toBeTruthy();
+    expect((within(row).getByRole("button", { name: "Desfazer" }) as HTMLButtonElement).disabled).toBe(false);
+    const expand = within(row).getByRole("button", { name: /1 arquivo organizado/ });
+    fireEvent.click(expand);
+    expect(expand.getAttribute("aria-expanded")).toBe("true");
+    expect(within(row).getByText("Arquivo ocupado")).toBeTruthy();
+    expect(within(row).getByText("/isolated/source/locked.txt")).toBeTruthy();
+  });
+});
+
 describe("rascunho de configurações", () => {
   it("preserva alterações ao navegar e só descarta explicitamente", async () => {
     await start(); navigate("Configurações");
@@ -91,6 +122,16 @@ describe("rascunho de configurações", () => {
     fireEvent.click(screen.getByRole("button", { name: "Salvar preferências" }));
     await waitFor(() => expect(mocks.save).toHaveBeenCalledWith({ ...initial, theme: "light" }, { ...initial, automatic: true }));
     await screen.findByText("Todas as alterações estão salvas.");
+  });
+  it("não anuncia um rascunho salvo enquanto a versão externa ainda precisa de revisão", async () => {
+    await start(); navigate("Configurações");
+    fireEvent.click(screen.getByRole("button", { name: "Claro" }));
+    snapshot.preferences = { ...initial, automatic: true };
+    await updateSnapshot();
+    fireEvent.click(screen.getByRole("button", { name: "Escuro" }));
+    expect(screen.getByText("As configurações salvas mudaram. Revise seu rascunho antes de salvar.")).toBeTruthy();
+    expect(screen.queryByText("Todas as alterações estão salvas.")).toBeNull();
+    expect((screen.getByRole("button", { name: "Salvar preferências" }) as HTMLButtonElement).disabled).toBe(true);
   });
   it("mantém alterações pendentes e não fecha o app se salvar falhar", async () => {
     await start(); navigate("Configurações");
@@ -327,11 +368,17 @@ describe("avisos e clareza", () => {
     snapshot.scan_error = "Pasta removida"; snapshot.watch_error = "Watcher parou";
     render(<App />); await screen.findByText("Pasta removida");
     expect(screen.getByText("Watcher parou")).toBeTruthy();
-    fireEvent.click(screen.getAllByRole("button", { name: "Recolher detalhes do problema" })[0]);
-    expect(screen.queryByText("Pasta removida")).toBeNull();
+    const toggle = screen.getAllByRole("button", { name: "Recolher detalhes do problema" })[0];
+    act(() => { toggle.focus(); });
+    fireEvent.click(toggle);
+    expect((screen.getByText("Pasta removida") as HTMLElement).hidden).toBe(true);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(document.activeElement).toBe(toggle);
     expect(screen.getByText("A pasta precisa de atenção · pendente")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Mostrar detalhes" }));
     expect(screen.getByText("Pasta removida")).toBeTruthy();
+    expect((screen.getByText("Pasta removida") as HTMLElement).hidden).toBe(false);
+    expect(document.activeElement).toBe(toggle);
   });
   it("diferencia filtro sem resultados e expõe motivos sem depender de hover", async () => {
     snapshot.files[0].status = "ignored"; snapshot.files[0].reason = "Categoria desativada";
