@@ -1,0 +1,38 @@
+name: Feature request
+description: Suggest a useful improvement to Download Organizer
+title: "[Feature]: "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve Download Organizer! Keep suggestions focused on the user problem and desired outcome.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe what is difficult, repetitive, or missing today.
+      placeholder: "When I ... I have to ..."
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like to happen?
+      description: Explain the proposed behavior from a user's perspective.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives or additional context (optional)
+      description: Include workarounds or examples, without sharing private filenames or paths.
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues for similar suggestions.
+          required: true

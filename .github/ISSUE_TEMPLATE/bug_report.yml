@@ -1,0 +1,76 @@
+name: Bug report
+description: Report a problem with Download Organizer
+title: "[Bug]: "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug! Please search existing issues before submitting a new one.
+        **Privacy:** Do not post personal file names, full local paths, screenshots containing private data, or credentials.
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      description: Enter the version or commit hash you tested.
+      placeholder: "e.g., 0.1.0 (development build)"
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Operating system
+      description: Windows 11 is currently the primary supported development target.
+      placeholder: "e.g., Windows 11 24H2"
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Explain the problem and what you expected to happen.
+      placeholder: "The app did ... but I expected ..."
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Use sample file names and temporary directories instead of private data.
+      placeholder: |
+        1. Open Download Organizer
+        2. Configure ...
+        3. Click ...
+        4. Observe ...
+    validations:
+      required: true
+  - type: dropdown
+    id: feature
+    attributes:
+      label: Affected area
+      options:
+        - Manual organization / preview
+        - Automatic monitoring
+        - History / undo
+        - Settings / categories
+        - User interface
+        - Installation / startup
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Screenshots or logs (optional)
+      description: Remove sensitive information before attaching anything. Avoid posting raw filenames or absolute local paths.
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues for duplicates.
+          required: true
+        - label: I removed personal information from the report and attachments.
+          required: true
