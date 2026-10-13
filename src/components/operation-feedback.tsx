@@ -12,7 +12,7 @@ export function OperationFeedback({ action, operation }: { action: Action | null
   const errors = operation?.movements.filter(m => m.error || ["failed", "uncertain", "pending", "undo_pending"].includes(m.status)).length ?? 0;
   const mark = useFeedbackMotion<SVGSVGElement>(`${action?.kind}:${action?.phase}:${action?.operationId}:${errors}`, allowed && action?.phase === "completed" && errors === 0);
   const panel = useContentMotion(`${action?.kind}:${action?.phase}`, allowed && action?.phase !== "error" && errors === 0);
-  if (!action) return null;
+  if (!action || (active && (action.kind === "refresh" || action.showLoading === false))) return null;
   const heading = action.phase === "preparing" ? action.kind === "save" ? "Salvando configurações…" : action.kind === "refresh" ? "Verificando o estado atual…" : action.kind === "monitor" ? "Verificando o monitoramento…" : "Preparando e verificando arquivos…"
     : action.phase === "organizing" ? action.kind === "undo" ? "Restaurando arquivos…" : "Organizando arquivos…"
     : action.phase === "error" ? "A operação encontrou um erro"
