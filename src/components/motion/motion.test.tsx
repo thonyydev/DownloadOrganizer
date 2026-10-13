@@ -38,6 +38,7 @@ beforeEach(() => {
   vi.stubGlobal("ResizeObserver", class {
     constructor(callback: () => void) { resize = callback; }
     observe() {}
+    unobserve() {}
     disconnect() {}
   });
   motion.animate.mockReset();
@@ -281,6 +282,8 @@ describe("continuidade entre telas e estados", () => {
   });
   it("filtro anima só o container e conserva detalhes em atualizações comuns", () => {
     const file: FileEntry = { path: "/isolated/a.txt", name: "a.txt", extension: "txt", category: "documents", destination: "/isolated/organized/a.txt", size: 1, modified: 1700000000000, status: "ready", reason: null };
+    vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (this: HTMLElement) { return this.classList.contains("table-scroll") ? 400 : this.tagName === "TR" ? 80 : 0; });
+    vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(800);
     const files = Array.from({ length: 300 }, (_, i) => ({ ...file, path: `/isolated/${i}.txt`, name: `${i}.txt` }));
     const view = render(<FileTable files={files} categories={[]} filterKey="all:" />);
     expect(playbacks).toHaveLength(0);
@@ -298,6 +301,14 @@ describe("continuidade entre telas e estados", () => {
     view.rerender(<FileTable files={[]} categories={[]} filterKey="documents:missing" filtered />);
     expect(screen.getByRole("status").textContent).toContain("Nenhum resultado para estes filtros");
     expect(playbacks).toHaveLength(3);
+  });
+  it("não repete entrada de detalhes já abertos quando uma linha virtual volta ao DOM", () => {
+    const view = render(<Collapse open id="restored-details" animateInitial={false}><p>Destino preservado</p></Collapse>);
+    expect(playbacks).toHaveLength(0);
+    expect(document.getElementById("restored-details")?.style.height).toBe("auto");
+    view.rerender(<Collapse open={false} id="restored-details" animateInitial={false}><p>Destino preservado</p></Collapse>);
+    expect(playbacks).toHaveLength(1);
+    expect(playbacks[0].options.duration).toBe(0.14);
   });
   it("recolhe com altura real; conteúdo de saída fica inerte e callbacks antigos não o removem após reabertura", () => {
     vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(120);

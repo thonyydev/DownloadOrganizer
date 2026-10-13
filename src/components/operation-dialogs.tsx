@@ -1,4 +1,5 @@
 import { FolderDown, Loader2, Undo2 } from "lucide-react";
+import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -13,7 +14,12 @@ export function OperationDialogs({ preview, undoTarget, categories, action, busy
   onReviewed: (value: boolean) => void; onUpdate: () => void; onOrganize: () => void; onUndo: () => void; onClose: () => void; onViewResult: () => void;
   onRestoreFocus: () => void;
 }) {
-  const ready = preview?.files.filter(f => f.status === "ready").length ?? 0;
+  const counts = useMemo(() => {
+    const result = { ready: 0, conflict: 0, ignored: 0 };
+    for (const file of preview?.files ?? []) result[file.status]++;
+    return result;
+  }, [preview?.files]);
+  const ready = counts.ready;
   const previewAction = action?.kind === "organize" || action?.kind === "preview" ? action : null;
   const undoAction = action?.kind === "undo" ? action : null;
   const undoable = operation ?? undoTarget;
@@ -27,7 +33,7 @@ export function OperationDialogs({ preview, undoTarget, categories, action, busy
         <OperationFeedback action={previewAction} operation={done(previewAction) || previewAction?.phase === "error" ? operation : undefined} />
         {!done(previewAction) && <>
           {issue && <p className="inline-error" role="alert">{issue}</p>}
-          <div className="preview-summary"><Badge variant="secondary">{ready} prontos</Badge><Badge variant="outline">{preview?.files.filter(f => f.status === "conflict").length ?? 0} conflitos</Badge><Badge variant="outline">{preview?.files.filter(f => f.status === "ignored").length ?? 0} ignorados</Badge></div>
+          <div className="preview-summary"><Badge variant="secondary">{ready} prontos</Badge><Badge variant="outline">{counts.conflict} conflitos</Badge><Badge variant="outline">{counts.ignored} ignorados</Badge></div>
           <div className="preview-files"><FileTable files={preview?.files ?? []} categories={categories} preview /></div>
           <label className="review-confirmation"><input type="checkbox" checked={reviewed} disabled={working || !!issue} onChange={e => onReviewed(e.target.checked)} />Conferi os arquivos e destinos desta prévia.</label>
         </>}

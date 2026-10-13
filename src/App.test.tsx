@@ -49,7 +49,9 @@ async function openPreview() {
 }
 
 beforeEach(() => {
-  vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
+  vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (this: HTMLElement) { return this.classList.contains("table-scroll") ? 400 : this.tagName === "TR" ? 80 : 0; });
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(800);
   vi.clearAllMocks(); mocks.events.clear(); mocks.closeHandler = null;
   snapshot = {
     preferences: structuredClone(initial), categories: [{ id: "documents", name: "Documentos", extensions: ["txt"] }],
@@ -68,6 +70,31 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers(); });
 
 describe("composição desktop", () => {
+  it("busca e filtra 10.000 registros sem renormalizar nomes em alterações não relacionadas", async () => {
+    snapshot.categories.push({ id: "images", name: "Imagens", extensions: ["png"] });
+    snapshot.files = Array.from({ length: 10000 }, (_, index) => ({ ...snapshot.files[0], name: "Arquivo-" + String(index).padStart(5, "0") + ".txt", path: "/isolated/" + index + ".txt", category: index % 2 ? "images" : "documents" }));
+    const normalize = vi.spyOn(String.prototype, "toLocaleLowerCase");
+    await start(); navigate("Arquivos");
+    const normalizedFiles = () => normalize.mock.contexts.filter(value => String(value).startsWith("Arquivo-")).length;
+    expect(normalizedFiles()).toBe(10000);
+    const searchInput = screen.getByRole("textbox", { name: "Buscar arquivos" });
+    act(() => document.querySelector<HTMLButtonElement>(".file-disclosure")!.focus());
+    act(() => searchInput.focus());
+    fireEvent.change(screen.getByRole("textbox", { name: "Buscar arquivos" }), { target: { value: "ARQUIVO-09999" } });
+    expect(document.activeElement).toBe(searchInput);
+    expect(screen.getByText("1 arquivo(s)")).toBeTruthy(); expect(screen.getByText("Arquivo-09999.txt")).toBeTruthy();
+    expect(normalizedFiles()).toBe(10000);
+    fireEvent.change(screen.getByRole("textbox", { name: "Buscar arquivos" }), { target: { value: "" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Filtrar por categoria" }), { target: { value: "images" } });
+    expect(screen.getByText("5000 arquivo(s)")).toBeTruthy();
+    navigate("Configurações"); fireEvent.click(screen.getByRole("button", { name: "Claro" })); navigate("Arquivos");
+    expect(normalizedFiles()).toBe(10000);
+    expect(screen.getByText("5000 arquivo(s)")).toBeTruthy();
+    fireEvent.change(screen.getByRole("textbox", { name: "Buscar arquivos" }), { target: { value: "inexistente" } });
+    fireEvent.click(screen.getByRole("button", { name: "Limpar filtros" }));
+    expect(screen.getByText("10000 arquivo(s)")).toBeTruthy();
+    expect(document.querySelectorAll("tr[data-file-path]").length).toBeLessThan(25);
+  });
   it("leva da categoria real à tabela filtrada e mantém os nomes de navegação estáveis", async () => {
     await start();
     expect(screen.getByRole("heading", { name: "source" })).toBeTruthy();
@@ -212,6 +239,21 @@ describe("rascunho de configurações", () => {
 });
 
 describe("prévia e operações", () => {
+  it("mantém a confirmação segura por identificador com uma prévia de 5.000 arquivos", async () => {
+    snapshot.files = Array.from({ length: 5000 }, (_, index) => ({ ...snapshot.files[0], name: "Arquivo-" + index + ".txt", path: "/isolated/preview/" + index + ".txt" }));
+    await start(); const dialog = await openPreview();
+    expect(within(dialog).getByText("5000 prontos")).toBeTruthy();
+    expect(within(dialog).getByRole("table").getAttribute("aria-rowcount")).toBe("5001");
+    expect(dialog.querySelectorAll("tr[data-file-path]").length).toBeLessThan(25);
+    const pending = deferred<number>(); mocks.organize.mockReturnValueOnce(pending.promise);
+    const id = snapshot.preview_id;
+    fireEvent.click(within(dialog).getByRole("checkbox"));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Confirmar organização" }));
+    expect(mocks.organize).toHaveBeenCalledExactlyOnceWith(id);
+    expect(snapshot.files).toHaveLength(5000);
+    snapshot.history = [structuredClone(operation)]; snapshot.preview_id = null;
+    await act(async () => pending.resolve(42));
+  });
   it("mostra o registro parcial do lote se a execução for interrompida", async () => {
     await start(); const dialog = await openPreview();
     const pending = deferred<number>(); mocks.organize.mockReturnValueOnce(pending.promise);
