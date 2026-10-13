@@ -49,6 +49,7 @@ async function openPreview() {
 }
 
 beforeEach(() => {
+  vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
   vi.clearAllMocks(); mocks.events.clear(); mocks.closeHandler = null;
   snapshot = {
     preferences: structuredClone(initial), categories: [{ id: "documents", name: "Documentos", extensions: ["txt"] }],
@@ -64,7 +65,7 @@ beforeEach(() => {
   mocks.close.mockResolvedValue(undefined);
   mocks.choose.mockResolvedValue(null);
 });
-afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers(); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers(); });
 
 describe("composição desktop", () => {
   it("leva da categoria real à tabela filtrada e mantém os nomes de navegação estáveis", async () => {
@@ -379,6 +380,17 @@ describe("avisos e clareza", () => {
     expect(screen.getByText("Pasta removida")).toBeTruthy();
     expect((screen.getByText("Pasta removida") as HTMLElement).hidden).toBe(false);
     expect(document.activeElement).toBe(toggle);
+  });
+  it("mantém foco no diálogo animado e restaura ao título após Escape", async () => {
+    await start();
+    const dialog = await openPreview();
+    await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Visão geral", level: 1 }));
+    expect(mocks.organize).not.toHaveBeenCalled();
+    await openPreview();
+    expect((screen.getByRole("checkbox") as HTMLInputElement).checked).toBe(false);
   });
   it("diferencia filtro sem resultados e expõe motivos sem depender de hover", async () => {
     snapshot.files[0].status = "ignored"; snapshot.files[0].reason = "Categoria desativada";

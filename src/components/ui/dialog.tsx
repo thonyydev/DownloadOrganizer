@@ -4,6 +4,14 @@ import { XIcon } from "lucide-react"
 import { Dialog as DialogPrimitive } from "radix-ui"
 
 import { Button } from "@/components/ui/button"
+import { useContentMotion } from "@/components/motion/transitions"
+import { useMotionAllowed } from "@/components/motion/feedback"
+
+function DialogPanel({ ref: forwardedRef, ...props }: React.ComponentProps<"div"> & { "data-state"?: string }) {
+  const ref = useContentMotion(props["data-state"] ?? "open", useMotionAllowed() && props["data-state"] !== "closed", true, "dialog")
+  React.useImperativeHandle(forwardedRef, () => ref.current!, [ref])
+  return <div ref={ref} {...props} />
+}
 
 function Dialog({
   ...props
@@ -57,6 +65,7 @@ function DialogContent({
     <DialogPortal data-slot="dialog-portal">
       <DialogOverlay />
       <DialogPrimitive.Content
+        asChild
         data-slot="dialog-content"
         className={cn(
           "fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border bg-background p-6 shadow-lg outline-none sm:max-w-lg",
@@ -64,7 +73,7 @@ function DialogContent({
         )}
         {...props}
       >
-        {children}
+        <DialogPanel>{children}
         {showCloseButton && (
           <DialogPrimitive.Close
             data-slot="dialog-close"
@@ -73,7 +82,7 @@ function DialogContent({
             <XIcon />
             <span className="sr-only">Fechar</span>
           </DialogPrimitive.Close>
-        )}
+        )}</DialogPanel>
       </DialogPrimitive.Content>
     </DialogPortal>
   )
