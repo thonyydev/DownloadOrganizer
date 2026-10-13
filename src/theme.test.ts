@@ -21,6 +21,14 @@ function contrast(foreground: string, background: number[]) {
 describe.each(["escuro", "claro"])("legibilidade no tema %s", theme => {
   const index = theme === "escuro" ? 0 : 1;
   const tokens = { ...blocks[0], ...blocks[index] };
+  it("mantém o texto da dock legível sobre conteúdo claro ou escuro e no fallback sólido", () => {
+    const opacity = Number([...css.matchAll(/--dock-opacity: (\d+)%/g)][index][1]) / 100;
+    for (const underneath of ["#000000", "#ffffff", tokens.background]) {
+      const surface = rgb(tokens.card).map((channel, i) => channel * opacity + rgb(underneath)[i] * (1 - opacity));
+      expect(contrast(tokens.foreground, surface)).toBeGreaterThanOrEqual(4.5);
+    }
+    expect(contrast(tokens.foreground, rgb(tokens.card))).toBeGreaterThanOrEqual(4.5);
+  });
   it("mantém contraste AA nos textos funcionais e botões", () => {
     for (const background of ["background", "card", "sidebar", "accent", "surface-selected"]) {
       for (const foreground of ["foreground", "muted", "primary", "success-foreground", "warning-foreground", "error-foreground"]) {

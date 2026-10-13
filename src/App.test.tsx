@@ -99,6 +99,48 @@ describe("composição desktop", () => {
 });
 
 describe("rascunho de configurações", () => {
+  it("mantém uma única dock nas configurações e preserva sua identidade ao editar, salvar e descartar", async () => {
+    await start();
+    expect(screen.queryByRole("region", { name: "Ações das configurações" })).toBeNull();
+    navigate("Configurações");
+    const dock = screen.getByRole("region", { name: "Ações das configurações" });
+    const save = within(dock).getByRole("button", { name: "Salvar preferências" }) as HTMLButtonElement;
+    const discard = within(dock).getByRole("button", { name: "Descartar alterações" }) as HTMLButtonElement;
+    expect(save.disabled).toBe(true); expect(discard.disabled).toBe(true);
+    expect(dock.closest(".page-content")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Claro" }));
+    expect(save.disabled).toBe(false); expect(discard.disabled).toBe(false);
+    fireEvent.click(discard);
+    expect(save.disabled).toBe(true);
+    fireEvent.click(screen.getByRole("switch", { name: "Documentos" }));
+    fireEvent.click(save);
+    await screen.findByText("Todas as alterações estão salvas.");
+    expect(save.disabled).toBe(true); expect(discard.disabled).toBe(true);
+    expect(screen.getByRole("region", { name: "Ações das configurações" })).toBe(dock);
+    expect(within(dock).getAllByRole("button")).toEqual([discard, save]);
+    for (const page of ["Arquivos", "Histórico", "Visão geral"]) {
+      navigate(page);
+      expect(screen.queryByRole("region", { name: "Ações das configurações" })).toBeNull();
+    }
+    navigate("Configurações");
+    expect((screen.getByRole("button", { name: "Salvar preferências" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+  it("bloqueia ações durante o salvamento e mantém o rascunho após uma falha", async () => {
+    await start(); navigate("Configurações");
+    fireEvent.click(screen.getByRole("button", { name: "Claro" }));
+    const pending = deferred<Preferences>(); mocks.save.mockReturnValueOnce(pending.promise);
+    const dock = screen.getByRole("region", { name: "Ações das configurações" });
+    fireEvent.click(within(dock).getByRole("button", { name: "Salvar preferências" }));
+    const save = within(dock).getByRole("button", { name: "Salvando…" }) as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+    expect((within(dock).getByRole("button", { name: "Descartar alterações" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(save); expect(mocks.save).toHaveBeenCalledOnce();
+    await act(async () => pending.reject("Falha isolada ao salvar"));
+    await screen.findByText("Falha isolada ao salvar");
+    expect(screen.getByRole("button", { name: "Claro" }).getAttribute("aria-pressed")).toBe("true");
+    expect(save.disabled).toBe(false);
+    expect(screen.getByRole("region", { name: "Ações das configurações" })).toBe(dock);
+  });
   it("preserva alterações ao navegar e só descarta explicitamente", async () => {
     await start(); navigate("Configurações");
     fireEvent.click(screen.getByRole("button", { name: "Claro" }));
