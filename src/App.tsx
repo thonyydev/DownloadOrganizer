@@ -19,6 +19,7 @@ import { useMotionAllowed } from "@/components/motion/feedback";
 import { SuccessNotice } from "@/components/success-notice";
 import { errorMessage, isRunning, previewIssue, reconcileDraft, samePreferences, type Action, type PreferencesDraft } from "@/lib/experience";
 import { api, native, type FileEntry, type Operation, type Preview, type Progress, type Snapshot } from "@/lib/api";
+import { createProgressPresenter } from "@/lib/progress";
 import "./App.css";
 
 const pages = [{ id: "dashboard", name: "Visão geral", icon: LayoutDashboard }, { id: "files", name: "Arquivos", icon: FolderOpen }, { id: "history", name: "Histórico", icon: History }, { id: "settings", name: "Configurações", icon: Settings2 }] as const;
@@ -48,6 +49,12 @@ export default function App() {
   const dirtyRef = useRef(false);
   const closeBypass = useRef(false);
   const actionKind = useRef<Action["kind"] | null>(null);
+  const manualProgress = useMemo(() => createProgressPresenter(progress => {
+    setAction(current => current ? { ...current, progress, operationId: progress.operation_id ?? current.operationId, phase: progress.phase } : current);
+  }), []);
+  const automaticProgress = useMemo(() => createProgressPresenter(progress => {
+    setAutomatic({ kind: "organize", phase: progress.phase, progress, operationId: progress.operation_id ?? undefined });
+  }), []);
   const refreshVersion = useRef(0);
   const mainHeading = useRef<HTMLHeadingElement>(null);
   const setPage = usePagePosition(page, mainHeading, setCurrentPage);
@@ -77,16 +84,19 @@ export default function App() {
     if (!native) return;
     let disposed = false;
     const unlisteners: UnlistenFn[] = [];
+    manualProgress.reset(); automaticProgress.reset();
     Promise.all([
       listen<Progress>("organizer-progress", event => {
         if (disposed) return;
         const progress = event.payload;
         if (progress.kind === "automatic") {
-          autoBusyRef.current = progress.phase === "preparing" || progress.phase === "organizing";
-          setAutomatic({ kind: "organize", phase: progress.phase, progress, operationId: progress.operation_id ?? undefined });
+          if (progress.phase === "preparing" && progress.completed === 0 && progress.operation_id == null) automaticProgress.reset();
+          if (automaticProgress.push(progress)) {
+            autoBusyRef.current = progress.phase === "preparing" || progress.phase === "organizing";
+            if (!autoBusyRef.current) void refresh();
+          }
         } else if (busyRef.current && ((actionKind.current === "organize" && progress.kind === "manual") || (actionKind.current === "undo" && progress.kind === "undo"))) {
-          setAction(current => current ? { ...current, progress, operationId: progress.operation_id ?? current.operationId,
-            phase: progress.phase === "preparing" || progress.phase === "organizing" ? progress.phase : current.phase } : current);
+          manualProgress.push(progress);
         }
       }),
       listen("organizer-changed", () => {
@@ -95,8 +105,8 @@ export default function App() {
         timer.current = setTimeout(() => { void refresh(); }, 600);
       }),
     ]).then(items => { if (disposed) items.forEach(fn => fn()); else unlisteners.push(...items); }).catch(e => setError(errorMessage(e)));
-    return () => { disposed = true; unlisteners.forEach(fn => fn()); if (timer.current) clearTimeout(timer.current); };
-  }, [refresh]);
+    return () => { disposed = true; unlisteners.forEach(fn => fn()); if (timer.current) clearTimeout(timer.current); manualProgress.stop(); automaticProgress.stop(); };
+  }, [refresh, manualProgress, automaticProgress]);
   useLayoutEffect(() => { document.documentElement.classList.toggle("dark", data?.preferences.theme !== "light"); }, [data?.preferences.theme]);
   useEffect(() => {
     if (!preview) return;
@@ -124,16 +134,21 @@ export default function App() {
   async function run(job: () => Promise<number | void>, kind: Action["kind"] = "refresh") {
     if (busyRef.current || autoBusyRef.current) return false;
     busyRef.current = true; actionKind.current = kind;
+    manualProgress.reset();
     setBusy(true); setError(""); setMessage(""); setAction({ kind, phase: "preparing" });
     let operationId: number | undefined;
     try {
       const result = await job();
+      manualProgress.finish();
       operationId = typeof result === "number" ? result : undefined;
+      const fileOperation = kind === "organize" || kind === "undo";
+      if (fileOperation) setAction({ kind, phase: "completed", operationId });
       if (kind !== "refresh") await refresh(true);
-      setAction({ kind, phase: "completed", operationId });
+      if (!fileOperation) setAction({ kind, phase: "completed", operationId });
       if (kind === "save") setMessage("Preferências salvas. Verifique separadamente o estado do monitoramento.");
       return true;
     } catch (e) {
+      manualProgress.finish();
       const problem = errorMessage(e);
       setError(problem); setAction(current => ({ kind, phase: "error", error: problem, operationId: operationId ?? current?.operationId }));
       if (kind === "organize") { setPreviewError("Esta confirmação não pode ser reutilizada. Confira o histórico e atualize a prévia antes de tentar novamente."); setReviewed(false); }
