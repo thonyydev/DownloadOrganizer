@@ -3,12 +3,43 @@ import { Button } from "@/components/ui/button";
 import { useFeedbackMotion, useMotionAllowed } from "@/components/motion/feedback";
 import { Collapse } from "@/components/motion/collapse";
 import { useContentMotion } from "@/components/motion/transitions";
-import { basename, date, labels, type Operation } from "@/lib/api";
+import { date, type Movement, type Operation } from "@/lib/api";
+import { useMemo } from "react";
+import { movementProblem, OperationExplorer } from "@/components/operation-explorer";
+
+function movementCounts(movements: Movement[]) {
+  let moved = 0, undone = 0, errors = 0;
+  for (const movement of movements) {
+    if (movement.status === "moved") moved++;
+    if (movement.status === "undone") undone++;
+    if (movementProblem(movement)) errors++;
+  }
+  return { moved, undone, errors };
+}
+
+function OperationSummary({ operation }: { operation: Operation }) {
+  const summary = useMemo(() => {
+    const folders = new Map<string, number>();
+    for (const movement of operation.movements) {
+      const separator = Math.max(movement.destination.lastIndexOf("/"), movement.destination.lastIndexOf("\\"));
+      if (separator < 0) continue;
+      const folder = movement.destination.slice(0, separator + 1);
+      folders.set(folder, (folders.get(folder) ?? 0) + 1);
+    }
+    const destinations = [...folders].sort((a, b) => b[1] - a[1]);
+    return { ...movementCounts(operation.movements), destinations };
+  }, [operation.movements]);
+  const remaining = summary.destinations.slice(5);
+  return <div className="operation-summary">
+    <dl className="operation-totals"><div><dt>Arquivos envolvidos</dt><dd>{operation.movements.length}</dd></div><div><dt>Organizados no destino</dt><dd>{summary.moved}</dd></div><div><dt>Restaurados</dt><dd>{summary.undone}</dd></div><div><dt>Falhas ou verificação</dt><dd>{summary.errors}</dd></div></dl>
+    <p className="summary-meta">{operation.kind === "automatic" ? "Automação" : operation.kind === "manual" ? "Organização manual" : operation.kind} · {date(operation.created * 1000)}</p>
+    {summary.destinations.length > 0 && <div className="destination-summary"><strong>Pastas de destino registradas</strong><dl>{summary.destinations.slice(0, 5).map(([folder, count]) => <div key={folder}><dt>{folder}</dt><dd>{count} arquivo(s)</dd></div>)}</dl>{remaining.length > 0 && <p>{remaining.length} outras pastas · {remaining.reduce((count, [, value]) => count + value, 0)} arquivo(s). Consulte os caminhos no explorador.</p>}</div>}
+    <OperationExplorer operation={operation} />
+  </div>;
+}
 
 export function Activity({ operation, onOpen, expanded, motionAllowed = false }: { operation: Operation; onOpen: () => void; expanded?: boolean; motionAllowed?: boolean }) {
-  const moved = operation.movements.filter(m => m.status === "moved").length;
-  const undone = operation.movements.filter(m => m.status === "undone").length;
-  const errors = operation.movements.filter(m => m.error || ["failed", "uncertain", "pending", "undo_pending"].includes(m.status)).length;
+  const { moved, undone, errors } = useMemo(() => movementCounts(operation.movements), [operation.movements]);
   const mark = useFeedbackMotion<SVGSVGElement>(`${operation.id}:${moved}:${undone}:${errors}`, motionAllowed && errors === 0);
   return <button className="activity" onClick={onOpen} aria-expanded={expanded} aria-controls={expanded === undefined ? undefined : "movements-" + operation.id}>
     <span className={"activity-icon " + (errors ? "warning" : "")}>
@@ -34,9 +65,6 @@ export function HistoryView({ history, expanded, working, onExpand, onUndo }: {
     <div className="history-header"><Activity operation={op} motionAllowed={motionAllowed} expanded={expanded === op.id} onOpen={() => onExpand(expanded === op.id ? null : op.id)} />
       <Button variant="outline" size="sm" disabled={working || !op.movements.some(m => m.status === "moved")} onClick={() => onUndo(op)}><Undo2 aria-hidden="true" />Desfazer</Button>
     </div>
-    <Collapse open={expanded === op.id} className="movement-list" id={"movements-" + op.id}>{expanded === op.id ? op.movements.map(m => <div className="movement" key={m.id}>
-      <div><strong>{basename(m.source)}</strong><dl className="movement-paths"><dt>Origem</dt><dd>{m.source}</dd><dt>Destino</dt><dd>{m.destination}</dd></dl>{m.error && <p className="inline-error">{m.error}</p>}</div>
-      <span className={"status status-" + m.status}>{labels[m.status] ?? m.status}</span>
-    </div>) : null}</Collapse>
+    <Collapse open={expanded === op.id} className="movement-list" id={"movements-" + op.id}>{expanded === op.id ? <OperationSummary operation={op} /> : null}</Collapse>
   </section>)}</div>;
 }
