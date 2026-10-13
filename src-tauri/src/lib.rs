@@ -15,6 +15,7 @@ use std::{
 };
 use store::{Operation, Store};
 use tauri::{AppHandle, Emitter, Manager};
+use tauri_plugin_window_state::StateFlags;
 
 struct Runtime {
     store: Store,
@@ -438,6 +439,11 @@ async fn retry_monitoring(app: AppHandle) -> Result<()> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED)
+                .build(),
+        )
         .setup(|app| {
             let data = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data)?;
