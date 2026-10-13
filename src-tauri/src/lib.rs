@@ -438,6 +438,19 @@ async fn retry_monitoring(app: AppHandle) -> Result<()> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let result = window.show().and_then(|()| {
+                    if window.is_minimized()? {
+                        window.unminimize()?;
+                    }
+                    window.set_focus()
+                });
+                if let Err(error) = result {
+                    eprintln!("Não foi possível ativar a janela existente: {error}");
+                }
+            }
+        }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(
             tauri_plugin_window_state::Builder::default()
