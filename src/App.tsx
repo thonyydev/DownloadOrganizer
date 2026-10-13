@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Tooltip } from "radix-ui";
-import { Check, FolderDown, FolderOpen, History, LayoutDashboard, Loader2, RefreshCw, Search, Settings2, ShieldCheck, X } from "lucide-react";
+import { FolderDown, FolderOpen, History, LayoutDashboard, Loader2, RefreshCw, Search, Settings2, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -13,13 +13,16 @@ import { Settings } from "@/components/settings";
 import { OperationDialogs } from "@/components/operation-dialogs";
 import { OperationFeedback } from "@/components/operation-feedback";
 import { ProblemNotice } from "@/components/problem-notice";
+import { NavigationIndicator, PageTransition, useContentMotion, usePagePosition } from "@/components/motion/transitions";
+import { useMotionAllowed } from "@/components/motion/feedback";
+import { SuccessNotice } from "@/components/success-notice";
 import { errorMessage, isRunning, previewIssue, reconcileDraft, samePreferences, type Action, type PreferencesDraft } from "@/lib/experience";
 import { api, native, type Operation, type Preview, type Progress, type Snapshot } from "@/lib/api";
 import "./App.css";
 
 const pages = [{ id: "dashboard", name: "Visão geral", icon: LayoutDashboard }, { id: "files", name: "Arquivos", icon: FolderOpen }, { id: "history", name: "Histórico", icon: History }, { id: "settings", name: "Configurações", icon: Settings2 }] as const;
 export default function App() {
-  const [page, setPage] = useState<(typeof pages)[number]["id"]>("dashboard");
+  const [page, setCurrentPage] = useState<(typeof pages)[number]["id"]>("dashboard");
   const [data, setData] = useState<Snapshot | null>(null);
   const [draft, setDraft] = useState<PreferencesDraft | null>(null);
   const [loading, setLoading] = useState(native);
@@ -45,6 +48,8 @@ export default function App() {
   const actionKind = useRef<Action["kind"] | null>(null);
   const refreshVersion = useRef(0);
   const mainHeading = useRef<HTMLHeadingElement>(null);
+  const setPage = usePagePosition(page, mainHeading, setCurrentPage);
+  const themeRef = useContentMotion(data?.preferences.theme ?? "dark", useMotionAllowed(), false, "theme");
   const dirty = !!draft && !samePreferences(draft.base, draft.value);
   dirtyRef.current = dirty;
   const external = draft && data && !samePreferences(draft.base, data.preferences) ? data.preferences : null;
@@ -90,8 +95,7 @@ export default function App() {
     ]).then(items => { if (disposed) items.forEach(fn => fn()); else unlisteners.push(...items); }).catch(e => setError(errorMessage(e)));
     return () => { disposed = true; unlisteners.forEach(fn => fn()); if (timer.current) clearTimeout(timer.current); };
   }, [refresh]);
-  useEffect(() => { document.documentElement.classList.toggle("dark", data?.preferences.theme !== "light"); }, [data?.preferences.theme]);
-  useEffect(() => { mainHeading.current?.focus(); }, [page]);
+  useLayoutEffect(() => { document.documentElement.classList.toggle("dark", data?.preferences.theme !== "light"); }, [data?.preferences.theme]);
   useEffect(() => {
     if (!preview) return;
     setClock(Date.now());
@@ -178,10 +182,10 @@ export default function App() {
   function showCategory(id: string) { setSearch(""); setFilter(id); setPage("files"); }
   function showOperation(op: Operation) { setPage("history"); setExpanded(op.id); }
 
-  return <Tooltip.Provider delayDuration={500} skipDelayDuration={300}><div className="app-shell">
+  return <Tooltip.Provider delayDuration={500} skipDelayDuration={300}><div className="app-shell" ref={themeRef}>
     <aside className="sidebar">
       <div className="brand"><span className="brand-icon"><FolderDown size={20} aria-hidden="true" /></span><span>Download<span className="brand-sub">Organizer</span></span></div>
-      <nav aria-label="Navegação principal">{pages.map(item => <button key={item.id} className={"nav-item " + (page === item.id ? "active" : "")} aria-label={item.name} aria-describedby={item.id === "settings" && dirty ? "pending-preferences" : item.id === "files" && data ? "nav-file-count" : undefined} aria-current={page === item.id ? "page" : undefined} onClick={() => setPage(item.id)}><item.icon size={16} aria-hidden="true" /><span>{item.name}</span>{item.id === "files" && data && <span className="nav-count" id="nav-file-count">{files.length}<span className="sr-only"> arquivos na pasta</span></span>}{item.id === "settings" && dirty && <><span className="draft-dot" aria-hidden="true" /><span id="pending-preferences" className="sr-only">Alterações não salvas</span></>}</button>)}</nav>
+      <nav aria-label="Navegação principal"><NavigationIndicator page={page} />{pages.map(item => <button key={item.id} className={"nav-item " + (page === item.id ? "active" : "")} aria-label={item.name} aria-describedby={item.id === "settings" && dirty ? "pending-preferences" : item.id === "files" && data ? "nav-file-count" : undefined} aria-current={page === item.id ? "page" : undefined} onClick={() => setPage(item.id)}><item.icon size={16} aria-hidden="true" /><span>{item.name}</span>{item.id === "files" && data && <span className="nav-count" id="nav-file-count">{files.length}<span className="sr-only"> arquivos na pasta</span></span>}{item.id === "settings" && dirty && <><span className="draft-dot" aria-hidden="true" /><span id="pending-preferences" className="sr-only">Alterações não salvas</span></>}</button>)}</nav>
       <div className="sidebar-bottom"><span className={"monitor-status " + (data?.monitoring ? "online" : "")}><span className="small-dot" />{working ? "Operação em andamento" : data?.monitoring ? "Monitor ativo" : "Monitor pausado"}</span><div className="app-version"><ShieldCheck size={14} aria-hidden="true" /><span>Armazenamento local</span><span>v0.1.0</span></div></div>
     </aside>
     <div className="main-shell">
@@ -191,15 +195,15 @@ export default function App() {
         {error && !preview && !undoTarget && <ProblemNotice title="A ação não foi concluída" message={error} busy={working} action="Verificar novamente" onRecover={() => void run(async () => { await refresh(true); })} onDismiss={() => setError("")} />}
         {data?.scan_error && <ProblemNotice title="A pasta precisa de atenção" message={data.scan_error} persistent busy={working} action="Revisar diretórios" onRecover={() => setPage("settings")} />}
         {data?.watch_error && <ProblemNotice title="Há um problema no monitoramento" message={data.watch_error} persistent busy={working} action={data.preferences.automatic ? "Verificar e reativar monitor" : "Revisar automação"} onRecover={() => data.preferences.automatic ? void run(async () => { await api.retryMonitoring(); }, "monitor") : setPage("settings")} />}
-        {message && <div className="banner success-banner" role="status"><Check size={16} aria-hidden="true" /><p>{message}</p><Button variant="ghost" size="icon" aria-label="Fechar aviso" onClick={() => setMessage("")}><X aria-hidden="true" /></Button></div>}
+        {message && <SuccessNotice message={message} onDismiss={() => setMessage("")} />}
         {!preview && !undoTarget && isRunning(action) && <OperationFeedback action={action} />}
         {automatic && <div className="automatic-feedback"><p>Organização automática</p><OperationFeedback action={automatic} operation={data?.history.find(op => op.id === automatic.operationId)} /></div>}
-        {loading ? <div className="loading-state" role="status"><Loader2 className="spin" size={20} aria-hidden="true" /><p>Lendo seus arquivos com segurança…</p></div> : <>
+        {loading ? <div className="loading-state" role="status"><Loader2 className="spin" size={20} aria-hidden="true" /><p>Lendo seus arquivos com segurança…</p></div> : <PageTransition key={page}>
           {page === "dashboard" && <Overview data={data} onFiles={() => setPage("files")} onSettings={() => setPage("settings")} onCategory={showCategory} onHistory={() => setPage("history")} onOperation={showOperation} />}
-          {page === "files" && <section className="files-view"><div className="file-toolbar"><label className="search-field"><span>Buscar arquivos</span><span className="search-input"><Search size={16} aria-hidden="true" /><Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Nome do arquivo…" aria-label="Buscar arquivos" /></span></label><label className="filter-select"><span>Filtrar por categoria</span><select value={filter} onChange={e => setFilter(e.target.value)}><option value="all">Todas as categorias</option>{categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label><span className="file-count">{visible.length} arquivo(s)</span></div><FileTable files={visible} categories={categories} filtered={filter !== "all" || !!search} onClearFilters={() => { setFilter("all"); setSearch(""); }} /><div className="table-footer"><ShieldCheck size={14} aria-hidden="true" />Arquivos recentes aguardam estabilidade. Atualize para verificar novamente.</div></section>}
+          {page === "files" && <section className="files-view"><div className="file-toolbar" data-motion-group><label className="search-field"><span>Buscar arquivos</span><span className="search-input"><Search size={16} aria-hidden="true" /><Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Nome do arquivo…" aria-label="Buscar arquivos" /></span></label><label className="filter-select"><span>Filtrar por categoria</span><select value={filter} onChange={e => setFilter(e.target.value)}><option value="all">Todas as categorias</option>{categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label><span className="file-count">{visible.length} arquivo(s)</span></div><FileTable filterKey={filter} files={visible} categories={categories} filtered={filter !== "all" || !!search} onClearFilters={() => { setFilter("all"); setSearch(""); }} /><div className="table-footer"><ShieldCheck size={14} aria-hidden="true" />Arquivos recentes aguardam estabilidade. Atualize para verificar novamente.</div></section>}
           {page === "history" && <HistoryView history={history} expanded={expanded} working={working} onExpand={setExpanded} onUndo={op => { setAction(null); setError(""); setUndoTarget(op); }} />}
           {page === "settings" && (data && draft ? <Settings draft={draft.value} categories={categories} busy={working} dirty={dirty} external={external} onChange={update => setDraft(current => current ? { ...current, value: update(current.value) } : current)} onSave={() => void saveDraft()} onDiscard={discardDraft} onAcceptExternal={() => setDraft(current => current && data ? { ...current, base: data.preferences } : current)} /> : <div className="empty"><Settings2 size={24} aria-hidden="true" /><h2>Configurações disponíveis no desktop</h2><p>Abra o aplicativo Tauri para selecionar suas pastas.</p></div>)}
-        </>}
+        </PageTransition>}
       </main>
     </div>
     <OperationDialogs preview={preview} undoTarget={undoTarget} categories={categories} action={action} busy={busy} working={working} issue={issue} reviewed={reviewed} operation={resultOperation}
