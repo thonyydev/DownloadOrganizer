@@ -69,6 +69,66 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers(); });
 
+describe("feedback de operações breves", () => {
+  it.each(["preview", "refresh"] as const)("%s bloqueia duplicatas e respeita a apresentação específica em ações rápidas e lentas", async kind => {
+    await start(); vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const target = kind === "preview" ? mocks.preview : mocks.snapshot;
+    const name = kind === "preview" ? "Organizar arquivos" : "Atualizar arquivos";
+    const heading = kind === "preview" ? "Preparando e verificando arquivos…" : "Verificando o estado atual…";
+    const result = kind === "preview" ? { id: 9, created: Math.floor(Date.now() / 1000), files: snapshot.files } : snapshot;
+    const quick = deferred<Preview | Snapshot>(); target.mockReturnValueOnce(quick.promise);
+    const button = screen.getByRole("button", { name }); const calls = target.mock.calls.length;
+    fireEvent.click(button); fireEvent.click(button);
+    expect((button as HTMLButtonElement).disabled).toBe(true); expect(target).toHaveBeenCalledTimes(calls + 1);
+    if (kind === "refresh") expect(button.querySelector("svg")?.classList.contains("spin")).toBe(true);
+    act(() => vi.advanceTimersByTime(70)); expect(screen.queryByText(heading)).toBeNull();
+    await act(async () => quick.resolve(result)); expect(screen.queryByText(heading)).toBeNull();
+    const slow = deferred<Preview | Snapshot>(); target.mockReturnValueOnce(slow.promise);
+    const nextName = kind === "preview" ? "Atualizar prévia" : name;
+    fireEvent.click(screen.getByRole("button", { name: nextName }));
+    act(() => vi.advanceTimersByTime(130)); expect(screen.queryByText(heading)).toBeNull();
+    act(() => vi.advanceTimersByTime(69)); expect(screen.queryByText(heading)).toBeNull();
+    act(() => vi.advanceTimersByTime(1));
+    if (kind === "preview") expect(screen.getByText(heading)).toBeTruthy();
+    else {
+      act(() => vi.advanceTimersByTime(5000)); expect(screen.queryByText(heading)).toBeNull();
+      expect(document.querySelector(".progress-panel")).toBeNull();
+      expect(button.querySelector("svg")?.classList.contains("spin")).toBe(true);
+      act(() => mocks.closeHandler?.({ preventDefault: vi.fn() }));
+      const close = screen.getByRole("dialog", { name: "Uma operação está em andamento" });
+      expect(close.querySelector(".progress-panel")).toBeNull();
+      fireEvent.click(within(close).getByRole("button", { name: "Continuar no aplicativo" }));
+    }
+    await act(async () => slow.resolve(result)); expect(screen.queryByText(heading)).toBeNull();
+    act(() => vi.advanceTimersByTime(500)); expect(screen.queryByText(heading)).toBeNull();
+    expect((screen.getByRole("button", { name: nextName }) as HTMLButtonElement).disabled).toBe(false);
+    if (kind === "refresh") expect(button.querySelector("svg")?.classList.contains("spin")).toBe(false);
+  });
+
+  it.each(["preview", "refresh"] as const)("%s apresenta erros imediatamente e cancela a apresentação pendente", async kind => {
+    await start(); vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const pending = deferred<Preview | Snapshot>();
+    (kind === "preview" ? mocks.preview : mocks.snapshot).mockReturnValueOnce(pending.promise);
+    fireEvent.click(screen.getByRole("button", { name: kind === "preview" ? "Organizar arquivos" : "Atualizar arquivos" }));
+    await act(async () => pending.reject("Falha de teste"));
+    expect(screen.getByText("Falha de teste")).toBeTruthy();
+    act(() => vi.advanceTimersByTime(300));
+    expect(screen.queryByText("Preparando e verificando arquivos…")).toBeNull();
+    expect(screen.queryByText("Verificando o estado atual…")).toBeNull();
+    expect(screen.getByText("Falha de teste")).toBeTruthy();
+  });
+
+  it("cancela o agendamento de apresentação ao desmontar", async () => {
+    await start(); vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const pending = deferred<Preview>(); mocks.preview.mockReturnValueOnce(pending.promise);
+    const clear = vi.spyOn(globalThis, "clearTimeout");
+    fireEvent.click(screen.getByRole("button", { name: "Organizar arquivos" }));
+    const timers = vi.getTimerCount(); cleanup();
+    expect(clear).toHaveBeenCalled(); expect(vi.getTimerCount()).toBeLessThan(timers);
+    act(() => vi.advanceTimersByTime(300)); expect(screen.queryByText("Preparando e verificando arquivos…")).toBeNull();
+  });
+});
+
 describe("composição desktop", () => {
   it("busca e filtra 10.000 registros sem renormalizar nomes em alterações não relacionadas", async () => {
     snapshot.categories.push({ id: "images", name: "Imagens", extensions: ["png"] });

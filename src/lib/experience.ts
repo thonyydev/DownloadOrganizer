@@ -7,6 +7,7 @@ export interface Action {
   progress?: Progress;
   operationId?: number;
   error?: string;
+  showLoading?: boolean;
 }
 
 export function samePreferences(a: Preferences, b: Preferences) {

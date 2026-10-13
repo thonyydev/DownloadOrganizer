@@ -185,6 +185,14 @@ describe("contagens reais com Motion", () => {
 });
 
 describe("feedback sem atrasar estados e foco", () => {
+  it("suprime carregamento de refresh em qualquer contexto, preservando erros", () => {
+    const view = render(<OperationFeedback action={{ kind: "refresh", phase: "preparing", showLoading: true }} />);
+    expect(view.container.querySelector(".progress-panel")).toBeNull();
+    view.rerender(<OperationFeedback action={{ kind: "refresh", phase: "organizing" }} />);
+    expect(view.container.querySelector(".progress-panel")).toBeNull();
+    view.rerender(<OperationFeedback action={{ kind: "refresh", phase: "error", error: "Falha ao atualizar" }} />);
+    expect(screen.getByRole("alert").textContent).toContain("Falha ao atualizar");
+  });
   it("anima fases e conclusão, mantendo progresso, atualizações e erros imediatos", () => {
     const view = render(<OperationFeedback action={{ kind: "organize", phase: "preparing" }} />);
     expect(playbacks).toHaveLength(0);

@@ -44,6 +44,7 @@ export default function App() {
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<number | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const feedbackTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const busyRef = useRef(false);
   const autoBusyRef = useRef(false);
   const dirtyRef = useRef(false);
@@ -108,6 +109,7 @@ export default function App() {
     return () => { disposed = true; unlisteners.forEach(fn => fn()); if (timer.current) clearTimeout(timer.current); manualProgress.stop(); automaticProgress.stop(); };
   }, [refresh, manualProgress, automaticProgress]);
   useLayoutEffect(() => { document.documentElement.classList.toggle("dark", data?.preferences.theme !== "light"); }, [data?.preferences.theme]);
+  useEffect(() => () => clearTimeout(feedbackTimer.current), []);
   useEffect(() => {
     if (!preview) return;
     setClock(Date.now());
@@ -135,7 +137,13 @@ export default function App() {
     if (busyRef.current || autoBusyRef.current) return false;
     busyRef.current = true; actionKind.current = kind;
     manualProgress.reset();
-    setBusy(true); setError(""); setMessage(""); setAction({ kind, phase: "preparing" });
+    const delayed = kind === "preview";
+    const pendingAction: Action = { kind, phase: "preparing", showLoading: !delayed };
+    clearTimeout(feedbackTimer.current);
+    setBusy(true); setError(""); setMessage(""); setAction(pendingAction);
+    if (delayed) feedbackTimer.current = setTimeout(() => {
+      setAction(current => current === pendingAction ? { ...current, showLoading: true } : current);
+    }, 200);
     let operationId: number | undefined;
     try {
       const result = await job();
@@ -148,6 +156,7 @@ export default function App() {
       if (kind === "save") setMessage("Preferências salvas. Verifique separadamente o estado do monitoramento.");
       return true;
     } catch (e) {
+      clearTimeout(feedbackTimer.current);
       manualProgress.finish();
       const problem = errorMessage(e);
       setError(problem); setAction(current => ({ kind, phase: "error", error: problem, operationId: operationId ?? current?.operationId }));
@@ -155,7 +164,7 @@ export default function App() {
       if (kind === "preview") setPreviewError("Não foi possível atualizar a prévia. Tente atualizar novamente antes de confirmar.");
       await refresh();
       return false;
-    } finally { busyRef.current = false; actionKind.current = null; setBusy(false); }
+    } finally { clearTimeout(feedbackTimer.current); feedbackTimer.current = undefined; busyRef.current = false; actionKind.current = null; setBusy(false); }
   }
 
   function discardDraft() {
