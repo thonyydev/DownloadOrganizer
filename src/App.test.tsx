@@ -239,6 +239,46 @@ describe("rascunho de configurações", () => {
 });
 
 describe("prévia e operações", () => {
+  it("estabiliza os textos e conclui um lote manual curto sem esperar o intervalo visual", async () => {
+    await start(); const dialog = await openPreview();
+    const pending = deferred<number>(); mocks.organize.mockReturnValueOnce(pending.promise);
+    fireEvent.click(within(dialog).getByRole("checkbox"));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Confirmar organização" }));
+    vi.useFakeTimers();
+    progress({ kind: "manual", phase: "organizing", operation_id: 42, completed: 0, total: 5000, name: "first.txt" });
+    for (let i = 1; i < 5000; i++) progress({ kind: "manual", phase: i % 2 ? "preparing" : "organizing", operation_id: 42, completed: i, total: 5000, name: "rapid-" + i + ".txt" });
+    expect(within(dialog).getByText("Organizando arquivos…")).toBeTruthy();
+    expect(within(dialog).getByRole("progressbar").getAttribute("value")).toBe("0");
+    expect(within(dialog).queryByText("first.txt")).toBeNull();
+    expect(within(dialog).getByRole("progressbar").closest("[aria-live]")).toBeNull();
+    progress({ kind: "manual", phase: "completed", operation_id: 42, completed: 5000, total: 5000, name: "" });
+    expect(within(dialog).getByText("Processamento concluído")).toBeTruthy();
+    snapshot.history = [structuredClone(operation)]; snapshot.preview_id = null;
+    await act(async () => pending.resolve(42));
+    expect(within(dialog).getByText("Processamento concluído")).toBeTruthy();
+    expect(within(dialog).getByText(/1 organizado\(s\)/)).toBeTruthy();
+    act(() => vi.advanceTimersByTime(300));
+    expect(within(dialog).queryByRole("progressbar")).toBeNull();
+    expect(within(dialog).getByText("Processamento concluído")).toBeTruthy();
+  });
+
+  it("conclui lotes automáticos imediatamente e reinicia o progresso somente para um novo lote", async () => {
+    await start(); vi.useFakeTimers();
+    const send = (phase: Progress["phase"], completed: number, id: number | null) => progress({ kind: "automatic", phase, completed, total: 5000, operation_id: id, name: "changing.txt" });
+    send("preparing", 0, null); send("organizing", 0, 42); send("preparing", 4999, 42);
+    snapshot.history = [{ ...structuredClone(operation), kind: "automatic" }];
+    await act(async () => send("completed", 5000, 42));
+    expect(screen.getByText("Processamento concluído")).toBeTruthy();
+    expect(screen.getByText(/1 organizado\(s\)/)).toBeTruthy();
+    act(() => vi.advanceTimersByTime(150)); expect(screen.queryByRole("progressbar")).toBeNull();
+    send("preparing", 0, null); send("organizing", 0, 43); send("organizing", 100, 43);
+    act(() => vi.advanceTimersByTime(150));
+    expect(screen.getByRole("progressbar").getAttribute("value")).toBe("100");
+    await act(async () => send("error", 100, 43));
+    expect(screen.getByText("A operação encontrou um erro")).toBeTruthy();
+    act(() => vi.advanceTimersByTime(150)); expect(screen.queryByRole("progressbar")).toBeNull();
+  });
+
   it("mantém a confirmação segura por identificador com uma prévia de 5.000 arquivos", async () => {
     snapshot.files = Array.from({ length: 5000 }, (_, index) => ({ ...snapshot.files[0], name: "Arquivo-" + index + ".txt", path: "/isolated/preview/" + index + ".txt" }));
     await start(); const dialog = await openPreview();
@@ -364,8 +404,13 @@ describe("prévia e operações", () => {
     fireEvent.click(confirm); fireEvent.click(confirm); expect(mocks.undo).toHaveBeenCalledOnce();
     progress({ kind: "undo", phase: "organizing", completed: 0, total: 1, name: "a.txt" });
     expect(within(dialog).getByText("Restaurando arquivos…")).toBeTruthy();
+    vi.useFakeTimers();
+    progress({ kind: "undo", phase: "preparing", completed: 1, total: 1, name: "another.txt" });
+    expect(within(dialog).getByText("Restaurando arquivos…")).toBeTruthy();
     snapshot.history[0].movements[0].status = "undone";
     await act(async () => pending.resolve());
+    act(() => vi.advanceTimersByTime(150));
+    vi.useRealTimers();
     await screen.findByRole("dialog", { name: "Resultado da restauração" });
     expect(within(dialog).getByText(/1 restaurado\(s\) · 0 ainda no destino/)).toBeTruthy();
   });
