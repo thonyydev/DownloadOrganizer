@@ -144,6 +144,24 @@ h1:focus { outline: none; }
 .movement strong { font-size: var(--text-control); font-weight: 500; overflow-wrap: anywhere; }
 .movement-paths { display: grid; grid-template-columns: 48px minmax(0,1fr); gap: var(--space-1) var(--space-2); margin-top: var(--space-2); font-size: var(--text-meta); color: var(--muted); }
 .movement-paths dd { overflow-wrap: anywhere; }
+.operation-summary { padding-block: var(--space-4); display: grid; gap: var(--space-3); }
+.operation-totals { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-3); }
+.operation-totals dt, .summary-meta, .destination-summary { color: var(--muted); font-size: var(--text-control); }
+.operation-totals dd { font-size: var(--text-title); font-weight: 600; font-variant-numeric: tabular-nums; }
+.destination-summary { border-top: 1px solid var(--border); padding-top: var(--space-3); }
+.destination-summary strong { font-weight: 500; }
+.destination-summary dl { margin-block: var(--space-2); }
+.destination-summary dl > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-3); padding-block: var(--space-1); }
+.destination-summary dt { overflow-wrap: anywhere; }
+.operation-summary > .summary-explore { justify-self: start; }
+[data-slot=dialog-content].operation-explorer { width: min(880px, calc(100vw - 32px)); max-width: none; max-height: calc(100dvh - 32px); overflow: auto; }
+.explorer-toolbar { margin: 0; flex-wrap: wrap; }
+.explorer-count { color: var(--muted); font-size: var(--text-control); }
+.movement-scroll { height: min(46dvh, 420px); min-height: 100px; overflow: auto; overflow-anchor: none; border-block: 1px solid var(--border); }
+.movement-scroll:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.explorer-list { list-style: none; padding: 0; margin: 0; }
+.explorer-list .movement { padding-inline: var(--space-2); }
+@media (max-width: 650px) { .operation-totals { grid-template-columns: repeat(2, minmax(0, 1fr)); } .explorer-toolbar > label { width: 100%; } }
 
 .banner { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-4); margin-bottom: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); color: var(--muted); }
 .banner > div { flex: 1; min-width: 0; }

@@ -120,8 +120,12 @@ describe("composição desktop", () => {
     const expand = within(row).getByRole("button", { name: /1 arquivo organizado/ });
     fireEvent.click(expand);
     expect(expand.getAttribute("aria-expanded")).toBe("true");
-    expect(within(row).getByText("Arquivo ocupado")).toBeTruthy();
-    expect(within(row).getByText("/isolated/source/locked.txt")).toBeTruthy();
+    expect(within(row).getByText("Falhas ou verificação")).toBeTruthy();
+    expect(within(row).queryByText("/isolated/source/locked.txt")).toBeNull();
+    fireEvent.click(within(row).getByRole("button", { name: "Explorar arquivos" }));
+    const explorer = screen.getByRole("dialog", { name: "Arquivos da operação #42" });
+    expect(within(explorer).getByText("Arquivo ocupado")).toBeTruthy();
+    expect(within(explorer).getByText("/isolated/source/locked.txt")).toBeTruthy();
   });
 });
 
