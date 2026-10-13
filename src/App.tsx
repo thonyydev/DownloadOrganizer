@@ -10,6 +10,7 @@ import { Overview } from "@/components/overview";
 import { HistoryView } from "@/components/history";
 import { FileTable } from "@/components/file-table";
 import { Settings } from "@/components/settings";
+import { SettingsActions } from "@/components/settings-actions";
 import { OperationDialogs } from "@/components/operation-dialogs";
 import { OperationFeedback } from "@/components/operation-feedback";
 import { ProblemNotice } from "@/components/problem-notice";
@@ -202,8 +203,9 @@ export default function App() {
           {page === "dashboard" && <Overview data={data} onFiles={() => setPage("files")} onSettings={() => setPage("settings")} onCategory={showCategory} onHistory={() => setPage("history")} onOperation={showOperation} />}
           {page === "files" && <section className="files-view"><div className="file-toolbar" data-motion-group><label className="search-field"><span>Buscar arquivos</span><span className="search-input"><Search size={16} aria-hidden="true" /><Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Nome do arquivo…" aria-label="Buscar arquivos" /></span></label><label className="filter-select"><span>Filtrar por categoria</span><select value={filter} onChange={e => setFilter(e.target.value)}><option value="all">Todas as categorias</option>{categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label><span className="file-count">{visible.length} arquivo(s)</span></div><FileTable filterKey={filter} files={visible} categories={categories} filtered={filter !== "all" || !!search} onClearFilters={() => { setFilter("all"); setSearch(""); }} /><div className="table-footer"><ShieldCheck size={14} aria-hidden="true" />Arquivos recentes aguardam estabilidade. Atualize para verificar novamente.</div></section>}
           {page === "history" && <HistoryView history={history} expanded={expanded} working={working} onExpand={setExpanded} onUndo={op => { setAction(null); setError(""); setUndoTarget(op); }} />}
-          {page === "settings" && (data && draft ? <Settings draft={draft.value} categories={categories} busy={working} dirty={dirty} external={external} onChange={update => setDraft(current => current ? { ...current, value: update(current.value) } : current)} onSave={() => void saveDraft()} onDiscard={discardDraft} onAcceptExternal={() => setDraft(current => current && data ? { ...current, base: data.preferences } : current)} /> : <div className="empty"><Settings2 size={24} aria-hidden="true" /><h2>Configurações disponíveis no desktop</h2><p>Abra o aplicativo Tauri para selecionar suas pastas.</p></div>)}
+          {page === "settings" && (data && draft ? <Settings draft={draft.value} categories={categories} busy={working} dirty={dirty} external={external} onChange={update => setDraft(current => current ? { ...current, value: update(current.value) } : current)} onDiscard={discardDraft} onAcceptExternal={() => setDraft(current => current && data ? { ...current, base: data.preferences } : current)} /> : <div className="empty"><Settings2 size={24} aria-hidden="true" /><h2>Configurações disponíveis no desktop</h2><p>Abra o aplicativo Tauri para selecionar suas pastas.</p></div>)}
         </PageTransition>}
+        {page === "settings" && data && draft && <SettingsActions busy={working} dirty={dirty} external={!!external} onSave={() => void saveDraft()} onDiscard={discardDraft} />}
       </main>
     </div>
     <OperationDialogs preview={preview} undoTarget={undoTarget} categories={categories} action={action} busy={busy} working={working} issue={issue} reviewed={reviewed} operation={resultOperation}

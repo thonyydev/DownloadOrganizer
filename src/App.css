@@ -10,6 +10,7 @@
   --ring: #b2a3f5; --destructive: #eaa0a0; --success-foreground: #96c5ab; --warning-foreground: #e0b889; --error-foreground: #efb5a0;
   --surface-selected: #272330; --success-surface: #25332c; --warning-surface: #352d23; --error-surface: #382825;
   --scrim: #0009; --shadow-dialog: 0 16px 64px #0005;
+  --dock-opacity: 88%; --shadow-dock: 0 4px 20px #0004;
   --font-ui: "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, sans-serif;
   --font-code: "Cascadia Code", Consolas, monospace;
   --text-meta: 12px; --text-control: 13px; --text-body: 14px; --text-title: 22px; --text-folder: 26px;
@@ -26,6 +27,7 @@
   --ring: #6553ad; --destructive: #a83838; --success-foreground: #2f6f4f; --warning-foreground: #805119; --error-foreground: #914629;
   --surface-selected: #eeebf5; --success-surface: #edf5ef; --warning-surface: #f7f0e5; --error-surface: #fbefe9;
   --scrim: #17171c66; --shadow-dialog: 0 16px 64px #17171c26;
+  --dock-opacity: 94%; --shadow-dock: 0 4px 20px #17171c14;
 }
 @theme inline {
   --color-background: var(--background); --color-foreground: var(--foreground);
@@ -210,7 +212,7 @@ tbody tr:has(.file-disclosure[aria-expanded=true]) { background: var(--surface-s
 .destination > svg { margin-top: 2px; }
 .table-footer { display: flex; align-items: center; gap: var(--space-2); padding-top: var(--space-3); color: var(--muted); font-size: var(--text-meta); }
 
-.settings-stack { display: flex; flex-direction: column; }
+.settings-stack { display: flex; flex-direction: column; padding-bottom: var(--settings-actions-space,0px); }
 .draft-status { color: var(--muted); font-size: var(--text-control); padding-bottom: var(--space-4); }
 .settings-section { display: grid; grid-template-columns: 180px minmax(0,1fr); gap: var(--space-6); padding: var(--space-6) 0; border-top: 1px solid var(--border); }
 .settings-section-heading h2 { margin-bottom: var(--space-1); }
@@ -235,9 +237,16 @@ tbody tr:has(.file-disclosure[aria-expanded=true]) { background: var(--surface-s
 .rule p { color: var(--muted); font-size: var(--text-meta); margin-top: var(--space-1); overflow-wrap: anywhere; }
 .theme-picker { display: flex; align-items: center; gap: var(--space-1); width: fit-content; padding: var(--space-1); background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); }
 .theme-picker [aria-pressed=true] { box-shadow: inset 0 0 0 1px var(--primary); }
-.settings-actions { display: flex; justify-content: space-between; align-items: center; gap: var(--space-4); padding: var(--space-4) 0; border-top: 1px solid var(--border); flex-wrap: wrap; }
-.settings-actions > span { color: var(--muted); font-size: var(--text-meta); }
-.settings-actions .notice-actions { margin-top: 0; }
+.settings-draft-note { color: var(--muted); font-size: var(--text-control); }
+.settings-actions-rail { position: fixed; bottom: var(--space-4); display: flex; justify-content: center; z-index: 20; pointer-events: none; }
+.settings-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); max-width: 100%; padding: var(--space-3); background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-dialog); box-shadow: var(--shadow-dock); pointer-events: auto; }
+.settings-actions [data-slot=button] { flex: 1 1 auto; min-width: 0; height: auto; min-height: 36px; white-space: normal; overflow-wrap: anywhere; }
+.settings-save-label { display: grid; }
+.settings-save-label > span { grid-area: 1 / 1; }
+.settings-save-size { visibility: hidden; }
+@supports ((backdrop-filter: blur(8px)) or (-webkit-backdrop-filter: blur(8px))) {
+  .settings-actions { background: color-mix(in srgb,var(--card) var(--dock-opacity),transparent); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+}
 .external-preferences { display: grid; grid-template-columns: 140px minmax(0,1fr); gap: var(--space-2) var(--space-3); font-size: var(--text-meta); margin-top: var(--space-3); color: var(--foreground); }
 .external-preferences dt { font-weight: 500; }
 .external-preferences dd { overflow-wrap: anywhere; }
