@@ -8,9 +8,16 @@ import { useContentMotion } from "@/components/motion/transitions"
 import { useMotionAllowed } from "@/components/motion/feedback"
 
 function DialogPanel({ ref: forwardedRef, ...props }: React.ComponentProps<"div"> & { "data-state"?: string }) {
+  const closed = props["data-state"] === "closed"
+  const [content, setContent] = React.useState(props.children)
+  // Radix retains the panel until animationend; retain its last open content too.
+  if (!closed && content !== props.children) setContent(props.children)
   const ref = useContentMotion(props["data-state"] ?? "open", useMotionAllowed() && props["data-state"] !== "closed", true, "dialog")
   React.useImperativeHandle(forwardedRef, () => ref.current!, [ref])
-  return <div ref={ref} {...props} />
+  return <div ref={ref} {...props} inert={closed || props.inert} aria-hidden={closed || props["aria-hidden"]} onClickCapture={event => {
+    if (closed) { event.preventDefault(); event.stopPropagation() }
+    else props.onClickCapture?.(event)
+  }}>{closed ? content : props.children}</div>
 }
 
 function Dialog({
