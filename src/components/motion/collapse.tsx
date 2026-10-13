@@ -3,7 +3,7 @@ import { AnimatePresence, animate, usePresence } from "motion/react";
 import { useMotionAllowed } from "./feedback";
 import { timing } from "./transitions";
 
-function CollapseBody({ id, className, children }: { id: string; className?: string; children: ReactNode }) {
+function CollapseBody({ id, className, children, animateInitial }: { id: string; className?: string; children: ReactNode; animateInitial: boolean }) {
   const [present, remove] = usePresence();
   const allowed = useMotionAllowed();
   const ref = useRef<HTMLDivElement>(null);
@@ -17,7 +17,7 @@ function CollapseBody({ id, className, children }: { id: string; className?: str
     if (!present && element.contains(document.activeElement)) {
       [...document.querySelectorAll<HTMLElement>("[aria-controls]")].find(trigger => trigger.getAttribute("aria-controls") === id)?.focus();
     }
-    if (!allowed || (!changed && present)) {
+    if (!allowed || (!changed && present) || (first.current && present && !animateInitial)) {
       element.style.height = present ? "auto" : "0px"; element.style.opacity = present ? "1" : "0";
       first.current = false;
       return;
@@ -36,13 +36,13 @@ function CollapseBody({ id, className, children }: { id: string; className?: str
       },
     });
     return () => { stopped = true; animation.stop(); previous.current = null; };
-  }, [present, allowed, remove, id]);
+  }, [present, allowed, remove, id, animateInitial]);
   // Presence registers exiting keys in its parent layout effect. Immediate removal
   // must happen afterwards; the layout effect above already hides closed content.
   useEffect(() => { if (!present && !allowed) remove?.(); }, [present, allowed, remove]);
   return <div id={id} ref={ref} className="motion-collapse" aria-hidden={!present || undefined} inert={!present}><div className={className}>{children}</div></div>;
 }
 
-export function Collapse({ open, id, className, children }: { open: boolean; id: string; className?: string; children: ReactNode }) {
-  return <AnimatePresence initial={false}>{open && <CollapseBody key={id} id={id} className={className}>{children}</CollapseBody>}</AnimatePresence>;
+export function Collapse({ open, id, className, children, animateInitial = true }: { open: boolean; id: string; className?: string; children: ReactNode; animateInitial?: boolean }) {
+  return <AnimatePresence initial={false}>{open && <CollapseBody key={id} id={id} className={className} animateInitial={animateInitial}>{children}</CollapseBody>}</AnimatePresence>;
 }
