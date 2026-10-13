@@ -109,3 +109,26 @@ it("preserva estados vazios e só monta o resumo quando expandido", () => {
   view.rerender(<HistoryView {...props} history={[operationOf(0)]} />); const dialog = explore();
   expect(within(dialog).getByText("Nenhuma movimentação registrada")).toBeTruthy();
 });
+
+it("mantém 5.000 arquivos virtualizados durante a saída e reabre com movimentos novos", async () => {
+  const computed = window.getComputedStyle.bind(window);
+  vi.stubGlobal("CSS", { escape: (value: string) => value });
+  vi.spyOn(window, "getComputedStyle").mockImplementation(element => new Proxy(computed(element), { get(target, key) {
+    if (key === "animationName") return element.getAttribute("data-state") === "closed" ? "dialog-close" : "none";
+    const value = Reflect.get(target, key, target); return typeof value === "function" ? value.bind(target) : value;
+  } }));
+  const view = render(<HistoryView {...props} history={[operationOf(5000)]} />);
+  const trigger = screen.getByRole("button", { name: "Explorar arquivos" }); act(() => trigger.focus());
+  const dialog = explore(); const list = dialog.querySelector(".movement-scroll"); const rows = list!.innerHTML;
+  fireEvent.click(within(dialog).getByRole("button", { name: /^Fechar$/ }));
+  expect(dialog.getAttribute("data-state")).toBe("closed"); expect(dialog.hasAttribute("inert")).toBe(true);
+  expect(dialog.querySelector(".movement-scroll")).toBe(list); expect(list!.innerHTML).toBe(rows);
+  expect(dialog.querySelectorAll("[data-movement-id]").length).toBeLessThan(20);
+  for (const element of document.querySelectorAll('[data-state="closed"]')) {
+    const event = new Event("animationend", { bubbles: true }); Object.defineProperty(event, "animationName", { value: "dialog-close" }); fireEvent(element, event);
+  }
+  expect(document.querySelector('[data-slot="dialog-content"]')).toBeNull(); await waitFor(() => expect(document.activeElement).toBe(trigger));
+  const next = operationOf(1); next.movements[0].source = "/isolated/latest.txt";
+  view.rerender(<HistoryView {...props} history={[next]} />);
+  const reopened = explore(); expect(within(reopened).getByText("latest.txt")).toBeTruthy(); expect(within(reopened).queryByText("File-0.txt")).toBeNull();
+});
