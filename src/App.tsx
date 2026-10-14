@@ -20,6 +20,8 @@ import { SuccessNotice } from "@/components/success-notice";
 import { errorMessage, isRunning, previewIssue, reconcileDraft, samePreferences, type Action, type PreferencesDraft } from "@/lib/experience";
 import { api, native, type FileEntry, type Operation, type Preview, type Progress, type Snapshot } from "@/lib/api";
 import { createProgressPresenter } from "@/lib/progress";
+import brandPrimary from "@/assets/branding/symbol-primary.svg";
+import brandWhite from "@/assets/branding/symbol-white.svg";
 import "./App.css";
 
 const pages = [{ id: "dashboard", name: "Visão geral", icon: LayoutDashboard }, { id: "files", name: "Arquivos", icon: FolderOpen }, { id: "history", name: "Histórico", icon: History }, { id: "settings", name: "Configurações", icon: Settings2 }] as const;
@@ -215,7 +217,7 @@ export default function App() {
 
   return <Tooltip.Provider delayDuration={500} skipDelayDuration={300}><div className="app-shell" ref={themeRef}>
     <aside className="sidebar">
-      <div className="brand"><span className="brand-icon"><FolderDown size={20} aria-hidden="true" /></span><span>Download<span className="brand-sub">Organizer</span></span></div>
+      <div className="brand"><span className="brand-icon"><img src={data?.preferences.theme === "light" ? brandPrimary : brandWhite} width={32} height={32} alt="" aria-hidden="true" /></span><span>Download<span className="brand-sub">Organizer</span></span></div>
       <nav aria-label="Navegação principal"><NavigationIndicator page={page} />{pages.map(item => <button key={item.id} className={"nav-item " + (page === item.id ? "active" : "")} aria-label={item.name} aria-describedby={item.id === "settings" && dirty ? "pending-preferences" : item.id === "files" && data ? "nav-file-count" : undefined} aria-current={page === item.id ? "page" : undefined} onClick={() => setPage(item.id)}><item.icon size={16} aria-hidden="true" /><span>{item.name}</span>{item.id === "files" && data && <span className="nav-count" id="nav-file-count">{files.length}<span className="sr-only"> arquivos na pasta</span></span>}{item.id === "settings" && dirty && <><span className="draft-dot" aria-hidden="true" /><span id="pending-preferences" className="sr-only">Alterações não salvas</span></>}</button>)}</nav>
       <div className="sidebar-bottom"><span className={"monitor-status " + (data?.monitoring ? "online" : "")}><span className="small-dot" />{working ? "Operação em andamento" : data?.monitoring ? "Monitor ativo" : "Monitor pausado"}</span><div className="app-version"><ShieldCheck size={14} aria-hidden="true" /><span>Armazenamento local</span><span>v0.1.0</span></div></div>
     </aside>
