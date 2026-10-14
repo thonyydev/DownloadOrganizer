@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { Operation, Preferences, Preview, Progress, Snapshot } from "./lib/api";
 import App from "./App";
+import brandPrimary from "@/assets/branding/symbol-primary.svg";
+import brandWhite from "@/assets/branding/symbol-white.svg";
 
 const mocks = vi.hoisted(() => ({
   snapshot: vi.fn(), preview: vi.fn(), organize: vi.fn(), undo: vi.fn(), save: vi.fn(), retryMonitoring: vi.fn(),
@@ -130,6 +132,16 @@ describe("feedback de operações breves", () => {
 });
 
 describe("composição desktop", () => {
+  it.each(["dark", "light"] as const)("usa o símbolo oficial com contraste no tema %s, preservando os demais ícones", async theme => {
+    snapshot.preferences.theme = theme;
+    await start();
+    const brand = document.querySelector<HTMLImageElement>(".brand-icon img")!;
+    expect(brand.getAttribute("src")).toBe(theme === "light" ? brandPrimary : brandWhite);
+    expect(brand.getAttribute("width")).toBe("32"); expect(brand.getAttribute("height")).toBe("32");
+    expect(brand.getAttribute("alt")).toBe(""); expect(brand.getAttribute("aria-hidden")).toBe("true");
+    expect(document.querySelector(".brand-icon svg")).toBeNull();
+    expect(screen.getByRole("button", { name: "Organizar arquivos" }).querySelector("svg.lucide-folder-down")).toBeTruthy();
+  });
   it("busca e filtra 10.000 registros sem renormalizar nomes em alterações não relacionadas", async () => {
     snapshot.categories.push({ id: "images", name: "Imagens", extensions: ["png"] });
     snapshot.files = Array.from({ length: 10000 }, (_, index) => ({ ...snapshot.files[0], name: "Arquivo-" + String(index).padStart(5, "0") + ".txt", path: "/isolated/" + index + ".txt", category: index % 2 ? "images" : "documents" }));

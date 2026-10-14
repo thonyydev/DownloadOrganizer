@@ -61,7 +61,8 @@ h1:focus { outline: none; }
 .sidebar { width: var(--sidebar-width); position: fixed; inset: 0 auto 0 0; display: flex; flex-direction: column; padding: var(--space-6) var(--space-3) var(--space-4); background: var(--sidebar); border-right: 1px solid var(--border); overflow-y: auto; z-index: 10; }
 .brand { display: flex; align-items: center; gap: var(--space-3); padding: 0 var(--space-2); font-size: var(--text-body); font-weight: 600; line-height: 1.3; }
 .brand-sub { display: block; color: var(--muted); font-size: var(--text-meta); font-weight: 400; margin-top: 2px; }
-.brand-icon { display: grid; place-items: center; width: 32px; height: 32px; background: var(--surface-selected); color: var(--primary); border-radius: var(--radius-panel); }
+.brand-icon { display: grid; place-items: center; width: 32px; height: 32px; flex-shrink: 0; }
+.brand-icon img { display: block; }
 .sidebar nav { position: relative; margin-top: var(--space-8); display: grid; gap: var(--space-1); }
 .nav-item { position: relative; display: flex; align-items: center; gap: var(--space-3); width: 100%; min-height: 36px; padding: var(--space-2); border-radius: var(--radius); background: transparent; color: var(--muted); font-size: var(--text-control); text-align: left; }
 .nav-item:hover { background: var(--accent); color: var(--foreground); }
