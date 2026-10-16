@@ -4,12 +4,26 @@ import type { Operation, Preferences, Preview, Progress, Snapshot } from "./lib/
 import App from "./App";
 import brandPrimary from "@/assets/branding/symbol-primary.svg";
 import brandWhite from "@/assets/branding/symbol-white.svg";
+import { sounds } from "@/lib/sounds";
+import { audioStorageKey } from "@/components/audio/audio-provider";
+import type { ReactNode } from "react";
 
 const mocks = vi.hoisted(() => ({
   snapshot: vi.fn(), preview: vi.fn(), organize: vi.fn(), undo: vi.fn(), save: vi.fn(), retryMonitoring: vi.fn(),
   close: vi.fn(), choose: vi.fn(),
   events: new Map<string, (event: { payload: unknown }) => void>(),
   closeHandler: null as null | ((event: { preventDefault: () => void }) => void),
+  sound: vi.fn(), soundStop: vi.fn(),
+  audioContext: { state: "running", resume: vi.fn().mockResolvedValue(undefined), close: vi.fn().mockResolvedValue(undefined) },
+  soundFunctions: new Map<unknown, () => { stop: () => void }>(),
+}));
+vi.mock("@web-kits/audio/react", () => ({
+  SoundProvider: ({ children }: { children: ReactNode }) => children,
+  useAnalyser: () => ({ node: { context: mocks.audioContext } }),
+  useSound: (definition: unknown) => {
+    if (!mocks.soundFunctions.has(definition)) mocks.soundFunctions.set(definition, () => { mocks.sound(definition); return { stop: mocks.soundStop }; });
+    return mocks.soundFunctions.get(definition);
+  },
 }));
 vi.mock("./lib/api", async importOriginal => ({
   ...await importOriginal<typeof import("./lib/api")>(), native: true,
@@ -51,10 +65,12 @@ async function openPreview() {
 }
 
 beforeEach(() => {
+  localStorage.clear(); vi.stubGlobal("AudioContext", class {});
   vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
   vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (this: HTMLElement) { return this.classList.contains("table-scroll") ? 400 : this.tagName === "TR" ? 80 : 0; });
   vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(800);
   vi.clearAllMocks(); mocks.events.clear(); mocks.closeHandler = null;
+  mocks.audioContext.state = "running";
   snapshot = {
     preferences: structuredClone(initial), categories: [{ id: "documents", name: "Documentos", extensions: ["txt"] }],
     files: [{ name: "a.txt", path: "/isolated/source/a.txt", destination: "/isolated/destination/Documentos/a.txt", extension: "txt", category: "documents", modified: 1_700_000_000_000, size: 1, status: "ready", reason: null }],
@@ -70,6 +86,230 @@ beforeEach(() => {
   mocks.choose.mockResolvedValue(null);
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers(); });
+
+describe("feedback sonoro de ações reais", () => {
+  async function confirmOrganization() {
+    const dialog = await openPreview();
+    fireEvent.click(within(dialog).getByRole("checkbox"));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Confirmar organização" }));
+    return dialog;
+  }
+  it("5.000 eventos não tocam áudio; a confirmação real toca uma vez e refresh não repete", async () => {
+    const file = snapshot.files[0];
+    snapshot.files = Array.from({ length: 5000 }, (_, i) => ({ ...file, name: `file-${i}.txt`, path: `/isolated/source/file-${i}.txt`, destination: `/isolated/destination/file-${i}.txt` }));
+    const pending = deferred<number>(); mocks.organize.mockReturnValueOnce(pending.promise);
+    await start(); expect(mocks.sound).not.toHaveBeenCalled();
+    const dialog = await confirmOrganization();
+    act(() => {
+      for (let i = 0; i < 5000; i++) mocks.events.get("organizer-progress")?.({ payload: { kind: "manual", phase: "organizing", completed: i + 1, total: 5000, name: `file-${i}.txt`, operation_id: 42 } });
+      mocks.events.get("organizer-progress")?.({ payload: { kind: "manual", phase: "completed", completed: 5000, total: 5000, name: "", operation_id: 42 } });
+    });
+    expect(mocks.sound).not.toHaveBeenCalled();
+    snapshot.history = [{ ...operation, movements: snapshot.files.map((entry, i) => ({ id: i, source: entry.path, destination: entry.destination, status: "moved", error: null, size: 1 })) }];
+    await act(async () => pending.resolve(42));
+    expect(mocks.sound).toHaveBeenCalledExactlyOnceWith(sounds.organize);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Ver resultado no histórico" }));
+    fireEvent.click(screen.getByRole("button", { name: "Atualizar arquivos" }));
+    await waitFor(() => expect((screen.getByRole("button", { name: "Atualizar arquivos" }) as HTMLButtonElement).disabled).toBe(false));
+    progress({ kind: "manual", phase: "completed", completed: 5000, total: 5000, name: "", operation_id: 42 });
+    expect(mocks.sound).toHaveBeenCalledOnce();
+  });
+  it.each(["failed", "uncertain", "pending", "undo_pending", "moved-with-error"])("organização com %s produz somente aviso", async status => {
+    mocks.organize.mockImplementationOnce(async () => {
+      snapshot.history = [structuredClone(operation)];
+      snapshot.history[0].movements[0].status = status === "moved-with-error" ? "moved" : status;
+      snapshot.history[0].movements[0].error = status === "moved-with-error" ? "Verificar arquivo" : null;
+      return 42;
+    });
+    await start(); await confirmOrganization();
+    await waitFor(() => expect(mocks.sound).toHaveBeenCalledExactlyOnceWith(sounds.warning));
+  });
+  it.each([true, false])("restauração completa=%s utiliza apenas o feedback adequado", async complete => {
+    snapshot.history = [structuredClone(operation)];
+    mocks.undo.mockImplementationOnce(async () => {
+      snapshot.history[0].movements[0].status = complete ? "undone" : "moved";
+      snapshot.history[0].movements[0].error = complete ? null : "Origem ocupada";
+    });
+    await start(); navigate("Histórico");
+    expect(mocks.sound).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Desfazer" }));
+    const dialog = await screen.findByRole("dialog", { name: "Restaurar os arquivos à origem?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Confirmar restauração" }));
+    await waitFor(() => expect(mocks.sound).toHaveBeenCalledExactlyOnceWith(complete ? sounds.restore : sounds.warning));
+  });
+  it.each([true, false])("salvar preferências combinadas com sucesso=%s preserva áudio pendente até confirmar", async success => {
+    await start(); navigate("Configurações");
+    fireEvent.change(screen.getByRole("slider", { name: "Volume" }), { target: { value: "30" } });
+    expect((screen.getByRole("button", { name: "Salvar preferências" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(localStorage.getItem(audioStorageKey)).toBeNull();
+    fireEvent.click(screen.getByRole("switch", { name: "Organizar novos arquivos" }));
+    if (!success) mocks.save.mockRejectedValueOnce("Não foi possível salvar");
+    fireEvent.click(screen.getByRole("button", { name: "Salvar preferências" }));
+    await waitFor(() => expect(mocks.sound).toHaveBeenCalledExactlyOnceWith(success ? sounds.saved : sounds.warning));
+    if (success) expect(localStorage.getItem(audioStorageKey)).toContain('"volume":0.3');
+    else {
+      expect(localStorage.getItem(audioStorageKey)).toBeNull();
+      expect((screen.getByRole("slider", { name: "Volume" }) as HTMLInputElement).value).toBe("30");
+      expect((screen.getByRole("button", { name: "Salvar preferências" }) as HTMLButtonElement).disabled).toBe(false);
+    }
+  });
+  it("não reproduz eventos históricos ou automáticos, refresh, prévia e edição/descarte", async () => {
+    snapshot.history = [structuredClone(operation)]; await start();
+    for (const phase of ["preparing", "organizing", "completed"] as const) progress({ kind: "automatic", phase, total: 1, completed: phase === "completed" ? 1 : 0, name: "", operation_id: phase === "preparing" ? null : 42 });
+    await waitFor(() => expect((screen.getByRole("button", { name: "Atualizar arquivos" }) as HTMLButtonElement).disabled).toBe(false));
+    navigate("Histórico"); navigate("Configurações");
+    fireEvent.click(screen.getByRole("switch", { name: "Organizar novos arquivos" }));
+    fireEvent.click(screen.getByRole("button", { name: "Descartar alterações" }));
+    navigate("Visão geral"); await openPreview();
+    expect(mocks.sound).not.toHaveBeenCalled();
+  });
+  it("erro do comando toca aviso; falha do áudio não impede organização", async () => {
+    mocks.sound.mockImplementationOnce(() => { throw new Error("Áudio indisponível"); });
+    mocks.organize.mockRejectedValueOnce("Arquivo ocupado");
+    await start(); const dialog = await confirmOrganization();
+    expect(await within(dialog).findByText("Arquivo ocupado")).toBeTruthy();
+    expect(mocks.sound).toHaveBeenCalledExactlyOnceWith(sounds.warning);
+  });
+  it("resultado ausente não inventa sucesso", async () => {
+    mocks.organize.mockResolvedValueOnce(42); await start(); await confirmOrganization();
+    await screen.findByText("O resultado individual ainda não foi carregado. Atualize o histórico para conferi-lo.");
+    expect(mocks.sound).not.toHaveBeenCalled();
+  });
+  it("falha sonora não transforma uma organização confirmada em falha", async () => {
+    mocks.organize.mockImplementationOnce(async () => { snapshot.history = [structuredClone(operation)]; return 42; });
+    mocks.sound.mockImplementationOnce(() => { throw new Error("Dispositivo ausente"); });
+    await start(); const dialog = await confirmOrganization();
+    await within(dialog).findByText(/1 organizado\(s\) · 0 ocorrência/);
+    expect(mocks.sound).toHaveBeenCalledExactlyOnceWith(sounds.organize);
+    expect(screen.queryByText("Dispositivo ausente")).toBeNull();
+  });
+  it("salvamento confirmado não toca aviso extra se a atualização posterior falhar", async () => {
+    await start(); navigate("Configurações");
+    fireEvent.click(screen.getByRole("switch", { name: "Organizar novos arquivos" }));
+    mocks.snapshot.mockRejectedValueOnce("Falha ao consultar estado");
+    fireEvent.click(screen.getByRole("button", { name: "Salvar preferências" }));
+    await screen.findByText("Falha ao consultar estado");
+    expect(mocks.sound).toHaveBeenCalledExactlyOnceWith(sounds.saved);
+  });
+  it("operações manuais distintas podem tocar novamente sem cooldown global", async () => {
+    await start();
+    for (const id of [42, 43]) {
+      mocks.organize.mockImplementationOnce(async () => { snapshot.history = [{ ...structuredClone(operation), id }]; return id; });
+      const dialog = await confirmOrganization();
+      await waitFor(() => expect(mocks.sound).toHaveBeenCalledTimes(id === 42 ? 1 : 2));
+      fireEvent.click(within(dialog).getByRole("button", { name: "Ver resultado no histórico" }));
+    }
+    expect(mocks.sound.mock.calls.every(([sound]) => sound === sounds.organize)).toBe(true);
+  });
+  it("mute não interrompe o salvamento principal", async () => {
+    localStorage.setItem(audioStorageKey, JSON.stringify({ enabled: false, volume: 0.25 }));
+    await start(); navigate("Configurações");
+    fireEvent.click(screen.getByRole("switch", { name: "Organizar novos arquivos" }));
+    fireEvent.click(screen.getByRole("button", { name: "Salvar preferências" }));
+    await screen.findByText("Preferências salvas. Verifique separadamente o estado do monitoramento.");
+    expect(mocks.save).toHaveBeenCalledOnce(); expect(mocks.sound).not.toHaveBeenCalled();
+  });
+});
+
+describe("rascunho de áudio no fluxo global", () => {
+  const saveButton = () => screen.getByRole("button", { name: "Salvar preferências" }) as HTMLButtonElement;
+  const discardButton = () => screen.getByRole("button", { name: "Descartar alterações" }) as HTMLButtonElement;
+  function volume(value: number) { fireEvent.change(screen.getByRole("slider", { name: "Volume" }), { target: { value: String(value) } }); }
+  it.each(["volume", "switch"])("apenas %s habilita ações globais e salva sem comandos Rust", async control => {
+    await start(); navigate("Configurações");
+    if (control === "volume") volume(60); else fireEvent.click(screen.getByRole("switch", { name: "Efeitos sonoros" }));
+    expect(saveButton().disabled).toBe(false); expect(discardButton().disabled).toBe(false);
+    expect(screen.getByRole("button", { name: "Configurações" }).getAttribute("aria-describedby")).toBe("pending-preferences");
+    expect(localStorage.getItem(audioStorageKey)).toBeNull();
+    const snapshots = mocks.snapshot.mock.calls.length;
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(saveButton().disabled).toBe(true));
+    expect(discardButton().disabled).toBe(true); expect(mocks.save).not.toHaveBeenCalled(); expect(mocks.snapshot).toHaveBeenCalledTimes(snapshots);
+    expect(JSON.parse(localStorage.getItem(audioStorageKey)!)).toEqual({ enabled: control !== "switch", volume: control === "volume" ? 0.6 : 0.25 });
+    expect(screen.getByText("Todas as alterações estão salvas.")).toBeTruthy();
+    if (control === "volume") expect(mocks.sound).toHaveBeenCalledExactlyOnceWith(sounds.saved);
+    else expect(mocks.sound).not.toHaveBeenCalled();
+  });
+  it("restaurar manualmente o valor original remove dirty sem persistência", async () => {
+    await start(); navigate("Configurações");
+    volume(80); volume(25); expect(saveButton().disabled).toBe(true);
+    fireEvent.click(screen.getByRole("switch", { name: "Efeitos sonoros" })); expect(saveButton().disabled).toBe(false);
+    fireEvent.click(screen.getByRole("switch", { name: "Efeitos sonoros" })); expect(saveButton().disabled).toBe(true);
+    expect(localStorage.getItem(audioStorageKey)).toBeNull(); expect(mocks.sound).not.toHaveBeenCalled();
+  });
+  it("descartar restaura todos os rascunhos, inclusive áudio salvo anteriormente", async () => {
+    const stored = JSON.stringify({ enabled: false, volume: 0.4 }); localStorage.setItem(audioStorageKey, stored);
+    await start(); navigate("Configurações");
+    volume(70); fireEvent.click(screen.getByRole("switch", { name: "Efeitos sonoros" }));
+    fireEvent.click(screen.getByRole("button", { name: "Claro" })); fireEvent.click(discardButton());
+    expect((screen.getByRole("slider", { name: "Volume" }) as HTMLInputElement).value).toBe("40");
+    expect(screen.getByRole("switch", { name: "Efeitos sonoros" }).getAttribute("aria-checked")).toBe("false");
+    expect(screen.getByRole("button", { name: "Escuro" }).getAttribute("aria-pressed")).toBe("true");
+    expect(saveButton().disabled).toBe(true); expect(localStorage.getItem(audioStorageKey)).toBe(stored); expect(mocks.sound).not.toHaveBeenCalled();
+  });
+  it("navegação e refresh preservam áudio pendente e a proteção de beforeunload", async () => {
+    await start(); navigate("Configurações"); volume(75); navigate("Arquivos");
+    expect(screen.getByText("Há configurações não salvas")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Atualizar arquivos" }));
+    await waitFor(() => expect((screen.getByRole("button", { name: "Atualizar arquivos" }) as HTMLButtonElement).disabled).toBe(false));
+    navigate("Histórico"); navigate("Configurações");
+    expect((screen.getByRole("slider", { name: "Volume" }) as HTMLInputElement).value).toBe("75");
+    const event = new Event("beforeunload", { cancelable: true }); window.dispatchEvent(event); expect(event.defaultPrevented).toBe(true);
+    expect(saveButton().disabled).toBe(false); expect(localStorage.getItem(audioStorageKey)).toBeNull(); expect(mocks.sound).not.toHaveBeenCalled();
+  });
+  it.each(["Salvar e sair", "Descartar e sair"])("%s reconhece alterações apenas de áudio", async name => {
+    await start(); navigate("Configurações"); volume(65);
+    const preventDefault = vi.fn(); act(() => mocks.closeHandler?.({ preventDefault }));
+    expect(preventDefault).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name })); await waitFor(() => expect(mocks.close).toHaveBeenCalledOnce());
+    expect(mocks.save).not.toHaveBeenCalled();
+    if (name === "Salvar e sair") {
+      expect(JSON.parse(localStorage.getItem(audioStorageKey)!)).toEqual({ enabled: true, volume: 0.65 });
+      expect(mocks.sound).toHaveBeenCalledExactlyOnceWith(sounds.saved);
+    } else { expect(localStorage.getItem(audioStorageKey)).toBeNull(); expect(mocks.sound).not.toHaveBeenCalled(); }
+  });
+  it("falha local após salvar principais mantém somente áudio pendente, permitindo repetir sem salvar Rust", async () => {
+    await start(); navigate("Configurações"); volume(70); fireEvent.click(screen.getByRole("button", { name: "Claro" }));
+    const original = Storage.prototype.setItem;
+    const write = vi.spyOn(Storage.prototype, "setItem").mockImplementationOnce(() => { throw new Error("Quota"); });
+    fireEvent.click(saveButton()); await screen.findByText(/Não foi possível salvar o áudio neste dispositivo/);
+    expect(snapshot.preferences.theme).toBe("light"); expect(mocks.save).toHaveBeenCalledOnce();
+    expect(localStorage.getItem(audioStorageKey)).toBeNull(); expect((screen.getByRole("slider", { name: "Volume" }) as HTMLInputElement).value).toBe("70");
+    expect(saveButton().disabled).toBe(false); expect(screen.queryByText("Todas as alterações estão salvas.")).toBeNull();
+    expect(mocks.sound).toHaveBeenCalledExactlyOnceWith(sounds.warning);
+    write.mockImplementation(original); fireEvent.click(saveButton()); await waitFor(() => expect(saveButton().disabled).toBe(true));
+    expect(mocks.save).toHaveBeenCalledOnce(); expect(JSON.parse(localStorage.getItem(audioStorageKey)!).volume).toBe(0.7);
+    expect(mocks.sound.mock.calls.map(([sound]) => sound)).toEqual([sounds.warning, sounds.saved]);
+  });
+  it("falha ao salvar áudio impede Salvar e sair e preserva o rascunho", async () => {
+    await start(); navigate("Configurações"); volume(50);
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("denied"); });
+    act(() => mocks.closeHandler?.({ preventDefault: vi.fn() }));
+    fireEvent.click(screen.getByRole("button", { name: "Salvar e sair" }));
+    await screen.findAllByText(/Não foi possível salvar o áudio neste dispositivo/);
+    expect(mocks.close).not.toHaveBeenCalled(); expect(localStorage.getItem(audioStorageKey)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Continuar no aplicativo" }));
+    expect((screen.getByRole("slider", { name: "Volume" }) as HTMLInputElement).value).toBe("50");
+  });
+  it("ativar áudio salvo como desabilitado prepara a confirmação somente no gesto de salvar", async () => {
+    localStorage.setItem(audioStorageKey, JSON.stringify({ enabled: false, volume: 0.25 }));
+    await start(); navigate("Configurações"); fireEvent.click(screen.getByRole("switch", { name: "Efeitos sonoros" }));
+    expect(mocks.sound).not.toHaveBeenCalled(); fireEvent.click(saveButton());
+    await waitFor(() => expect(saveButton().disabled).toBe(true));
+    expect(mocks.sound).toHaveBeenCalledExactlyOnceWith(sounds.saved); expect(mocks.save).not.toHaveBeenCalled();
+  });
+  it("rascunho mudo não silencia operações normais nem persiste ao testar", async () => {
+    await start(); navigate("Configurações"); volume(80);
+    fireEvent.click(screen.getByRole("button", { name: "Testar som de organização" }));
+    expect(localStorage.getItem(audioStorageKey)).toBeNull(); mocks.sound.mockClear();
+    fireEvent.click(screen.getByRole("switch", { name: "Efeitos sonoros" })); navigate("Visão geral");
+    mocks.organize.mockImplementationOnce(async () => { snapshot.history = [structuredClone(operation)]; return 42; });
+    const dialog = await openPreview(); fireEvent.click(within(dialog).getByRole("checkbox"));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Confirmar organização" }));
+    await waitFor(() => expect(mocks.sound).toHaveBeenCalledExactlyOnceWith(sounds.organize));
+    expect(localStorage.getItem(audioStorageKey)).toBeNull();
+  });
+});
 
 describe("feedback de operações breves", () => {
   it.each(["preview", "refresh"] as const)("%s bloqueia duplicatas e respeita a apresentação específica em ações rápidas e lentas", async kind => {
