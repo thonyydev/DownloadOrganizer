@@ -20,6 +20,8 @@ import { SuccessNotice } from "@/components/success-notice";
 import { errorMessage, isRunning, previewIssue, reconcileDraft, samePreferences, type Action, type PreferencesDraft } from "@/lib/experience";
 import { api, native, type FileEntry, type Operation, type Preview, type Progress, type Snapshot } from "@/lib/api";
 import { createProgressPresenter } from "@/lib/progress";
+import { AudioProvider, useAudioFeedback } from "@/components/audio/audio-provider";
+import { operationSound } from "@/lib/sounds";
 import brandPrimary from "@/assets/branding/symbol-primary.svg";
 import brandWhite from "@/assets/branding/symbol-white.svg";
 import "./App.css";
@@ -27,6 +29,10 @@ import "./App.css";
 const pages = [{ id: "dashboard", name: "Visão geral", icon: LayoutDashboard }, { id: "files", name: "Arquivos", icon: FolderOpen }, { id: "history", name: "Histórico", icon: History }, { id: "settings", name: "Configurações", icon: Settings2 }] as const;
 const noFiles: FileEntry[] = [];
 export default function App() {
+  return <AudioProvider><OrganizerApp /></AudioProvider>;
+}
+function OrganizerApp() {
+  const audio = useAudioFeedback();
   const [page, setCurrentPage] = useState<(typeof pages)[number]["id"]>("dashboard");
   const [data, setData] = useState<Snapshot | null>(null);
   const [draft, setDraft] = useState<PreferencesDraft | null>(null);
@@ -62,7 +68,8 @@ export default function App() {
   const mainHeading = useRef<HTMLHeadingElement>(null);
   const setPage = usePagePosition(page, mainHeading, setCurrentPage);
   const themeRef = useContentMotion(data?.preferences.theme ?? "dark", useMotionAllowed(), false, "theme");
-  const dirty = !!draft && !samePreferences(draft.base, draft.value);
+  const mainDirty = !!draft && !samePreferences(draft.base, draft.value);
+  const dirty = mainDirty || audio.dirty;
   dirtyRef.current = dirty;
   const external = draft && data && !samePreferences(draft.base, data.preferences) ? data.preferences : null;
 
@@ -138,6 +145,11 @@ export default function App() {
   async function run(job: () => Promise<number | void>, kind: Action["kind"] = "refresh") {
     if (busyRef.current || autoBusyRef.current) return false;
     busyRef.current = true; actionKind.current = kind;
+    const audible = kind === "organize" || kind === "undo" || kind === "save";
+    const refreshAfter = kind !== "save" || mainDirty;
+    if (audible) audio.prepare();
+    if (kind === "save" && audio.dirty) audio.prepare(true);
+    const expectedCount = kind === "organize" ? preview?.files.reduce((count, file) => count + Number(file.status === "ready"), 0) : undefined;
     manualProgress.reset();
     const delayed = kind === "preview";
     const pendingAction: Action = { kind, phase: "preparing", showLoading: !delayed };
@@ -147,38 +159,53 @@ export default function App() {
       setAction(current => current === pendingAction ? { ...current, showLoading: true } : current);
     }, 200);
     let operationId: number | undefined;
+    let jobSucceeded = false;
     try {
       const result = await job();
+      jobSucceeded = true;
+      if (kind === "save") audio.play("saved");
       manualProgress.finish();
       operationId = typeof result === "number" ? result : undefined;
       const fileOperation = kind === "organize" || kind === "undo";
       if (fileOperation) setAction({ kind, phase: "completed", operationId });
-      if (kind !== "refresh") await refresh(true);
+      const next = kind !== "refresh" && refreshAfter ? await refresh(true) : undefined;
+      if (fileOperation) {
+        const sound = operationSound(kind, next?.history.find(op => op.id === operationId), expectedCount);
+        // One terminal decision per accepted command, never per event or render.
+        if (sound) audio.play(sound);
+      }
       if (!fileOperation) setAction({ kind, phase: "completed", operationId });
       if (kind === "save") setMessage("Preferências salvas. Verifique separadamente o estado do monitoramento.");
       return true;
     } catch (e) {
+      if (audible && !(kind === "save" && jobSucceeded)) audio.play("warning");
       clearTimeout(feedbackTimer.current);
       manualProgress.finish();
       const problem = errorMessage(e);
       setError(problem); setAction(current => ({ kind, phase: "error", error: problem, operationId: operationId ?? current?.operationId }));
       if (kind === "organize") { setPreviewError("Esta confirmação não pode ser reutilizada. Confira o histórico e atualize a prévia antes de tentar novamente."); setReviewed(false); }
       if (kind === "preview") setPreviewError("Não foi possível atualizar a prévia. Tente atualizar novamente antes de confirmar.");
-      await refresh();
+      if (refreshAfter) await refresh();
       return false;
     } finally { clearTimeout(feedbackTimer.current); feedbackTimer.current = undefined; busyRef.current = false; actionKind.current = null; setBusy(false); }
   }
 
   function discardDraft() {
+    audio.discard();
+    if (action?.kind === "save") { setError(""); setAction(null); }
     if (data) setDraft({ base: data.preferences, value: data.preferences });
   }
   async function saveDraft() {
     if (!draft || !dirty || external) return false;
     const captured = draft;
+    const capturedAudio = audio.draft;
     return run(async () => {
-      const saved = await api.save(captured.value, captured.base);
-      setDraft({ base: saved, value: saved });
-      setPreview(null); setReviewed(false);
+      if (mainDirty) {
+        const saved = await api.save(captured.value, captured.base);
+        setDraft({ base: saved, value: saved });
+        setPreview(null); setReviewed(false);
+      }
+      if (audio.dirty) audio.save(capturedAudio);
     }, "save");
   }
   async function updatePreview() {

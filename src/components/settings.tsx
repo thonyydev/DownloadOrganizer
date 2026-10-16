@@ -4,6 +4,7 @@ import { FolderOpen, Moon, Sun, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { type Category, type Preferences } from "@/lib/api";
+import { AudioSettings } from "@/components/audio/audio-settings";
 
 export function Settings({ draft, categories, busy, dirty, external, onChange: setDraft, onDiscard, onAcceptExternal }: {
   draft: Preferences; categories: Category[]; busy: boolean; dirty: boolean; external: Preferences | null;
@@ -39,6 +40,7 @@ export function Settings({ draft, categories, busy, dirty, external, onChange: s
       <div className="settings-section-heading"><h2 id="appearance-label">Aparência</h2><p>Tema aplicado ao salvar as preferências.</p></div>
       <div className="theme-picker" role="group" aria-labelledby="appearance-label"><Button aria-pressed={draft.theme === "dark"} variant={draft.theme === "dark" ? "secondary" : "ghost"} onClick={() => setDraft(p => ({ ...p, theme: "dark" }))} disabled={busy}><Moon aria-hidden="true" />Escuro</Button><Button aria-pressed={draft.theme === "light"} variant={draft.theme === "light" ? "secondary" : "ghost"} onClick={() => setDraft(p => ({ ...p, theme: "light" }))} disabled={busy}><Sun aria-hidden="true" />Claro</Button></div>
     </section>
-    <p className="settings-draft-note">Seu rascunho é mantido ao navegar.</p>
+    <AudioSettings busy={busy} />
+    <p className="settings-draft-note">Seu rascunho das preferências principais é mantido ao navegar.</p>
   </div>;
 }
