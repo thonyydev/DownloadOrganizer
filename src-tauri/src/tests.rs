@@ -12,6 +12,447 @@ use std::{
 };
 use tempfile::TempDir;
 
+mod monitor_activation {
+    use super::*;
+    use notify::event::{ModifyKind, RenameMode};
+    use std::{cell::Cell, collections::HashSet};
+
+    fn baseline(source: &Path) -> Result<HashSet<PathBuf>> {
+        fs::read_dir(source)
+            .and_then(|entries| {
+                entries
+                    .map(|entry| entry.map(|entry| entry.path()))
+                    .collect()
+            })
+            .map_err(|error| error.to_string())
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn native_windows_arrival_during_enumeration_is_processed() {
+        use notify::{RecursiveMode, Watcher};
+        let (_temp, mut runtime, mut prefs) = fixture();
+        prefs.automatic = true;
+        runtime.store.save(&prefs).unwrap();
+        let during = Path::new(&prefs.source).join("native-during.txt");
+        let (tx, rx) = mpsc::sync_channel(1024);
+        monitor::configure_with(
+            &mut runtime,
+            &tx,
+            |watcher, source| {
+                watcher
+                    .watch(source, RecursiveMode::NonRecursive)
+                    .map_err(|error| error.to_string())
+            },
+            |source| {
+                old_file(&during, b"native");
+                baseline(source)
+            },
+        )
+        .unwrap();
+        assert!(runtime.session.as_ref().unwrap().baseline.contains(&during));
+        let mut queue = queue::Queue::default();
+        let deadline = Instant::now() + Duration::from_secs(3);
+        loop {
+            let message = rx
+                .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+                .unwrap();
+            let arrived = message.1.as_ref().is_ok_and(|event| {
+                matches!(event.kind, EventKind::Create(_))
+                    && event
+                        .paths
+                        .iter()
+                        .any(|path| path.file_name() == during.file_name())
+            });
+            queue.event(&mut runtime, message);
+            if arrived {
+                break;
+            }
+        }
+        assert!(
+            queue
+                .process_due(&mut runtime, None, Instant::now() + Duration::from_secs(11))
+                .unwrap()
+        );
+        assert!(!during.exists());
+        assert_eq!(
+            fs::read(Path::new(&prefs.destination).join("Documentos/native-during.txt")).unwrap(),
+            b"native"
+        );
+        assert_eq!(runtime.store.history().unwrap()[0].movements.len(), 1);
+    }
+
+    #[test]
+    fn arrivals_during_enumeration_are_reconciled_without_moving_existing_files() {
+        let (_temp, mut runtime, mut prefs) = fixture();
+        let existing = Path::new(&prefs.source).join("existing.txt");
+        let during = Path::new(&prefs.source).join("during.txt");
+        let after = Path::new(&prefs.source).join("after.txt");
+        old_file(&existing, b"existing");
+        prefs.automatic = true;
+        runtime.store.save(&prefs).unwrap();
+        let generation = runtime.sequence + 1;
+        let (tx, rx) = mpsc::sync_channel(1024);
+        let registered = Cell::new(false);
+        monitor::configure_with(
+            &mut runtime,
+            &tx,
+            |_, _| {
+                registered.set(true);
+                Ok(())
+            },
+            |source| {
+                assert!(
+                    registered.get(),
+                    "watch registration must precede enumeration"
+                );
+                old_file(&during, b"during");
+                for _ in 0..2 {
+                    tx.try_send((
+                        generation,
+                        Ok(event(EventKind::Create(CreateKind::Any), &during)),
+                    ))
+                    .unwrap();
+                }
+                tx.try_send((
+                    generation,
+                    Ok(event(EventKind::Modify(ModifyKind::Any), &existing)),
+                ))
+                .unwrap();
+                baseline(source)
+            },
+        )
+        .unwrap();
+        assert!(runtime.session.as_ref().unwrap().baseline.contains(&during));
+        let mut queue = queue::Queue::default();
+        for message in rx.try_iter() {
+            queue.event(&mut runtime, message);
+        }
+        assert!(!runtime.session.as_ref().unwrap().baseline.contains(&during));
+        assert!(
+            runtime
+                .session
+                .as_ref()
+                .unwrap()
+                .baseline
+                .contains(&existing)
+        );
+        old_file(&after, b"after");
+        queue.event(
+            &mut runtime,
+            (
+                generation,
+                Ok(event(EventKind::Create(CreateKind::File), &after)),
+            ),
+        );
+        assert!(
+            !queue
+                .process_due(&mut runtime, None, Instant::now())
+                .unwrap()
+        );
+        assert!(
+            queue
+                .process_due(&mut runtime, None, Instant::now() + Duration::from_secs(11))
+                .unwrap()
+        );
+        assert_eq!(fs::read(&existing).unwrap(), b"existing");
+        assert_eq!(
+            fs::read(Path::new(&prefs.destination).join("Documentos/during.txt")).unwrap(),
+            b"during"
+        );
+        assert_eq!(
+            fs::read(Path::new(&prefs.destination).join("Documentos/after.txt")).unwrap(),
+            b"after"
+        );
+        let history = runtime.store.history().unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].movements.len(), 2);
+    }
+
+    #[test]
+    fn late_arrival_events_and_rename_destinations_are_not_hidden_by_the_baseline() {
+        let (_temp, mut runtime, mut prefs) = fixture();
+        prefs.automatic = true;
+        runtime.store.save(&prefs).unwrap();
+        let during = Path::new(&prefs.source).join("during.txt");
+        let renamed = Path::new(&prefs.source).join("renamed.txt");
+        let temporary = Path::new(&prefs.source).join("partial.part");
+        let (tx, _rx) = mpsc::sync_channel(1024);
+        monitor::configure_with(
+            &mut runtime,
+            &tx,
+            |_, _| Ok(()),
+            |source| {
+                old_file(&during, b"during");
+                old_file(&renamed, b"renamed");
+                old_file(&temporary, b"partial");
+                baseline(source)
+            },
+        )
+        .unwrap();
+        let generation = runtime.session.as_ref().unwrap().generation;
+        let mut queue = queue::Queue::default();
+        // Native callbacks can arrive after enumeration/activation has returned.
+        queue.event(
+            &mut runtime,
+            (
+                generation,
+                Ok(event(EventKind::Create(CreateKind::Any), &during)),
+            ),
+        );
+        queue.event(
+            &mut runtime,
+            (
+                generation,
+                Ok(event(
+                    EventKind::Modify(ModifyKind::Name(RenameMode::To)),
+                    &renamed,
+                )),
+            ),
+        );
+        queue.event(
+            &mut runtime,
+            (
+                generation,
+                Ok(event(EventKind::Create(CreateKind::Any), &temporary)),
+            ),
+        );
+        assert!(
+            queue
+                .process_due(&mut runtime, None, Instant::now() + Duration::from_secs(11))
+                .unwrap()
+        );
+        assert!(!during.exists());
+        assert!(!renamed.exists());
+        assert!(temporary.exists());
+        assert_eq!(runtime.store.history().unwrap()[0].movements.len(), 2);
+    }
+
+    #[test]
+    fn paired_rename_only_reconciles_the_destination_not_an_existing_source_name() {
+        let (_temp, mut runtime, mut prefs) = fixture();
+        let from = Path::new(&prefs.source).join("from.txt");
+        let to = Path::new(&prefs.source).join("to.txt");
+        old_file(&from, b"preexisting");
+        prefs.automatic = true;
+        runtime.store.save(&prefs).unwrap();
+        let (tx, _rx) = mpsc::sync_channel(1024);
+        monitor::configure_with(
+            &mut runtime,
+            &tx,
+            |_, _| Ok(()),
+            |source| {
+                old_file(&to, b"new");
+                baseline(source)
+            },
+        )
+        .unwrap();
+        let generation = runtime.session.as_ref().unwrap().generation;
+        let mut queue = queue::Queue::default();
+        queue.event(
+            &mut runtime,
+            (
+                generation,
+                Ok(
+                    event(EventKind::Modify(ModifyKind::Name(RenameMode::Both)), &from)
+                        .add_path(to.clone()),
+                ),
+            ),
+        );
+        assert!(
+            queue
+                .process_due(&mut runtime, None, Instant::now() + Duration::from_secs(11))
+                .unwrap()
+        );
+        assert_eq!(fs::read(from).unwrap(), b"preexisting");
+        assert!(!to.exists());
+    }
+
+    #[test]
+    fn failed_registration_does_not_publish_a_session_or_enumerate() {
+        let (_temp, mut runtime, mut prefs) = fixture();
+        prefs.automatic = true;
+        runtime.store.save(&prefs).unwrap();
+        let (tx, _rx) = mpsc::sync_channel(1024);
+        let error = monitor::configure_with(
+            &mut runtime,
+            &tx,
+            |_, _| Err("registration failed".into()),
+            |_| panic!("must not enumerate without a watcher"),
+        )
+        .unwrap_err();
+        assert_eq!(error, "registration failed");
+        assert!(runtime.watcher.is_none());
+        assert!(runtime.session.is_none());
+        assert!(runtime.store.history().unwrap().is_empty());
+    }
+
+    #[test]
+    fn partial_enumeration_failure_discards_queued_events_and_never_moves_files() {
+        let (_temp, mut runtime, mut prefs) = fixture();
+        prefs.automatic = true;
+        runtime.store.save(&prefs).unwrap();
+        let during = Path::new(&prefs.source).join("during.txt");
+        let generation = runtime.sequence + 1;
+        let (tx, rx) = mpsc::sync_channel(1024);
+        let error = monitor::configure_with(
+            &mut runtime,
+            &tx,
+            |_, _| Ok(()),
+            |_| {
+                old_file(&during, b"preserved");
+                tx.try_send((
+                    generation,
+                    Ok(event(EventKind::Create(CreateKind::File), &during)),
+                ))
+                .unwrap();
+                Err("enumeration failed".into())
+            },
+        )
+        .unwrap_err();
+        assert_eq!(error, "enumeration failed");
+        assert!(runtime.watcher.is_none());
+        assert!(runtime.session.is_none());
+        let mut queue = queue::Queue::default();
+        assert!(!queue.event(&mut runtime, rx.try_recv().unwrap()));
+        assert!(
+            !queue
+                .process_due(&mut runtime, None, Instant::now() + Duration::from_secs(11))
+                .unwrap()
+        );
+        assert_eq!(fs::read(during).unwrap(), b"preserved");
+        assert!(runtime.store.history().unwrap().is_empty());
+    }
+
+    fn settings_change_during_enumeration(disable: bool) {
+        let (temp, mut runtime, mut prefs) = fixture();
+        prefs.automatic = true;
+        runtime.store.save(&prefs).unwrap();
+        let generation = runtime.sequence + 1;
+        let during = Path::new(&prefs.source).join("during.txt");
+        let next_source = temp.path().join("next");
+        fs::create_dir(&next_source).unwrap();
+        let mut external = prefs.clone();
+        if disable {
+            external.automatic = false;
+        } else {
+            external.source = fs::canonicalize(&next_source)
+                .unwrap()
+                .to_string_lossy()
+                .into();
+        }
+        let database = rusqlite::Connection::open(temp.path().join("test.sqlite3")).unwrap();
+        let (tx, rx) = mpsc::sync_channel(1024);
+        assert!(
+            monitor::configure_with(
+                &mut runtime,
+                &tx,
+                |_, _| Ok(()),
+                |source| {
+                    old_file(&during, b"preserved");
+                    tx.try_send((
+                        generation,
+                        Ok(event(EventKind::Create(CreateKind::File), &during)),
+                    ))
+                    .unwrap();
+                    database
+                        .execute(
+                            "UPDATE preferences SET value=?1 WHERE id=1",
+                            [serde_json::to_string(&external).unwrap()],
+                        )
+                        .unwrap();
+                    baseline(source)
+                }
+            )
+            .unwrap_err()
+            .contains("mudaram durante a ativação")
+        );
+        assert!(runtime.watcher.is_none());
+        assert!(runtime.session.is_none());
+        monitor::configure(&mut runtime, &tx).unwrap();
+        let mut queue = queue::Queue::default();
+        assert!(!queue.event(&mut runtime, rx.try_recv().unwrap()));
+        assert!(
+            !queue
+                .process_due(&mut runtime, None, Instant::now() + Duration::from_secs(11))
+                .unwrap()
+        );
+        assert_eq!(fs::read(during).unwrap(), b"preserved");
+        assert!(runtime.store.history().unwrap().is_empty());
+        if disable {
+            assert!(runtime.session.is_none());
+        } else {
+            assert_eq!(
+                runtime.session.as_ref().unwrap().source,
+                fs::canonicalize(next_source).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn source_change_during_enumeration_cannot_publish_or_process_the_old_session() {
+        settings_change_during_enumeration(false);
+    }
+
+    #[test]
+    fn disabling_during_enumeration_cannot_publish_or_process_the_old_session() {
+        settings_change_during_enumeration(true);
+    }
+
+    #[test]
+    fn overflow_and_rescan_during_enumeration_pause_before_processing() {
+        for lost_events in [false, true] {
+            let (_temp, mut runtime, mut prefs) = fixture();
+            prefs.automatic = true;
+            runtime.store.save(&prefs).unwrap();
+            let generation = runtime.sequence + 1;
+            let overflow = runtime.overflow.clone();
+            let during = Path::new(&prefs.source).join("during.txt");
+            let (tx, rx) = mpsc::sync_channel(1024);
+            monitor::configure_with(
+                &mut runtime,
+                &tx,
+                |_, _| Ok(()),
+                |source| {
+                    old_file(&during, b"preserved");
+                    tx.try_send((
+                        generation,
+                        Ok(event(EventKind::Create(CreateKind::File), &during)),
+                    ))
+                    .unwrap();
+                    if lost_events {
+                        tx.try_send((
+                            generation,
+                            Ok(Event::new(EventKind::Other).set_flag(notify::event::Flag::Rescan)),
+                        ))
+                        .unwrap();
+                    } else {
+                        overflow.store(generation, Ordering::Release);
+                    }
+                    baseline(source)
+                },
+            )
+            .unwrap();
+            let mut queue = queue::Queue::default();
+            for message in rx.try_iter() {
+                queue.event(&mut runtime, message);
+            }
+            let result =
+                queue.process_due(&mut runtime, None, Instant::now() + Duration::from_secs(11));
+            if lost_events {
+                assert!(!result.unwrap());
+            } else {
+                assert!(result.is_err());
+            }
+            assert!(runtime.session.is_none());
+            assert!(runtime.watcher.is_none());
+            assert!(queue.idle());
+            assert_eq!(fs::read(during).unwrap(), b"preserved");
+            assert!(runtime.store.history().unwrap().is_empty());
+        }
+    }
+}
+
 #[test]
 fn invalid_persisted_destination_blocks_scan_confirmation_execution_and_automation() {
     let (temp, mut runtime, mut prefs) = fixture();

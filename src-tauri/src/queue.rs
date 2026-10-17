@@ -4,7 +4,10 @@ use crate::{
     execute,
     monitor::Message,
 };
-use notify::EventKind;
+use notify::{
+    EventKind,
+    event::{ModifyKind, RenameMode},
+};
 use std::{
     collections::{HashMap, HashSet},
     fs,
@@ -60,13 +63,21 @@ impl Queue {
         if matches!(event.kind, EventKind::Access(_)) {
             return false;
         }
-        for raw_path in event.paths {
+        let path_count = event.paths.len();
+        for (index, raw_path) in event.paths.into_iter().enumerate() {
             let path = normalize_path(&raw_path);
-            if matches!(event.kind, EventKind::Remove(_))
+            let arrival = matches!(
+                event.kind,
+                EventKind::Create(_) | EventKind::Modify(ModifyKind::Name(RenameMode::To))
+            ) || (matches!(
+                event.kind,
+                EventKind::Modify(ModifyKind::Name(RenameMode::Both))
+            ) && index + 1 == path_count);
+            let removed = matches!(event.kind, EventKind::Remove(_))
                 || fs::symlink_metadata(&path)
-                    .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound)
-            {
-                // A queued removal may precede an undo that has already restored this path.
+                    .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound);
+            if removed || arrival {
+                // Delayed removals/arrivals must not reorganize an unchanged restored file.
                 if runtime
                     .session
                     .as_ref()
@@ -85,9 +96,11 @@ impl Queue {
                 }
                 runtime.session.as_mut().unwrap().baseline.remove(&path);
                 runtime.session.as_mut().unwrap().restored.remove(&path);
-                self.pending.remove(&path);
-                self.attempted.remove(&path);
-                continue;
+                if removed {
+                    self.pending.remove(&path);
+                    self.attempted.remove(&path);
+                    continue;
+                }
             }
             if !runtime.session.as_ref().unwrap().baseline.contains(&path)
                 && !engine::temporary(&path)
