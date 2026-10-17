@@ -298,9 +298,14 @@ tbody tr:has(.file-disclosure[aria-expanded=true]) { background: var(--surface-s
 .review-confirmation input { width: 18px; height: 18px; accent-color: var(--primary); flex-shrink: 0; }
 .review-confirmation input:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
 .undo-dialog { width: min(600px,calc(100vw - 48px)); max-width: min(600px,calc(100vw - 48px)); }
-.undo-files { max-height: 36dvh; overflow: auto; }
-.undo-files > div { display: flex; align-items: flex-start; gap: var(--space-2); padding: var(--space-3) 0; border-bottom: 1px solid var(--border); }
-.undo-files > div > svg { color: var(--muted); margin-top: 2px; }
+.undo-summary { color: var(--muted); font-size: var(--text-control); }
+.undo-files { max-height: 36dvh; overflow: auto; overflow-anchor: none; }
+.undo-files.virtual { height: 36dvh; }
+.undo-files:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.undo-file-list { list-style: none; margin: 0; padding: 0; }
+.undo-file-row { display: flex; align-items: flex-start; gap: var(--space-2); padding: var(--space-3) 0; border-bottom: 1px solid var(--border); }
+.undo-file-row > div { min-width: 0; }
+.undo-file-row > svg { color: var(--muted); margin-top: 2px; flex-shrink: 0; }
 .undo-files strong { font-size: var(--text-control); font-weight: 500; display: block; overflow-wrap: anywhere; }
 .undo-files small { display: block; color: var(--muted); font-size: var(--text-meta); overflow-wrap: anywhere; }
 .path-tooltip { z-index: 60; max-width: min(28rem,calc(100vw - 24px)); max-height: var(--radix-tooltip-content-available-height); overflow-y: auto; overflow-wrap: anywhere; padding: var(--space-2) var(--space-3); background: var(--card); color: var(--foreground); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-dialog); font-size: var(--text-meta); }
