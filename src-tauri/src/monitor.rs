@@ -4,7 +4,7 @@ use crate::{
     lock,
     queue::Queue,
 };
-use notify::{Event, RecursiveMode, Watcher};
+use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::{
     collections::{HashMap, HashSet},
     fs,
@@ -23,6 +23,29 @@ pub struct Session {
 }
 
 pub fn configure(runtime: &mut Runtime, sender: &mpsc::SyncSender<Message>) -> Result<()> {
+    configure_with(
+        runtime,
+        sender,
+        |watcher, source| {
+            watcher
+                .watch(source, RecursiveMode::NonRecursive)
+                .map_err(|e| e.to_string())
+        },
+        |source| {
+            fs::read_dir(source)
+                .and_then(|entries| entries.map(|entry| entry.map(|entry| entry.path())).collect())
+                .map_err(|e| format!("Monitoramento pausado: não foi possível preparar os arquivos existentes. Verifique a pasta e tente reativar. Detalhes: {e}"))
+        },
+    )
+}
+
+// Keep registration and enumeration injectable for deterministic activation tests.
+pub(crate) fn configure_with(
+    runtime: &mut Runtime,
+    sender: &mpsc::SyncSender<Message>,
+    register: impl FnOnce(&mut RecommendedWatcher, &Path) -> Result<()>,
+    enumerate: impl FnOnce(&Path) -> Result<HashSet<PathBuf>>,
+) -> Result<()> {
     let prefs = runtime.store.preferences()?;
     if !prefs.automatic {
         runtime.watcher = None;
@@ -63,15 +86,13 @@ pub fn configure(runtime: &mut Runtime, sender: &mpsc::SyncSender<Message>) -> R
         }
     })
     .map_err(|e| e.to_string())?;
-    // Existing files require a manual preview even when automation is enabled.
-    let baseline = fs::read_dir(&source)
-        .map_err(|e| e.to_string())?
-        .map(|e| e.map(|e| e.path()))
-        .collect::<std::io::Result<HashSet<_>>>()
-        .map_err(|e| e.to_string())?;
-    watcher
-        .watch(&source, RecursiveMode::NonRecursive)
-        .map_err(|e| e.to_string())?;
+    // Observe first; queued arrivals remove entries sampled during enumeration.
+    register(&mut watcher, &source)?;
+    let baseline = enumerate(&source)?;
+    let current = runtime.store.preferences()?;
+    if !current.automatic || current.source != prefs.source {
+        return Err("As configurações de monitoramento mudaram durante a ativação. Confira a origem e tente reativar o monitoramento.".into());
+    }
     runtime.session = Some(Session {
         generation,
         baseline,
