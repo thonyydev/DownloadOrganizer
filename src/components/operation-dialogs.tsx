@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { FileTable } from "@/components/file-table";
 import { OperationFeedback } from "@/components/operation-feedback";
+import { UndoFileList } from "@/components/undo-file-list";
 import type { Category, Operation, Preview } from "@/lib/api";
 import type { Action } from "@/lib/experience";
 
@@ -23,6 +24,7 @@ export function OperationDialogs({ preview, undoTarget, categories, action, busy
   const previewAction = action?.kind === "organize" || action?.kind === "preview" ? action : null;
   const undoAction = action?.kind === "undo" ? action : null;
   const undoable = operation ?? undoTarget;
+  const reversible = useMemo(() => undoable?.movements.filter(m => m.status === "moved") ?? [], [undoable?.movements]);
   const done = (value: Action | null) => value?.phase === "completed" && value.kind !== "preview";
   const close = (open: boolean) => { if (!open && !busy) onClose(); };
   const footer = <><Button variant="outline" onClick={onClose}>Fechar</Button><Button onClick={onViewResult}>Ver resultado no histórico</Button></>;
@@ -49,8 +51,8 @@ export function OperationDialogs({ preview, undoTarget, categories, action, busy
       <DialogContent className="undo-dialog" showCloseButton={!busy} onCloseAutoFocus={e => { e.preventDefault(); onRestoreFocus(); }} onEscapeKeyDown={e => { if (busy) e.preventDefault(); }} onPointerDownOutside={e => { if (busy) e.preventDefault(); }}>
         <DialogHeader><DialogTitle>{done(undoAction) ? "Resultado da restauração" : "Restaurar os arquivos à origem?"}</DialogTitle><DialogDescription>Arquivos alterados, ausentes ou com conflitos serão preservados. O resultado individual ficará no histórico.</DialogDescription></DialogHeader>
         <OperationFeedback action={undoAction} operation={done(undoAction) || undoAction?.phase === "error" ? operation : undefined} />
-        {!done(undoAction) && <div className="undo-files">{undoable?.movements.filter(m => m.status === "moved").map(m => <div key={m.id}><Undo2 size={16} aria-hidden="true" /><span><strong>{m.source.split(/[\\/]/).pop()}</strong><small>Restaurar para: {m.source}</small></span></div>)}</div>}
-        <DialogFooter>{done(undoAction) ? footer : <><Button variant="outline" disabled={busy} onClick={onClose}>Cancelar</Button>{undoAction?.phase === "error" && operation && <Button variant="outline" onClick={onViewResult}>Ver resultado no histórico</Button>}<Button disabled={working || !undoable?.movements.some(m => m.status === "moved")} onClick={onUndo}>{busy ? <Loader2 className="spin" aria-hidden="true" /> : <Undo2 aria-hidden="true" />}{busy ? "Restaurando…" : "Confirmar restauração"}</Button></>}</DialogFooter>
+        {!done(undoAction) && <><p className="undo-summary">Operação #{undoable?.id} · {reversible.length} de {undoable?.movements.length ?? 0} arquivo(s) para restaurar.</p><UndoFileList key={undoable?.id} movements={reversible} /></>}
+        <DialogFooter>{done(undoAction) ? footer : <><Button variant="outline" disabled={busy} onClick={onClose}>Cancelar</Button>{undoAction?.phase === "error" && operation && <Button variant="outline" onClick={onViewResult}>Ver resultado no histórico</Button>}<Button disabled={working || !reversible.length} onClick={onUndo}>{busy ? <Loader2 className="spin" aria-hidden="true" /> : <Undo2 aria-hidden="true" />}{busy ? "Restaurando…" : "Confirmar restauração"}</Button></>}</DialogFooter>
       </DialogContent>
     </Dialog>
   </>;

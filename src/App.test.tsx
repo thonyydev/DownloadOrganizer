@@ -67,7 +67,7 @@ async function openPreview() {
 beforeEach(() => {
   localStorage.clear(); vi.stubGlobal("AudioContext", class {});
   vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
-  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (this: HTMLElement) { return this.classList.contains("table-scroll") ? 400 : this.tagName === "TR" ? 80 : 0; });
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (this: HTMLElement) { return this.classList.contains("table-scroll") || this.classList.contains("undo-files") ? 400 : this.hasAttribute("data-undo-movement-id") ? 140 : this.tagName === "TR" ? 80 : 0; });
   vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(800);
   vi.clearAllMocks(); mocks.events.clear(); mocks.closeHandler = null;
   mocks.audioContext.state = "running";
@@ -785,6 +785,26 @@ describe("prévia e operações", () => {
     await waitFor(() => expect((within(dialog).getByRole("button", { name: "Atualizar prévia" }) as HTMLButtonElement).disabled).toBe(false));
     expect((within(dialog).getByRole("checkbox") as HTMLInputElement).checked).toBe(false);
     expect(mocks.organize).toHaveBeenCalledOnce();
+  });
+  it("confirma 10.000 arquivos uma única vez usando o ID original e mantém bloqueios durante a restauração", async () => {
+    snapshot.history = [{ ...operation, movements: Array.from({ length: 10000 }, (_, index) => ({ ...operation.movements[0], id: index + 1, source: `/isolated/source/File-${index}.txt`, destination: `/isolated/destination/File-${index}.txt` })) }];
+    await start(); navigate("Histórico");
+    fireEvent.click(screen.getByRole("button", { name: "Desfazer" }));
+    const dialog = await screen.findByRole("dialog", { name: "Restaurar os arquivos à origem?" });
+    expect(within(dialog).getByText("Operação #42 · 10000 de 10000 arquivo(s) para restaurar.")).toBeTruthy();
+    const rows = dialog.querySelectorAll("[data-undo-movement-id]");
+    expect(rows.length).toBeGreaterThan(0); expect(rows.length).toBeLessThan(25);
+    const pending = deferred<void>(); mocks.undo.mockReturnValueOnce(pending.promise);
+    const confirm = within(dialog).getByRole("button", { name: "Confirmar restauração" });
+    fireEvent.click(confirm); fireEvent.click(confirm);
+    expect(mocks.undo).toHaveBeenCalledExactlyOnceWith(operation.id);
+    expect((within(dialog).getByRole("button", { name: "Cancelar" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.keyDown(dialog, { key: "Escape" }); expect(screen.getByRole("dialog")).toBe(dialog);
+    snapshot.history[0].movements = snapshot.history[0].movements.map(movement => ({ ...movement, status: "undone" }));
+    await act(async () => pending.resolve());
+    await screen.findByRole("dialog", { name: "Resultado da restauração" });
+    expect(within(dialog).getByText(/10000 restaurado\(s\) · 0 ainda no destino/)).toBeTruthy();
+    expect(dialog.querySelectorAll("[data-undo-movement-id]")).toHaveLength(0);
   });
   it("mostra restauração em andamento e resultados reais de desfazer", async () => {
     snapshot.history = [structuredClone(operation)]; await start(); navigate("Histórico");
