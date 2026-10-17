@@ -1,3 +1,4 @@
+mod directories;
 mod engine;
 mod monitor;
 mod queue;
@@ -118,7 +119,9 @@ fn execute(
                 operation_id,
             );
             let captured = entry.stamp.as_ref().ok_or("Metadados inválidos")?;
-            match engine::prepare_move(&entry, &prefs) {
+            match engine::prepare_move(&entry, &prefs, |folder| {
+                runtime.store.create_directory(operation, folder)
+            }) {
                 Ok((mut file, digest)) => {
                     progress(
                         app,
@@ -184,6 +187,12 @@ fn execute(
         }
         Ok(operation)
     })();
+    let cleanup = operation_id.map_or(Ok(()), |id| runtime.store.cleanup_directories(Some(id)));
+    let result = match (result, cleanup) {
+        (result, Ok(())) => result,
+        (Ok(_), Err(error)) => Err(error),
+        (Err(error), Err(cleanup)) => Err(format!("{error}; {cleanup}")),
+    };
     progress(
         app,
         if result.is_ok() { total } else { 0 },
@@ -277,7 +286,7 @@ fn undo(runtime: &mut Runtime, operation: i64, app: Option<&AppHandle>) -> Resul
                 Some(operation),
             );
         }
-        Ok(())
+        runtime.store.cleanup_directories(Some(operation))
     })();
     progress(
         app,

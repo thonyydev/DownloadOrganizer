@@ -51,6 +51,17 @@ impl Store {
             CREATE TABLE IF NOT EXISTS rules(category TEXT PRIMARY KEY, enabled INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS operations(id INTEGER PRIMARY KEY, created INTEGER NOT NULL, kind TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS movements(id INTEGER PRIMARY KEY, operation_id INTEGER NOT NULL REFERENCES operations(id), source TEXT NOT NULL, destination TEXT NOT NULL, status TEXT NOT NULL, error TEXT, size INTEGER NOT NULL, modified INTEGER NOT NULL, digest TEXT NOT NULL);") .map_err(|e| e.to_string())?;
+        let version: u32 = db
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .map_err(|e| e.to_string())?;
+        match version {
+            0 => db.execute_batch("BEGIN IMMEDIATE;
+                CREATE TABLE created_directories(id INTEGER PRIMARY KEY, operation_id INTEGER NOT NULL REFERENCES operations(id), path TEXT NOT NULL, identity TEXT, state TEXT NOT NULL, error TEXT);
+                CREATE INDEX directories_operation ON created_directories(operation_id);
+                PRAGMA user_version=1; COMMIT;").map_err(|e| e.to_string())?,
+            1 => (),
+            _ => return Err("Banco de uma versão mais recente; atualize o aplicativo".into()),
+        }
         let prefs = Preferences {
             source: default_source.into(),
             destination: default_source.into(),
@@ -184,6 +195,140 @@ impl Store {
             .map_err(|e| e.to_string())
     }
 
+    pub fn create_directory(&self, operation: i64, path: &Path) -> Result<()> {
+        match fs::symlink_metadata(path) {
+            Ok(_) => {
+                engine::validate_directory(path)?;
+                return Ok(());
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+            Err(error) => return Err(error.to_string()),
+        }
+        let path_text = path.to_str().ok_or("Caminho de pasta inválido")?;
+        self.db
+            .execute(
+                "INSERT INTO created_directories(operation_id,path,state) VALUES(?1,?2,'intent')",
+                params![operation, path_text],
+            )
+            .map_err(|e| e.to_string())?;
+        let id = self.db.last_insert_rowid();
+        let created = crate::directories::create(path);
+        match created {
+            Ok(Some(directory)) => {
+                // Keep the creation handle alive until its identity is durably committed.
+                let identity = directory.identity()?;
+                self.db
+                    .execute(
+                        "UPDATE created_directories SET identity=?1,state='created' WHERE id=?2",
+                        params![identity, id],
+                    )
+                    .map_err(|e| e.to_string())?;
+            }
+            Ok(None) => {
+                self.db
+                    .execute(
+                        "UPDATE created_directories SET state='unowned' WHERE id=?1",
+                        [id],
+                    )
+                    .map_err(|e| e.to_string())?;
+            }
+            Err(error) => {
+                self.db
+                    .execute(
+                        "UPDATE created_directories SET state='unverified',error=?1 WHERE id=?2",
+                        params![error, id],
+                    )
+                    .map_err(|e| e.to_string())?;
+                return Err(error);
+            }
+        }
+        Ok(())
+    }
+
+    pub fn cleanup_directories(&self, operation: Option<i64>) -> Result<()> {
+        let errors = self.reconcile_directories(operation)?;
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(format!(
+                "Os arquivos foram preservados, mas não foi possível concluir a limpeza das pastas: {}",
+                errors.join("; ")
+            ))
+        }
+    }
+
+    fn reconcile_directories(&self, operation: Option<i64>) -> Result<Vec<String>> {
+        // Missing evidence is never reconstructed from a path or from old movement records.
+        self.db.execute("UPDATE created_directories SET state='unverified',error='Criação interrompida sem identidade confirmada; pasta preservada' WHERE state='intent'", []).map_err(|e| e.to_string())?;
+        // Earlier operations cannot own this newly created directory instance, even at the same path.
+        let mut query = self
+            .db
+            .prepare(
+                "SELECT id,path,identity,operation_id FROM created_directories d
+            WHERE state='created' AND identity IS NOT NULL
+            AND NOT EXISTS(SELECT 1 FROM movements m
+                WHERE m.operation_id=d.operation_id AND m.status NOT IN ('undone','failed'))
+            AND NOT EXISTS(SELECT 1 FROM movements m WHERE m.operation_id>d.operation_id AND m.status NOT IN ('undone','failed')
+                AND (substr(m.destination,1,length(d.path)+1)=(d.path||char(92)) COLLATE NOCASE
+                    OR substr(m.destination,1,length(d.path)+1)=(d.path||'/') COLLATE NOCASE))
+            ORDER BY id",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = query
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, i64>(3)?,
+                ))
+            })
+            .map_err(|e| e.to_string())?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
+        drop(query);
+        let protected = self.preferences().and_then(|prefs| {
+            [prefs.source, prefs.destination].iter().map(|path| {
+                fs::canonicalize(path).map_err(|error| format!("Não foi possível validar as pastas configuradas antes da limpeza: {error}"))
+            }).collect::<Result<Vec<_>>>()
+        });
+        let mut errors = Vec::new();
+        for (id, path, identity, owner) in rows {
+            if protected.as_ref().is_ok_and(|paths| {
+                paths
+                    .iter()
+                    .any(|protected| protected.starts_with(Path::new(&path)))
+            }) {
+                self.db.execute("UPDATE created_directories SET error='Pasta usada pelas configurações atuais; preservada' WHERE id=?1", [id]).map_err(|e| e.to_string())?;
+                continue;
+            }
+            let result = match (&protected, fs::symlink_metadata(&path)) {
+                (Err(error), _) => Err(error.clone()),
+                (_, Err(error)) if error.kind() == std::io::ErrorKind::NotFound => Ok(true),
+                (_, Err(error)) => Err(error.to_string()),
+                (_, Ok(_)) => crate::directories::remove(Path::new(&path), &identity),
+            };
+            let (state, error) = match result {
+                Ok(true) => ("removed", None),
+                Ok(false) => ("created", Some("Pasta não vazia; preservada".to_owned())),
+                Err(error) => {
+                    // Old cleanup failures remain journaled without failing an unrelated operation.
+                    if operation.is_none_or(|op| op == owner) {
+                        errors.push(error.clone());
+                    }
+                    ("created", Some(error))
+                }
+            };
+            self.db
+                .execute(
+                    "UPDATE created_directories SET state=?1,error=?2 WHERE id=?3",
+                    params![state, error, id],
+                )
+                .map_err(|e| e.to_string())?;
+        }
+        Ok(errors)
+    }
+
     pub fn history(&self) -> Result<Vec<Operation>> {
         let mut query = self
             .db
@@ -268,6 +413,8 @@ impl Store {
                 )?;
             }
         }
+        // Cleanup failures stay in the journal for retry; they must not prevent startup.
+        self.reconcile_directories(None)?;
         Ok(())
     }
 }
