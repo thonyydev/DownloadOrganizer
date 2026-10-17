@@ -53,7 +53,10 @@ async function start() {
   render(<App />);
   await waitFor(() => expect((screen.getByRole("button", { name: "Organizar arquivos" }) as HTMLButtonElement).disabled).toBe(false));
 }
-function navigate(name: string) { fireEvent.click(screen.getByRole("button", { name })); }
+function navigate(name: string) {
+  const navigation = screen.getByRole("navigation", { name: "Navegação principal" });
+  fireEvent.click(within(navigation).getByRole("button", { name }));
+}
 function progress(payload: Progress) { act(() => mocks.events.get("organizer-progress")?.({ payload })); }
 async function updateSnapshot() {
   act(() => mocks.events.get("organizer-changed")?.({ payload: null }));
@@ -113,14 +116,17 @@ describe("histórico paginado", () => {
     seedHistory(1006); await start(); navigate("Histórico");
     expect(document.querySelectorAll(".history-operation")).toHaveLength(100);
     expect(mocks.operation).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Carregar mais" }));
+    // Avoid computing accessible names for every action in the loaded history.
+    const loadMore = screen.getByText("Carregar mais", { selector: "button" });
+    fireEvent.click(loadMore);
     const row = await screen.findByRole("region", { name: "Operação 900" });
-    expect(mocks.history).toHaveBeenCalledWith(907);
+    expect(mocks.history).toHaveBeenCalledExactlyOnceWith(907);
     fireEvent.click(within(row).getByRole("button", { name: /1 arquivo organizado/ }));
     expect(within(row).getByText("Arquivos envolvidos")).toBeTruthy();
     expect(mocks.operation).not.toHaveBeenCalled();
     fireEvent.click(within(row).getByRole("button", { name: "Desfazer" }));
     const dialog = await screen.findByRole("dialog", { name: "Restaurar os arquivos à origem?" });
+    expect(mocks.operation).toHaveBeenCalledExactlyOnceWith(900);
     mocks.undo.mockImplementationOnce(async (id: number) => { snapshot.history.find(op => op.id === id)!.movements[0].status = "undone"; });
     fireEvent.click(within(dialog).getByRole("button", { name: "Confirmar restauração" }));
     await within(dialog).findByText(/1 restaurado\(s\) · 0 ainda no destino/);
@@ -129,10 +135,14 @@ describe("histórico paginado", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(document.querySelectorAll(".history-operation")).toHaveLength(200);
     const updated = screen.getByRole("region", { name: "Operação 900" });
+    expect(updated).toBe(row);
     expect(within(updated).getByRole("button", { name: /1 arquivo restaurado/ }).getAttribute("aria-expanded")).toBe("true");
     expect((within(updated).getByRole("button", { name: "Desfazer" }) as HTMLButtonElement).disabled).toBe(true);
     navigate("Arquivos"); navigate("Histórico");
-    expect(screen.getByRole("region", { name: "Operação 900" })).toBeTruthy();
+    expect(document.querySelectorAll(".history-operation")).toHaveLength(200);
+    const returned = screen.getByRole("region", { name: "Operação 900" });
+    expect(within(returned).getByRole("button", { name: /1 arquivo restaurado/, expanded: true })).toBeTruthy();
+    expect((within(returned).getByRole("button", { name: "Desfazer" }) as HTMLButtonElement).disabled).toBe(true);
   });
   it("mantém a página após erro, oferece nova tentativa e sinaliza chegadas sem inserir duplicatas", async () => {
     seedHistory(5);
