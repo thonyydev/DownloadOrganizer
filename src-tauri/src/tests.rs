@@ -13,6 +13,73 @@ use std::{
 use tempfile::TempDir;
 
 #[test]
+fn invalid_persisted_destination_blocks_scan_confirmation_execution_and_automation() {
+    let (temp, mut runtime, mut prefs) = fixture();
+    let generation = automatic(&mut runtime, &mut prefs);
+    let source = Path::new(&prefs.source).join("sample.txt");
+    old_file(&source, b"preserved");
+    let preview = plan(&prefs);
+    runtime.preview = Some(preview.clone());
+    let saved = prefs.clone();
+    // Simulate persisted/external settings bypassing the validated save command.
+    prefs.destination = temp.path().join("unavailable").to_string_lossy().into();
+    runtime
+        .store
+        .db
+        .execute(
+            "UPDATE preferences SET value=?1 WHERE id=1",
+            [serde_json::to_string(&prefs).unwrap()],
+        )
+        .unwrap();
+    assert!(engine::scan(&prefs).is_err());
+    assert!(take_preview(&mut runtime, preview.id, preview.created).is_err());
+    assert!(execute(&mut runtime, preview, "manual", None).is_err());
+    let mut queue = queue::Queue::default();
+    queue.event(
+        &mut runtime,
+        (
+            generation,
+            Ok(event(EventKind::Create(CreateKind::File), &source)),
+        ),
+    );
+    assert!(
+        queue
+            .process_due(&mut runtime, None, Instant::now() + Duration::from_secs(11))
+            .is_err()
+    );
+    assert_eq!(fs::read(&source).unwrap(), b"preserved");
+    assert!(runtime.store.history().unwrap().is_empty());
+    assert_eq!(runtime.store.preferences().unwrap(), prefs);
+    runtime
+        .store
+        .save_if_unchanged(&saved, Some(&prefs))
+        .unwrap();
+    assert_eq!(runtime.store.preferences().unwrap(), saved);
+    assert_eq!(engine::scan(&saved).unwrap().len(), 1);
+}
+
+#[test]
+fn failed_directory_validation_preserves_saved_preferences_and_preview_files() {
+    let (temp, mut runtime, prefs) = fixture();
+    let source = Path::new(&prefs.source).join("sample.txt");
+    old_file(&source, b"preserved");
+    let preview = plan(&prefs);
+    let entry = &preview.files[0];
+    let mut draft = prefs.clone();
+    draft.destination = temp.path().join("missing").to_string_lossy().into();
+    assert!(
+        runtime
+            .store
+            .save_if_unchanged(&draft, Some(&prefs))
+            .is_err()
+    );
+    assert_eq!(runtime.store.preferences().unwrap(), prefs);
+    assert!(engine::prepare_move(entry, &draft).is_err());
+    assert_eq!(fs::read(source).unwrap(), b"preserved");
+    assert!(runtime.store.history().unwrap().is_empty());
+}
+
+#[test]
 fn saving_a_stale_settings_form_preserves_the_external_update() {
     let (_temp, mut runtime, initial) = fixture();
     let mut external = initial.clone();
