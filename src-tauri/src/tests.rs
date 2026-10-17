@@ -11,6 +11,19 @@ use std::{
     time::{Duration, SystemTime},
 };
 use tempfile::TempDir;
+#[cfg(windows)]
+mod directory_cleanup;
+
+fn prepare_move(
+    entry: &engine::FileEntry,
+    prefs: &Preferences,
+) -> Result<(engine::LockedFile, String)> {
+    engine::prepare_move(entry, prefs, |folder| match fs::create_dir(folder) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
+        Err(error) => Err(error.to_string()),
+    })
+}
 
 mod monitor_activation {
     use super::*;
@@ -515,7 +528,7 @@ fn failed_directory_validation_preserves_saved_preferences_and_preview_files() {
             .is_err()
     );
     assert_eq!(runtime.store.preferences().unwrap(), prefs);
-    assert!(engine::prepare_move(entry, &draft).is_err());
+    assert!(prepare_move(entry, &draft).is_err());
     assert_eq!(fs::read(source).unwrap(), b"preserved");
     assert!(runtime.store.history().unwrap().is_empty());
 }
@@ -635,7 +648,7 @@ fn recovery_waits_for_a_busy_file_instead_of_losing_undo() {
     let (_temp, runtime, prefs) = fixture();
     old_file(&Path::new(&prefs.source).join("a.txt"), b"a");
     let entry = plan(&prefs).files.remove(0);
-    let (mut file, digest) = engine::prepare_move(&entry, &prefs).unwrap();
+    let (mut file, digest) = prepare_move(&entry, &prefs).unwrap();
     let op = runtime.store.begin("manual").unwrap();
     runtime
         .store
@@ -715,7 +728,7 @@ fn checked_directory_cannot_be_replaced_before_the_move() {
     let source = Path::new(&prefs.source).join("a.txt");
     old_file(&source, b"checked");
     let entry = plan(&prefs).files.remove(0);
-    let (_file, _digest) = engine::prepare_move(&entry, &prefs).unwrap();
+    let (_file, _digest) = prepare_move(&entry, &prefs).unwrap();
     assert!(fs::rename(&prefs.source, temp.path().join("redirected")).is_err());
 }
 
@@ -874,7 +887,7 @@ fn checked_source_cannot_be_replaced_before_the_move() {
     let source = Path::new(&prefs.source).join("a.txt");
     old_file(&source, b"checked");
     let entry = plan(&prefs).files.remove(0);
-    let (_file, _digest) = engine::prepare_move(&entry, &prefs).unwrap();
+    let (_file, _digest) = prepare_move(&entry, &prefs).unwrap();
     assert!(fs::rename(&source, Path::new(&prefs.source).join("replaced.txt")).is_err());
 }
 
@@ -1421,7 +1434,7 @@ fn journal_recovers_completed_and_unexecuted_intents() {
     let preview = plan(&prefs);
     let op = runtime.store.begin("manual").unwrap();
     for (index, entry) in preview.files.iter().enumerate() {
-        let (mut file, digest) = engine::prepare_move(entry, &prefs).unwrap();
+        let (mut file, digest) = prepare_move(entry, &prefs).unwrap();
         runtime
             .store
             .record(

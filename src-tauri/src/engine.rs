@@ -304,7 +304,7 @@ pub struct LockedFile {
     _directories: Vec<File>,
 }
 
-fn guard_directory(path: &Path) -> Result<Vec<File>> {
+pub(crate) fn guard_directory(path: &Path) -> Result<Vec<File>> {
     validate_directory(path)?;
     #[cfg(windows)]
     let mut handles = Vec::new();
@@ -411,7 +411,11 @@ pub fn verify_open(file: &mut LockedFile, expected: &Stamp, digest: &str) -> Res
     Ok(())
 }
 
-pub fn prepare_move(entry: &FileEntry, prefs: &Preferences) -> Result<(LockedFile, String)> {
+pub fn prepare_move(
+    entry: &FileEntry,
+    prefs: &Preferences,
+    create_directory: impl FnOnce(&Path) -> Result<()>,
+) -> Result<(LockedFile, String)> {
     let source = validate_directory(Path::new(&prefs.source))?;
     let path = Path::new(&entry.path);
     if path.parent() != Some(source.as_path()) || temporary(path) {
@@ -435,11 +439,7 @@ pub fn prepare_move(entry: &FileEntry, prefs: &Preferences) -> Result<(LockedFil
     if stamp(&file.file.metadata().map_err(|e| e.to_string())?)? != *expected {
         return Err("Arquivo ainda está sendo gravado".into());
     }
-    match fs::create_dir(&folder) {
-        Ok(()) => (),
-        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => (),
-        Err(e) => return Err(e.to_string()),
-    }
+    create_directory(&folder)?;
     validate_directory(&folder)?;
     Ok((file, digest))
 }
