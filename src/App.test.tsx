@@ -87,6 +87,81 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers(); });
 
+describe("destinos compatíveis com a organização", () => {
+  const volumeError = "A origem e o destino estão em volumes diferentes ou em compartilhamentos incompatíveis. Escolha um destino no mesmo volume da origem em Configurações e salve as preferências.";
+
+  it("recusa salvar um destino incompatível e preserva o rascunho até descartar", async () => {
+    await start(); navigate("Configurações");
+    mocks.choose.mockResolvedValueOnce("/isolated/another-volume");
+    fireEvent.click(screen.getByRole("button", { name: "Selecionar destino da organização" }));
+    await screen.findByText("/isolated/another-volume");
+    mocks.save.mockRejectedValueOnce(volumeError);
+    const save = screen.getByRole("button", { name: "Salvar preferências" });
+    fireEvent.click(save);
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain(volumeError));
+    expect(snapshot.preferences).toEqual(initial);
+    expect(screen.getByText("/isolated/another-volume")).toBeTruthy();
+    expect(screen.getByText("Alterações não salvas. As configurações salvas continuam em uso.")).toBeTruthy();
+    expect((save as HTMLButtonElement).disabled).toBe(false);
+    navigate("Arquivos"); navigate("Configurações");
+    expect(screen.getByText("/isolated/another-volume")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Descartar alterações" }));
+    expect(screen.queryByText("/isolated/another-volume")).toBeNull();
+    expect((screen.getByRole("button", { name: "Salvar preferências" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(mocks.organize).not.toHaveBeenCalled();
+  });
+
+  it("permite corrigir configurações antigas incompatíveis sem organizar arquivos", async () => {
+    snapshot.preferences.destination = "/isolated/another-volume";
+    snapshot.files = []; snapshot.scan_error = volumeError;
+    render(<App />);
+    const warning = await screen.findByRole("alert");
+    expect(warning.textContent).toContain(volumeError);
+    expect((screen.getByRole("button", { name: "Organizar arquivos" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(within(warning).getByRole("button", { name: "Revisar diretórios" }));
+    expect(screen.getByText("/isolated/another-volume")).toBeTruthy();
+    mocks.choose.mockResolvedValueOnce(initial.destination);
+    fireEvent.click(screen.getByRole("button", { name: "Selecionar destino da organização" }));
+    await screen.findByText(initial.destination);
+    mocks.save.mockImplementationOnce(async prefs => {
+      snapshot.preferences = prefs; snapshot.scan_error = null; return prefs;
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Salvar preferências" }));
+    await screen.findByText("Todas as alterações estão salvas.");
+    await waitFor(() => expect(screen.queryByText(volumeError)).toBeNull());
+    expect(mocks.save).toHaveBeenCalledWith(initial, { ...initial, destination: "/isolated/another-volume" });
+    expect(mocks.organize).not.toHaveBeenCalled();
+  });
+
+  it("não autoriza uma prévia recusada nem reutiliza a confirmação se o volume mudar", async () => {
+    await start();
+    mocks.preview.mockRejectedValueOnce(volumeError);
+    fireEvent.click(screen.getByRole("button", { name: "Organizar arquivos" }));
+    await screen.findByText(volumeError);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    const dialog = await openPreview();
+    mocks.organize.mockRejectedValueOnce(volumeError);
+    fireEvent.click(within(dialog).getByRole("checkbox"));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Confirmar organização" }));
+    await within(dialog).findByText(volumeError);
+    await waitFor(() => expect((within(dialog).getByRole("button", { name: "Confirmar organização" }) as HTMLButtonElement).disabled).toBe(true));
+    expect((within(dialog).getByRole("checkbox") as HTMLInputElement).checked).toBe(false);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Confirmar organização" }));
+    expect(mocks.organize).toHaveBeenCalledOnce();
+  });
+
+  it("desabilita uma prévia aberta quando a leitura detecta volumes incompatíveis", async () => {
+    await start();
+    const dialog = await openPreview();
+    fireEvent.click(within(dialog).getByRole("checkbox"));
+    snapshot.scan_error = volumeError; snapshot.files = [];
+    await updateSnapshot();
+    await within(dialog).findByText(volumeError);
+    expect((within(dialog).getByRole("button", { name: "Confirmar organização" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(mocks.organize).not.toHaveBeenCalled();
+  });
+});
+
 describe("feedback sonoro de ações reais", () => {
   async function confirmOrganization() {
     const dialog = await openPreview();

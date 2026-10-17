@@ -4,6 +4,7 @@ mod queue;
 mod store;
 #[cfg(test)]
 mod tests;
+mod volume;
 
 use engine::{Preferences, Preview, Result, Stamp};
 use notify::RecommendedWatcher;

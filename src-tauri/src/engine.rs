@@ -144,8 +144,9 @@ pub fn validate_directory(path: &Path) -> Result<PathBuf> {
 }
 
 pub fn validate_preferences(prefs: &Preferences) -> Result<()> {
-    validate_directory(Path::new(&prefs.source))?;
-    validate_directory(Path::new(&prefs.destination))?;
+    let source = validate_directory(Path::new(&prefs.source))?;
+    let destination = validate_directory(Path::new(&prefs.destination))?;
+    crate::volume::validate_directories(&source, &destination)?;
     if !["dark", "light"].contains(&prefs.theme.as_str()) {
         return Err("Tema inválido".into());
     }
@@ -418,6 +419,7 @@ pub fn prepare_move(entry: &FileEntry, prefs: &Preferences) -> Result<(LockedFil
     }
     let category = classify(path);
     let base = validate_directory(Path::new(&prefs.destination))?;
+    crate::volume::validate_directories(&source, &base)?;
     let folder = base.join(&category.name);
     let target = folder.join(path.file_name().ok_or("Nome inválido")?);
     if target != Path::new(&entry.destination) || !prefs.enabled_categories.contains(&category.id) {
@@ -449,11 +451,11 @@ pub fn move_no_replace(source: &Path, destination: &Path) -> Result<()> {
 }
 
 pub fn move_locked(file: &mut LockedFile, source: &Path, destination: &Path) -> Result<()> {
-    // shortcut: somente mesmo volume; exigir cópia verificada e recuperação antes de expandir.
     validate_directory(source.parent().ok_or("Origem inválida")?)?;
     file._directories.extend(guard_directory(
         destination.parent().ok_or("Destino inválido")?,
     )?);
+    crate::volume::validate(&file.file, destination.parent().ok_or("Destino inválido")?)?;
     let meta = file.file.metadata().map_err(|e| e.to_string())?;
     if linked(&meta) || !meta.is_file() {
         return Err("Origem inválida ou link".into());

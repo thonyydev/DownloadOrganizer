@@ -26,6 +26,7 @@ export function Settings({ draft, categories, busy, dirty, external, onChange: s
       <div className="settings-body">
         {(["source", "destination"] as const).map(field => <div className="setting-row directory-row" key={field}><div><h3 id={"directory-" + field}>{field === "source" ? "Pasta de origem" : "Destino da organização"}</h3><p>{field === "source" ? "Pasta monitorada para receber arquivos." : "As subpastas de categorias serão criadas aqui."}</p><code>{draft[field] || "Nenhuma pasta selecionada"}</code></div><Button variant="outline" size="sm" onClick={() => choose(field)} disabled={busy} aria-label={field === "source" ? "Selecionar pasta de origem" : "Selecionar destino da organização"}><FolderOpen aria-hidden="true" />Selecionar</Button></div>)}
         {pickerError && <p className="inline-error" role="alert">{pickerError}</p>}
+        <p className="settings-draft-note">Escolha um destino no mesmo volume da origem. A organização entre volumes diferentes não é suportada.</p>
       </div>
     </section>
     <section data-motion-group className="settings-section" aria-labelledby="automation-heading">

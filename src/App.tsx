@@ -227,7 +227,7 @@ function OrganizerApp() {
     catch (e) { closeBypass.current = false; setError(errorMessage(e)); }
   }
   const working = busy || isRunning(automatic);
-  const issue = preview ? previewError || previewIssue(preview, data?.preview_id ?? null, clock) : "";
+  const issue = preview ? previewError || data?.scan_error || previewIssue(preview, data?.preview_id ?? null, clock) : "";
   const resultOperation = data?.history.find(op => op.id === action?.operationId);
   const files = data?.files ?? noFiles;
   const categories = data?.categories ?? [];
