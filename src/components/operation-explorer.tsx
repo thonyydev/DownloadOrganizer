@@ -1,6 +1,6 @@
-import { Fragment, useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { basename, labels, type Movement, type Operation } from "@/lib/api";
+import { api, basename, labels, type Movement, type Operation, type OperationSummary } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -62,13 +62,23 @@ function MovementList({ movements }: { movements: Movement[] }) {
   </>;
 }
 
-export function OperationExplorer({ operation }: { operation: Operation }) {
+export function OperationExplorer({ operation }: { operation: Operation | OperationSummary }) {
   const [open, setOpen] = useState(false);
-  return <Dialog open={open} onOpenChange={setOpen}>
+  const [details, setDetails] = useState<Operation | null>(null);
+  const [error, setError] = useState("");
+  const [retry, setRetry] = useState(0);
+  useEffect(() => {
+    if (!open || "movements" in operation) return;
+    let disposed = false;
+    api.operation(operation.id).then(value => { if (!disposed) { setDetails(value); setError(""); } }).catch(error => { if (!disposed) setError(String(error)); });
+    return () => { disposed = true; };
+  }, [open, operation, retry]);
+  const current = "movements" in operation ? operation : details?.id === operation.id ? details : null;
+  return <Dialog open={open} onOpenChange={value => { if (value && !("movements" in operation)) { setDetails(null); setError(""); } setOpen(value); }}>
     <DialogTrigger asChild><Button className="summary-explore" variant="outline" size="sm">Explorar arquivos</Button></DialogTrigger>
     <DialogContent className="operation-explorer">
       <DialogHeader><DialogTitle>Arquivos da operação #{operation.id}</DialogTitle><DialogDescription>Consulte as movimentações registradas. Use o filtro para localizar problemas e Home ou End na lista para ir ao início ou ao final.</DialogDescription></DialogHeader>
-      {open && <MovementList movements={operation.movements} />}
+      {open && <>{error && <p className="inline-error" role="alert">Não foi possível consultar os arquivos. <Button variant="outline" onClick={() => setRetry(value => value + 1)}>Tentar novamente</Button></p>}{current ? <MovementList movements={current.movements} /> : !error && <p role="status">Carregando arquivos da operação…</p>}</>}
     </DialogContent>
   </Dialog>;
 }

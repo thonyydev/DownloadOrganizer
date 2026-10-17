@@ -4,13 +4,13 @@ import { Button } from "@/components/ui/button";
 import { Activity } from "@/components/history";
 import { AnimatedCount } from "@/components/motion/animated-count";
 import { useMotionAllowed } from "@/components/motion/feedback";
-import { basename, bytes, type Operation, type Snapshot } from "@/lib/api";
+import { basename, bytes, type OperationSummary, type Snapshot } from "@/lib/api";
 
 const categoryIcons: Record<string, typeof Image> = { images: Image, videos: Video, audio: AudioLines, documents: FileText, archives: Package, installers: Download, code: Code2, other: Boxes };
 
 export function Overview({ data, onFiles, onSettings, onCategory, onHistory, onOperation }: {
   data: Snapshot | null; onFiles: () => void; onSettings: () => void; onCategory: (id: string) => void;
-  onHistory: () => void; onOperation: (operation: Operation) => void;
+  onHistory: () => void; onOperation: (operation: OperationSummary) => void;
 }) {
   const motionAllowed = useMotionAllowed();
   const files = data?.files ?? [];
@@ -21,7 +21,7 @@ export function Overview({ data, onFiles, onSettings, onCategory, onHistory, onO
     ["Disponíveis", files.length, bytes(files.reduce((sum, f) => sum + f.size, 0))],
     ["Prontos", files.filter(f => f.status === "ready").length, "Após conferência"],
     ["Conflitos", files.filter(f => f.status === "conflict").length, "Preservados"],
-    ["Organizados", history.reduce((sum, op) => sum + op.movements.filter(m => m.status === "moved").length, 0), "Últimas 100 operações"],
+    ["Organizados", history.reduce((sum, op) => sum + op.moved, 0), "Últimas 100 operações"],
   ];
   return <div className="overview">
     <section data-motion-group className="source-section" aria-labelledby="source-heading">

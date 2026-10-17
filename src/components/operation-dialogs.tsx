@@ -6,12 +6,12 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { FileTable } from "@/components/file-table";
 import { OperationFeedback } from "@/components/operation-feedback";
 import { UndoFileList } from "@/components/undo-file-list";
-import type { Category, Operation, Preview } from "@/lib/api";
+import type { Category, Operation, OperationSummary, Preview } from "@/lib/api";
 import type { Action } from "@/lib/experience";
 
 export function OperationDialogs({ preview, undoTarget, categories, action, busy, working, issue, reviewed, operation, onReviewed, onUpdate, onOrganize, onUndo, onClose, onViewResult, onRestoreFocus }: {
   preview: Preview | null; undoTarget: Operation | null; categories: Category[]; action: Action | null; busy: boolean; working: boolean;
-  issue: string; reviewed: boolean; operation?: Operation;
+  issue: string; reviewed: boolean; operation?: Operation | OperationSummary;
   onReviewed: (value: boolean) => void; onUpdate: () => void; onOrganize: () => void; onUndo: () => void; onClose: () => void; onViewResult: () => void;
   onRestoreFocus: () => void;
 }) {
@@ -23,7 +23,7 @@ export function OperationDialogs({ preview, undoTarget, categories, action, busy
   const ready = counts.ready;
   const previewAction = action?.kind === "organize" || action?.kind === "preview" ? action : null;
   const undoAction = action?.kind === "undo" ? action : null;
-  const undoable = operation ?? undoTarget;
+  const undoable = operation && "movements" in operation ? operation : undoTarget;
   const reversible = useMemo(() => undoable?.movements.filter(m => m.status === "moved") ?? [], [undoable?.movements]);
   const done = (value: Action | null) => value?.phase === "completed" && value.kind !== "preview";
   const close = (open: boolean) => { if (!open && !busy) onClose(); };
