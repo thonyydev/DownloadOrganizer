@@ -13,6 +13,7 @@ use std::{
 use tempfile::TempDir;
 #[cfg(windows)]
 mod directory_cleanup;
+mod history_pagination;
 
 fn prepare_move(
     entry: &engine::FileEntry,

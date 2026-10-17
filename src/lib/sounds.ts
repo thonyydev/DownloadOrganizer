@@ -1,5 +1,5 @@
 import type { SoundDefinition } from "@web-kits/audio";
-import type { Operation } from "./api";
+import { summarizeOperation, type Operation, type OperationSummary } from "./api";
 
 // Original create-sound recipes: short, warm sine gestures; no samples or reverb tails.
 export const sounds = {
@@ -22,10 +22,11 @@ export const sounds = {
 export type SoundName = keyof typeof sounds;
 
 // A command/progress completion alone does not prove that the individual moves succeeded.
-export function operationSound(kind: "organize" | "undo", operation?: Operation, expectedCount?: number): SoundName | null {
-  if (!operation || (kind === "organize" && operation.kind !== "manual") || !operation.movements.length) return null;
-  const status = kind === "undo" ? "undone" : "moved";
-  if (operation.movements.some(m => m.error || m.status !== status)
-    || (expectedCount !== undefined && operation.movements.length !== expectedCount)) return "warning";
+export function operationSound(kind: "organize" | "undo", operation?: Operation | OperationSummary, expectedCount?: number): SoundName | null {
+  if (!operation || (kind === "organize" && operation.kind !== "manual")) return null;
+  const summary = summarizeOperation(operation);
+  if (!summary.total) return null;
+  if (summary.errors || (kind === "undo" ? summary.undone : summary.moved) !== summary.total
+    || (expectedCount !== undefined && summary.total !== expectedCount)) return "warning";
   return kind === "undo" ? "restore" : "organize";
 }

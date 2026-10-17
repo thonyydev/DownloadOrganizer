@@ -2,6 +2,10 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { HistoryView } from "./history";
 import type { Operation } from "@/lib/api";
+import { summarizeOperation } from "@/lib/api";
+
+const queries = vi.hoisted(() => ({ operation: vi.fn(), destinations: vi.fn() }));
+vi.mock("@/lib/api", async original => ({ ...await original<typeof import("@/lib/api")>(), api: queries }));
 
 vi.mock("@/components/motion/feedback", () => ({ useMotionAllowed: () => false, useFeedbackMotion: () => ({ current: null }) }));
 const props = { expanded: 42, working: false, onExpand: vi.fn(), onUndo: vi.fn() };
@@ -21,6 +25,41 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); if (originalScrollTo) Object.defineProperty(HTMLElement.prototype, "scrollTo", originalScrollTo); else Reflect.deleteProperty(HTMLElement.prototype, "scrollTo"); });
 function total(name: string) { return screen.getByText(name).parentElement!.querySelector("dd")!.textContent; }
 function explore() { fireEvent.click(screen.getByRole("button", { name: "Explorar arquivos" })); return screen.getByRole("dialog", { name: "Arquivos da operação #42" }); }
+
+it("consulta somente os destinos ao expandir um resumo e virtualiza os detalhes carregados sob demanda", async () => {
+  const operation = operationOf(5000);
+  queries.destinations.mockResolvedValue({ folders: [["/isolated/destination/Documents/", 5000]], other_folders: 0, other_files: 0 });
+  queries.operation.mockResolvedValue(operation);
+  render(<HistoryView {...props} history={[summarizeOperation(operation)]} />);
+  expect(total("Arquivos envolvidos")).toBe("5000");
+  await screen.findByText("/isolated/destination/Documents/");
+  expect(queries.destinations).toHaveBeenCalledExactlyOnceWith(42);
+  expect(queries.operation).not.toHaveBeenCalled();
+  const dialog = explore();
+  await within(dialog).findByText("File-0.txt");
+  expect(queries.operation).toHaveBeenCalledExactlyOnceWith(42);
+  expect(dialog.querySelectorAll("[data-movement-id]").length).toBeLessThan(20);
+  fireEvent.change(within(dialog).getByRole("textbox", { name: "Buscar arquivos da operação" }), { target: { value: "4999" } });
+  expect(within(dialog).getByText("File-4999.txt")).toBeTruthy();
+});
+
+it("permite recuperar falhas na consulta de destinos e de arquivos sem perder a operação", async () => {
+  const operation = operationOf(1);
+  queries.destinations.mockRejectedValueOnce("Consulta falhou").mockResolvedValueOnce({ folders: [], other_folders: 0, other_files: 0 });
+  queries.operation.mockRejectedValueOnce("Consulta falhou").mockResolvedValueOnce(operation);
+  render(<HistoryView {...props} history={[summarizeOperation(operation)]} />);
+  await screen.findByText(/Não foi possível consultar os destinos/);
+  fireEvent.click(screen.getByRole("button", { name: "Tentar novamente" }));
+  await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  const trigger = screen.getByRole("button", { name: "Explorar arquivos" }); act(() => trigger.focus());
+  const dialog = explore();
+  await within(dialog).findByText(/Não foi possível consultar os arquivos/);
+  fireEvent.click(within(dialog).getByRole("button", { name: "Tentar novamente" }));
+  await within(dialog).findByText("File-0.txt");
+  fireEvent.keyDown(dialog, { key: "Escape" });
+  await waitFor(() => expect(document.activeElement).toBe(trigger));
+  expect(props.onUndo).not.toHaveBeenCalled();
+});
 
 it("resume os estados reais e agrupa os caminhos de destino sem montar arquivos", () => {
   const op = operationOf(6);

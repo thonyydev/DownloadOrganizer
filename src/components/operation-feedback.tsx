@@ -1,15 +1,16 @@
 import { CircleCheck, Loader2, ShieldCheck } from "lucide-react";
-import type { Operation } from "@/lib/api";
+import { summarizeOperation, type Operation, type OperationSummary } from "@/lib/api";
 import type { Action } from "@/lib/experience";
 import { useFeedbackMotion, useMotionAllowed } from "@/components/motion/feedback";
 import { useContentMotion } from "@/components/motion/transitions";
 
-export function OperationFeedback({ action, operation }: { action: Action | null; operation?: Operation }) {
+export function OperationFeedback({ action, operation }: { action: Action | null; operation?: Operation | OperationSummary }) {
   const allowed = useMotionAllowed();
   const active = action?.phase === "preparing" || action?.phase === "organizing";
-  const restored = operation?.movements.filter(m => m.status === "undone").length ?? 0;
-  const moved = operation?.movements.filter(m => m.status === "moved").length ?? 0;
-  const errors = operation?.movements.filter(m => m.error || ["failed", "uncertain", "pending", "undo_pending"].includes(m.status)).length ?? 0;
+  const summary = operation ? summarizeOperation(operation) : null;
+  const restored = summary?.undone ?? 0;
+  const moved = summary?.moved ?? 0;
+  const errors = summary?.errors ?? 0;
   const mark = useFeedbackMotion<SVGSVGElement>(`${action?.kind}:${action?.phase}:${action?.operationId}:${errors}`, allowed && action?.phase === "completed" && errors === 0);
   const panel = useContentMotion(`${action?.kind}:${action?.phase}`, allowed && action?.phase !== "error" && errors === 0);
   if (!action || (active && (action.kind === "refresh" || action.showLoading === false))) return null;

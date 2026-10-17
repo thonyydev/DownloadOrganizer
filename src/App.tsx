@@ -18,7 +18,8 @@ import { NavigationIndicator, PageTransition, useContentMotion, usePagePosition 
 import { useMotionAllowed } from "@/components/motion/feedback";
 import { SuccessNotice } from "@/components/success-notice";
 import { errorMessage, isRunning, previewIssue, reconcileDraft, samePreferences, type Action, type PreferencesDraft } from "@/lib/experience";
-import { api, native, type FileEntry, type Operation, type Preview, type Progress, type Snapshot } from "@/lib/api";
+import { api, native, summarizeOperation, type FileEntry, type Operation, type OperationSummary, type Preview, type Progress, type Snapshot } from "@/lib/api";
+import { useHistoryPages } from "@/lib/use-history";
 import { createProgressPresenter } from "@/lib/progress";
 import { AudioProvider, useAudioFeedback } from "@/components/audio/audio-provider";
 import { operationSound } from "@/lib/sounds";
@@ -45,6 +46,12 @@ function OrganizerApp() {
   const [reviewed, setReviewed] = useState(false);
   const [clock, setClock] = useState(Date.now());
   const [undoTarget, setUndoTarget] = useState<Operation | null>(null);
+  const [detailOperation, setDetailOperation] = useState<Operation | OperationSummary>();
+  const detailId = useRef<number | null>(null);
+  const detailsNeeded = useRef(false);
+  const [openingUndo, setOpeningUndo] = useState<number | null>(null);
+  const historyPages = useHistoryPages();
+  const { sync: syncHistory, upsert: upsertHistory } = historyPages;
   const [action, setAction] = useState<Action | null>(null);
   const [automatic, setAutomatic] = useState<Action | null>(null);
   const [closeRequested, setCloseRequested] = useState(false);
@@ -59,6 +66,7 @@ function OrganizerApp() {
   const closeBypass = useRef(false);
   const actionKind = useRef<Action["kind"] | null>(null);
   const manualProgress = useMemo(() => createProgressPresenter(progress => {
+    if (progress.operation_id != null) detailId.current = progress.operation_id;
     setAction(current => current ? { ...current, progress, operationId: progress.operation_id ?? current.operationId, phase: progress.phase } : current);
   }), []);
   const automaticProgress = useMemo(() => createProgressPresenter(progress => {
@@ -81,13 +89,19 @@ function OrganizerApp() {
       if (version === refreshVersion.current) {
         setData(next);
         setDraft(current => reconcileDraft(current, next.preferences));
+        syncHistory({ operations: next.history, next_cursor: next.history_cursor });
       }
-      return next;
+      const id = detailId.current;
+      const detail = id === null ? undefined : await (detailsNeeded.current ? api.operation(id) : api.operationSummary(id));
+      if (detail && version === refreshVersion.current && detailId.current === id) {
+        setDetailOperation(detail); upsertHistory(summarizeOperation(detail));
+      }
+      return { ...next, detail };
     } catch (e) {
       if (version === refreshVersion.current) setError(errorMessage(e));
       if (propagate) throw e;
     } finally { if (version === refreshVersion.current) setLoading(false); }
-  }, []);
+  }, [syncHistory, upsertHistory]);
 
   useEffect(() => {
     void refresh();
@@ -146,6 +160,9 @@ function OrganizerApp() {
     if (busyRef.current || autoBusyRef.current) return false;
     busyRef.current = true; actionKind.current = kind;
     const audible = kind === "organize" || kind === "undo" || kind === "save";
+    if (kind === "organize" || kind === "undo") setDetailOperation(undefined);
+    detailsNeeded.current = false;
+    if (kind === "organize") detailId.current = null;
     const refreshAfter = kind !== "save" || mainDirty;
     if (audible) audio.prepare();
     if (kind === "save" && audio.dirty) audio.prepare(true);
@@ -167,10 +184,11 @@ function OrganizerApp() {
       manualProgress.finish();
       operationId = typeof result === "number" ? result : undefined;
       const fileOperation = kind === "organize" || kind === "undo";
+      if (fileOperation && operationId !== undefined) detailId.current = operationId;
       if (fileOperation) setAction({ kind, phase: "completed", operationId });
       const next = kind !== "refresh" && refreshAfter ? await refresh(true) : undefined;
       if (fileOperation) {
-        const sound = operationSound(kind, next?.history.find(op => op.id === operationId), expectedCount);
+        const sound = operationSound(kind, next?.detail && next.detail.id === operationId ? next.detail : next?.history.find(op => op.id === operationId), expectedCount);
         // One terminal decision per accepted command, never per event or render.
         if (sound) audio.play(sound);
       }
@@ -183,6 +201,7 @@ function OrganizerApp() {
       manualProgress.finish();
       const problem = errorMessage(e);
       setError(problem); setAction(current => ({ kind, phase: "error", error: problem, operationId: operationId ?? current?.operationId }));
+      detailsNeeded.current = kind === "undo";
       if (kind === "organize") { setPreviewError("Esta confirmação não pode ser reutilizada. Confira o histórico e atualize a prévia antes de tentar novamente."); setReviewed(false); }
       if (kind === "preview") setPreviewError("Não foi possível atualizar a prévia. Tente atualizar novamente antes de confirmar.");
       if (refreshAfter) await refresh();
@@ -219,6 +238,17 @@ function OrganizerApp() {
   function closeDialogs() {
     if (busyRef.current) return;
     setPreview(null); setUndoTarget(null); setAction(null); setReviewed(false); setPreviewError(""); setError("");
+    detailId.current = null; setDetailOperation(undefined);
+  }
+  async function openUndo(operation: Operation | OperationSummary) {
+    if (busyRef.current || autoBusyRef.current) return;
+    busyRef.current = true; setBusy(true); setOpeningUndo(operation.id); setError(""); setAction(null);
+    try {
+      const details = await api.operation(operation.id);
+      detailId.current = operation.id; setDetailOperation(details); setUndoTarget(details);
+      upsertHistory(summarizeOperation(details));
+    } catch (error) { setError(errorMessage(error)); }
+    finally { busyRef.current = false; setBusy(false); setOpeningUndo(null); }
   }
   async function closeApplication() {
     if (busyRef.current || autoBusyRef.current) return;
@@ -228,10 +258,10 @@ function OrganizerApp() {
   }
   const working = busy || isRunning(automatic);
   const issue = preview ? previewError || data?.scan_error || previewIssue(preview, data?.preview_id ?? null, clock) : "";
-  const resultOperation = data?.history.find(op => op.id === action?.operationId);
+  const resultOperation = detailOperation?.id === action?.operationId ? detailOperation : undefined;
   const files = data?.files ?? noFiles;
   const categories = data?.categories ?? [];
-  const history = data?.history ?? [];
+  const history = historyPages.operations;
   const searchable = useMemo(() => files.map(file => ({ file, name: file.name.toLocaleLowerCase() })), [files]);
   const query = search.toLocaleLowerCase();
   const visible = useMemo(() => {
@@ -240,7 +270,7 @@ function OrganizerApp() {
   }, [files, searchable, filter, query]);
   const current = pages.find(p => p.id === page)!;
   function showCategory(id: string) { setSearch(""); setFilter(id); setPage("files"); }
-  function showOperation(op: Operation) { setPage("history"); setExpanded(op.id); }
+  function showOperation(op: OperationSummary) { upsertHistory(op); setPage("history"); setExpanded(op.id); }
 
   return <Tooltip.Provider delayDuration={500} skipDelayDuration={300}><div className="app-shell" ref={themeRef}>
     <aside className="sidebar">
@@ -261,7 +291,7 @@ function OrganizerApp() {
         {loading ? <div className="loading-state" role="status"><Loader2 className="spin" size={20} aria-hidden="true" /><p>Lendo seus arquivos com segurança…</p></div> : <PageTransition key={page}>
           {page === "dashboard" && <Overview data={data} onFiles={() => setPage("files")} onSettings={() => setPage("settings")} onCategory={showCategory} onHistory={() => setPage("history")} onOperation={showOperation} />}
           {page === "files" && <section className="files-view"><div className="file-toolbar" data-motion-group><label className="search-field"><span>Buscar arquivos</span><span className="search-input"><Search size={16} aria-hidden="true" /><Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Nome do arquivo…" aria-label="Buscar arquivos" /></span></label><label className="filter-select"><span>Filtrar por categoria</span><select value={filter} onChange={e => setFilter(e.target.value)}><option value="all">Todas as categorias</option>{categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label><span className="file-count">{visible.length} arquivo(s)</span></div><FileTable filterKey={filter + ":" + query} files={visible} categories={categories} filtered={filter !== "all" || !!search} onClearFilters={() => { setFilter("all"); setSearch(""); }} /><div className="table-footer"><ShieldCheck size={14} aria-hidden="true" />Arquivos recentes aguardam estabilidade. Atualize para verificar novamente.</div></section>}
-          {page === "history" && <HistoryView history={history} expanded={expanded} working={working} onExpand={setExpanded} onUndo={op => { setAction(null); setError(""); setUndoTarget(op); }} />}
+          {page === "history" && <HistoryView history={history} expanded={expanded} working={working} openingUndo={openingUndo} onExpand={setExpanded} onUndo={op => void openUndo(op)} hasMore={historyPages.next_cursor !== null} loading={historyPages.loading} pageError={historyPages.error} onLoadMore={() => void historyPages.loadMore()} onRetry={() => void historyPages.retry()} newAvailable={historyPages.newAvailable} onReload={() => void historyPages.reload(expanded)} />}
           {page === "settings" && (data && draft ? <Settings draft={draft.value} categories={categories} busy={working} dirty={dirty} external={external} onChange={update => setDraft(current => current ? { ...current, value: update(current.value) } : current)} onDiscard={discardDraft} onAcceptExternal={() => setDraft(current => current && data ? { ...current, base: data.preferences } : current)} /> : <div className="empty"><Settings2 size={24} aria-hidden="true" /><h2>Configurações disponíveis no desktop</h2><p>Abra o aplicativo Tauri para selecionar suas pastas.</p></div>)}
         </PageTransition>}
         {page === "settings" && data && draft && <SettingsActions busy={working} dirty={dirty} external={!!external} onSave={() => void saveDraft()} onDiscard={discardDraft} />}
@@ -271,7 +301,7 @@ function OrganizerApp() {
       onReviewed={setReviewed} onUpdate={() => void updatePreview()} onClose={closeDialogs} onRestoreFocus={() => mainHeading.current?.focus()}
       onOrganize={() => { if (!preview || issue || !reviewed) return; const id = preview.id; void run(() => api.organize(id), "organize"); }}
       onUndo={() => { if (!undoTarget) return; const id = undoTarget.id; void run(async () => { await api.undo(id); return id; }, "undo"); }}
-      onViewResult={() => { const id = action?.operationId; closeDialogs(); setPage("history"); if (id !== undefined) setExpanded(id); }} />
+      onViewResult={() => { const id = action?.operationId; const operation = resultOperation ?? data?.history.find(op => op.id === id); if (operation) upsertHistory(summarizeOperation(operation)); closeDialogs(); setPage("history"); if (id !== undefined) setExpanded(id); }} />
     <Dialog open={closeRequested} onOpenChange={setCloseRequested}><DialogContent><DialogHeader><DialogTitle>{working ? "Uma operação está em andamento" : dirty ? "Há alterações não salvas" : "Fechar aplicativo?"}</DialogTitle><DialogDescription>{working ? "Aguarde a conclusão antes de fechar o aplicativo." : dirty ? "Você pode salvar ou descartar o rascunho antes de sair." : "A operação terminou. Consulte o histórico para conferir os resultados."}</DialogDescription></DialogHeader>
       {working && <OperationFeedback action={isRunning(action) ? action : automatic} />}
       {external && <p className="inline-error" role="alert">As configurações salvas foram alteradas. Revise as versões nas configurações antes de salvar.</p>}

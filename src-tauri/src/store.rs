@@ -1,10 +1,16 @@
 use crate::engine::{self, Preferences, Result, Stamp};
-use rusqlite::{Connection, TransactionBehavior, params};
+use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde::Serialize;
 use std::{
     fs::{self, File, OpenOptions},
     path::Path,
 };
+
+pub(crate) const HISTORY_SUMMARIES_SQL: &str = "SELECT o.id,o.created,o.kind,count(m.id),
+    coalesce(sum(m.status='moved'),0),coalesce(sum(m.status='undone'),0),
+    coalesce(sum((m.error IS NOT NULL AND m.error<>'') OR m.status IN ('failed','uncertain','pending','undo_pending')),0)
+    FROM (SELECT id,created,kind FROM operations WHERE id>=?1 AND id<=?2 ORDER BY id DESC LIMIT ?3) o
+    LEFT JOIN movements m ON m.operation_id=o.id GROUP BY o.id ORDER BY o.id DESC";
 
 #[derive(Clone, Serialize)]
 pub struct Movement {
@@ -24,6 +30,30 @@ pub struct Operation {
     pub created: i64,
     pub kind: String,
     pub movements: Vec<Movement>,
+}
+
+#[derive(Serialize)]
+pub struct OperationSummary {
+    pub id: i64,
+    pub created: i64,
+    pub kind: String,
+    pub total: i64,
+    pub moved: i64,
+    pub undone: i64,
+    pub errors: i64,
+}
+
+#[derive(Serialize)]
+pub struct HistoryPage {
+    pub operations: Vec<OperationSummary>,
+    pub next_cursor: Option<i64>,
+}
+
+#[derive(Serialize)]
+pub struct DestinationSummary {
+    pub folders: Vec<(String, i64)>,
+    pub other_folders: i64,
+    pub other_files: i64,
 }
 
 pub struct Store {
@@ -329,31 +359,108 @@ impl Store {
         Ok(errors)
     }
 
-    pub fn history(&self) -> Result<Vec<Operation>> {
+    pub fn history_page(&self, before: Option<i64>) -> Result<HistoryPage> {
+        if before.is_some_and(|id| id <= 0) {
+            return Err("Cursor de histórico inválido".into());
+        }
+        let bound = before.map_or(i64::MAX, |id| id - 1);
+        let operations = self.summaries(1, bound, 100)?;
+        let next_cursor = if let Some(last) = operations.last() {
+            let more: bool = self
+                .db
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM operations WHERE id<?1)",
+                    [last.id],
+                    |r| r.get(0),
+                )
+                .map_err(|e| e.to_string())?;
+            more.then_some(last.id)
+        } else {
+            None
+        };
+        Ok(HistoryPage {
+            operations,
+            next_cursor,
+        })
+    }
+
+    pub fn operation_summary(&self, id: i64) -> Result<OperationSummary> {
+        self.summaries(id, id, 1)?
+            .pop()
+            .ok_or("Operação não encontrada".into())
+    }
+
+    fn summaries(&self, lower: i64, upper: i64, limit: i64) -> Result<Vec<OperationSummary>> {
         let mut query = self
             .db
-            .prepare("SELECT id,created,kind FROM operations ORDER BY id DESC LIMIT 100")
+            .prepare(HISTORY_SUMMARIES_SQL)
             .map_err(|e| e.to_string())?;
-        let rows = query
-            .query_map([], |r| {
-                Ok((
-                    r.get::<_, i64>(0)?,
-                    r.get::<_, i64>(1)?,
-                    r.get::<_, String>(2)?,
-                ))
+        query
+            .query_map(params![lower, upper, limit], |r| {
+                Ok(OperationSummary {
+                    id: r.get(0)?,
+                    created: r.get(1)?,
+                    kind: r.get(2)?,
+                    total: r.get(3)?,
+                    moved: r.get(4)?,
+                    undone: r.get(5)?,
+                    errors: r.get(6)?,
+                })
             })
             .map_err(|e| e.to_string())?
             .collect::<std::result::Result<Vec<_>, _>>()
-            .map_err(|e| e.to_string())?;
-        rows.into_iter()
-            .map(|(id, created, kind)| {
-                Ok(Operation {
-                    id,
-                    created,
-                    kind,
-                    movements: self.movements(id)?,
-                })
-            })
+            .map_err(|e| e.to_string())
+    }
+
+    pub fn operation(&self, id: i64) -> Result<Operation> {
+        let (created, kind) = self
+            .db
+            .query_row(
+                "SELECT created,kind FROM operations WHERE id=?1",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?
+            .ok_or("Operação não encontrada")?;
+        Ok(Operation {
+            id,
+            created,
+            kind,
+            movements: self.movements(id)?,
+        })
+    }
+
+    pub fn operation_destinations(&self, id: i64) -> Result<DestinationSummary> {
+        let mut query = self.db.prepare("SELECT folder,count(*) FROM (
+            SELECT rtrim(destination,replace(replace(destination,'/',''),char(92),'')) folder
+            FROM movements WHERE operation_id=?1) WHERE folder<>'' GROUP BY folder ORDER BY count(*) DESC,folder").map_err(|e| e.to_string())?;
+        let mut folders = Vec::new();
+        let mut other_folders = 0;
+        let mut other_files = 0;
+        let mut rows = query.query([id]).map_err(|e| e.to_string())?;
+        while let Some(row) = rows.next().map_err(|e| e.to_string())? {
+            let count: i64 = row.get(1).map_err(|e| e.to_string())?;
+            if folders.len() < 5 {
+                folders.push((row.get(0).map_err(|e| e.to_string())?, count));
+            } else {
+                other_folders += 1;
+                other_files += count;
+            }
+        }
+        Ok(DestinationSummary {
+            folders,
+            other_folders,
+            other_files,
+        })
+    }
+
+    #[cfg(test)]
+    pub fn history(&self) -> Result<Vec<Operation>> {
+        self.history_page(None)?
+            .operations
+            .into_iter()
+            .map(|summary| self.operation(summary.id))
             .collect()
     }
 

@@ -15,7 +15,7 @@ use std::{
     path::Path,
     sync::{Arc, Mutex, atomic::AtomicU64, mpsc},
 };
-use store::{Operation, Store};
+use store::{DestinationSummary, HistoryPage, Operation, OperationSummary, Store};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_window_state::StateFlags;
 
@@ -47,7 +47,8 @@ struct Snapshot {
     preferences: Preferences,
     categories: &'static [engine::Category],
     files: Vec<engine::FileEntry>,
-    history: Vec<Operation>,
+    history: Vec<OperationSummary>,
+    history_cursor: Option<i64>,
     monitoring: bool,
     watch_error: Option<String>,
     scan_error: Option<String>,
@@ -350,11 +351,13 @@ async fn snapshot(app: AppHandle) -> Result<Snapshot> {
         let prefs = runtime.store.preferences()?;
         let scan = engine::scan(&prefs);
         let scan_error = scan.as_ref().err().cloned();
+        let history = runtime.store.history_page(None)?;
         Ok(Snapshot {
             preferences: prefs,
             categories: engine::categories(),
             files: scan.unwrap_or_default(),
-            history: runtime.store.history()?,
+            history: history.operations,
+            history_cursor: history.next_cursor,
             monitoring: runtime.watcher.is_some(),
             watch_error: runtime.watch_error.clone(),
             scan_error,
@@ -364,6 +367,42 @@ async fn snapshot(app: AppHandle) -> Result<Snapshot> {
                 .filter(|p| (0..300).contains(&engine::now().saturating_sub(p.created)))
                 .map(|p| p.id),
         })
+    })
+    .await
+}
+
+#[tauri::command]
+async fn history_page(app: AppHandle, before: Option<i64>) -> Result<HistoryPage> {
+    blocking(move || {
+        let state = app.state::<AppState>();
+        lock(&state)?.store.history_page(before)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn operation_summary(app: AppHandle, operation_id: i64) -> Result<OperationSummary> {
+    blocking(move || {
+        let state = app.state::<AppState>();
+        lock(&state)?.store.operation_summary(operation_id)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn operation_details(app: AppHandle, operation_id: i64) -> Result<Operation> {
+    blocking(move || {
+        let state = app.state::<AppState>();
+        lock(&state)?.store.operation(operation_id)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn operation_destinations(app: AppHandle, operation_id: i64) -> Result<DestinationSummary> {
+    blocking(move || {
+        let state = app.state::<AppState>();
+        lock(&state)?.store.operation_destinations(operation_id)
     })
     .await
 }
@@ -500,6 +539,10 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             snapshot,
+            history_page,
+            operation_summary,
+            operation_details,
+            operation_destinations,
             preview,
             organize,
             undo_operation,
