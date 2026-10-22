@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { api, basename, labels, type Movement, type Operation, type OperationSummary } from "@/lib/api";
+import { displayPath, api, basename, labels, type Movement, type Operation, type OperationSummary } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -53,7 +53,7 @@ function MovementList({ movements }: { movements: Movement[] }) {
         previousEnd = item.end;
         return <Fragment key={item.key}>{gap > 0 && <li aria-hidden="true" role="presentation" style={{ height: gap }} />}
           <li className="movement" data-movement-id={movement.id} data-index={item.index} ref={virtual ? virtualizer.measureElement : undefined} aria-posinset={item.index + 1} aria-setsize={results.length}>
-            <div><strong>{name}</strong><dl className="movement-paths"><dt>Origem</dt><dd>{movement.source}</dd><dt>Destino</dt><dd>{movement.destination}</dd></dl>{movement.error && <p className="inline-error">{movement.error}</p>}</div>
+            <div><strong>{name}</strong><dl className="movement-paths"><dt>Origem</dt><dd>{displayPath(movement.source)}</dd><dt>Destino</dt><dd>{displayPath(movement.destination)}</dd></dl>{movement.error && <p className="inline-error">{movement.error}</p>}</div>
             <span className={"status status-" + movement.status}>{labels[movement.status] ?? movement.status}</span>
           </li></Fragment>;
       })}{virtual && virtualizer.getTotalSize() > previousEnd && <li aria-hidden="true" role="presentation" style={{ height: virtualizer.getTotalSize() - previousEnd }} />}</ol>

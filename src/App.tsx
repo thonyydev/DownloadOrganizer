@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Overview } from "@/components/overview";
 import { HistoryView } from "@/components/history";
 import { FileTable } from "@/components/file-table";
+import { FilePreviewDialog } from "@/components/file-preview-dialog";
 import { Settings } from "@/components/settings";
 import { SettingsActions } from "@/components/settings-actions";
 import { OperationDialogs } from "@/components/operation-dialogs";
@@ -42,6 +43,8 @@ function OrganizerApp() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [preview, setPreview] = useState<Preview | null>(null);
+  const [viewedFile, setViewedFile] = useState<FileEntry | null>(null);
+  const filePreviewFocus = useRef<HTMLButtonElement | null>(null);
   const [previewError, setPreviewError] = useState("");
   const [reviewed, setReviewed] = useState(false);
   const [clock, setClock] = useState(Date.now());
@@ -290,13 +293,14 @@ function OrganizerApp() {
         {automatic && <div className="automatic-feedback"><p>Organização automática</p><OperationFeedback action={automatic} operation={data?.history.find(op => op.id === automatic.operationId)} /></div>}
         {loading ? <div className="loading-state" role="status"><Loader2 className="spin" size={20} aria-hidden="true" /><p>Lendo seus arquivos com segurança…</p></div> : <PageTransition key={page}>
           {page === "dashboard" && <Overview data={data} onFiles={() => setPage("files")} onSettings={() => setPage("settings")} onCategory={showCategory} onHistory={() => setPage("history")} onOperation={showOperation} />}
-          {page === "files" && <section className="files-view"><div className="file-toolbar" data-motion-group><label className="search-field"><span>Buscar arquivos</span><span className="search-input"><Search size={16} aria-hidden="true" /><Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Nome do arquivo…" aria-label="Buscar arquivos" /></span></label><label className="filter-select"><span>Filtrar por categoria</span><select value={filter} onChange={e => setFilter(e.target.value)}><option value="all">Todas as categorias</option>{categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label><span className="file-count">{visible.length} arquivo(s)</span></div><FileTable filterKey={filter + ":" + query} files={visible} categories={categories} filtered={filter !== "all" || !!search} onClearFilters={() => { setFilter("all"); setSearch(""); }} /><div className="table-footer"><ShieldCheck size={14} aria-hidden="true" />Arquivos recentes aguardam estabilidade. Atualize para verificar novamente.</div></section>}
+          {page === "files" && <section className="files-view"><div className="file-toolbar" data-motion-group><label className="search-field"><span>Buscar arquivos</span><span className="search-input"><Search size={16} aria-hidden="true" /><Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Nome do arquivo…" aria-label="Buscar arquivos" /></span></label><label className="filter-select"><span>Filtrar por categoria</span><select value={filter} onChange={e => setFilter(e.target.value)}><option value="all">Todas as categorias</option>{categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label><span className="file-count">{visible.length} arquivo(s)</span></div><FileTable onView={(file, trigger) => { filePreviewFocus.current = trigger; setViewedFile(file); }} filterKey={filter + ":" + query} files={visible} categories={categories} filtered={filter !== "all" || !!search} onClearFilters={() => { setFilter("all"); setSearch(""); }} /><div className="table-footer"><ShieldCheck size={14} aria-hidden="true" />Arquivos recentes aguardam estabilidade. Atualize para verificar novamente.</div></section>}
           {page === "history" && <HistoryView history={history} expanded={expanded} working={working} openingUndo={openingUndo} onExpand={setExpanded} onUndo={op => void openUndo(op)} hasMore={historyPages.next_cursor !== null} loading={historyPages.loading} pageError={historyPages.error} onLoadMore={() => void historyPages.loadMore()} onRetry={() => void historyPages.retry()} newAvailable={historyPages.newAvailable} onReload={() => void historyPages.reload(expanded)} />}
           {page === "settings" && (data && draft ? <Settings draft={draft.value} categories={categories} busy={working} dirty={dirty} external={external} onChange={update => setDraft(current => current ? { ...current, value: update(current.value) } : current)} onDiscard={discardDraft} onAcceptExternal={() => setDraft(current => current && data ? { ...current, base: data.preferences } : current)} /> : <div className="empty"><Settings2 size={24} aria-hidden="true" /><h2>Configurações disponíveis no desktop</h2><p>Abra o aplicativo Tauri para selecionar suas pastas.</p></div>)}
         </PageTransition>}
         {page === "settings" && data && draft && <SettingsActions busy={working} dirty={dirty} external={!!external} onSave={() => void saveDraft()} onDiscard={discardDraft} />}
       </main>
     </div>
+    <FilePreviewDialog file={viewedFile} categories={categories} onClose={() => setViewedFile(null)} onRestoreFocus={() => { const trigger = filePreviewFocus.current; if (trigger?.isConnected) trigger.focus({ preventScroll: true }); else (document.querySelector<HTMLElement>('[aria-label="Rolagem dos arquivos"]') ?? mainHeading.current)?.focus({ preventScroll: true }); }} />
     <OperationDialogs preview={preview} undoTarget={undoTarget} categories={categories} action={action} busy={busy} working={working} issue={issue} reviewed={reviewed} operation={resultOperation}
       onReviewed={setReviewed} onUpdate={() => void updatePreview()} onClose={closeDialogs} onRestoreFocus={() => mainHeading.current?.focus()}
       onOrganize={() => { if (!preview || issue || !reviewed) return; const id = preview.id; void run(() => api.organize(id), "organize"); }}

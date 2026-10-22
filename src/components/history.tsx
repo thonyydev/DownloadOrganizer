@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { useFeedbackMotion, useMotionAllowed } from "@/components/motion/feedback";
 import { Collapse } from "@/components/motion/collapse";
 import { useContentMotion } from "@/components/motion/transitions";
-import { api, date, summarizeOperation, type DestinationSummary, type Operation, type OperationSummary as Summary } from "@/lib/api";
+import { displayPath, api, date, summarizeOperation, type DestinationSummary, type Operation, type OperationSummary as Summary } from "@/lib/api";
 import { useEffect, useMemo, useState } from "react";
 import { OperationExplorer } from "@/components/operation-explorer";
 
@@ -35,7 +35,7 @@ function OperationSummary({ operation }: { operation: Operation | Summary }) {
     <p className="summary-meta">{operation.kind === "automatic" ? "Automação" : operation.kind === "manual" ? "Organização manual" : operation.kind} · {date(operation.created * 1000)}</p>
     {!("movements" in operation) && !destinations && !error && <p className="summary-meta" role="status">Consultando destinos…</p>}
     {error && <p className="inline-error" role="alert">Não foi possível consultar os destinos. <Button variant="outline" size="sm" onClick={() => setRetry(value => value + 1)}>Tentar novamente</Button></p>}
-    {folders.folders.length > 0 && <div className="destination-summary"><strong>Pastas de destino registradas</strong><dl>{folders.folders.map(([folder, count]) => <div key={folder}><dt>{folder}</dt><dd>{count} arquivo(s)</dd></div>)}</dl>{folders.other_folders > 0 && <p>{folders.other_folders} outras pastas · {folders.other_files} arquivo(s). Consulte os caminhos no explorador.</p>}</div>}
+    {folders.folders.length > 0 && <div className="destination-summary"><strong>Pastas de destino registradas</strong><dl>{folders.folders.map(([folder, count]) => <div key={folder}><dt>{displayPath(folder)}</dt><dd>{count} arquivo(s)</dd></div>)}</dl>{folders.other_folders > 0 && <p>{folders.other_folders} outras pastas · {folders.other_files} arquivo(s). Consulte os caminhos no explorador.</p>}</div>}
     <OperationExplorer operation={operation} />
   </div>;
 }

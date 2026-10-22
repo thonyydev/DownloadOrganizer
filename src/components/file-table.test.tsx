@@ -39,6 +39,31 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); if (originalScrollTo) Object.defineProperty(HTMLElement.prototype, "scrollTo", originalScrollTo); else Reflect.deleteProperty(HTMLElement.prototype, "scrollTo"); });
 describe("tabela virtual", () => {
+  it("oferece visualização apenas nas linhas montadas e navega entre ambos os controles", () => {
+    const onView = vi.fn();
+    const files = filesOf(10000);
+    const view = render(<FileTable files={files} categories={categories} onView={onView} />);
+    const table = scroller();
+    const first = within(table).getByRole("button", { name: "Visualizar Arquivo-0.pdf" });
+    expect(first.getAttribute("aria-haspopup")).toBe("dialog");
+    fireEvent.click(first);
+    expect(onView).toHaveBeenCalledExactlyOnceWith(files[0], first);
+    act(() => first.focus());
+    fireEvent.keyDown(first, { key: "End" });
+    const last = within(scroller()).getByRole("button", { name: "Visualizar Arquivo-9999.pdf" });
+    expect(document.activeElement).toBe(last);
+    const disclosure = last.closest("tr")!.querySelector<HTMLButtonElement>(".file-disclosure")!;
+    act(() => disclosure.focus());
+    expect(fireEvent.keyDown(disclosure, { key: "Tab" })).toBe(true);
+    fireEvent.keyDown(disclosure, { key: "Tab", shiftKey: true });
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("Visualizar Arquivo-9998.pdf");
+    fireEvent.keyDown(document.activeElement!, { key: "Tab" });
+    expect(document.activeElement?.closest("tr")?.getAttribute("data-index")).toBe("9999");
+    expect(document.activeElement?.classList.contains("file-disclosure")).toBe(true);
+    expect(document.querySelectorAll("tr[data-file-path]").length).toBeLessThan(25);
+    view.rerender(<FileTable files={files} categories={categories} preview onView={onView} />);
+    expect(screen.queryByRole("button", { name: /^Visualizar/ })).toBeNull();
+  });
   it.each([100, 1000, 5000, 10000])("limita DOM e alcança o último registro com %i arquivos", count => {
     render(<FileTable files={filesOf(count)} categories={categories} />);
     expect(screen.getByRole("region", { name: "Rolagem dos arquivos" }).getAttribute("tabindex")).toBe("0");

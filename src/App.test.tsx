@@ -10,7 +10,7 @@ import { audioStorageKey } from "@/components/audio/audio-provider";
 import type { ReactNode } from "react";
 
 const mocks = vi.hoisted(() => ({
-  snapshot: vi.fn(), history: vi.fn(), operation: vi.fn(), operationSummary: vi.fn(), destinations: vi.fn(), preview: vi.fn(), organize: vi.fn(), undo: vi.fn(), save: vi.fn(), retryMonitoring: vi.fn(),
+  snapshot: vi.fn(), history: vi.fn(), operation: vi.fn(), operationSummary: vi.fn(), destinations: vi.fn(), filePreview: vi.fn(), preview: vi.fn(), organize: vi.fn(), undo: vi.fn(), save: vi.fn(), retryMonitoring: vi.fn(),
   close: vi.fn(), choose: vi.fn(),
   events: new Map<string, (event: { payload: unknown }) => void>(),
   closeHandler: null as null | ((event: { preventDefault: () => void }) => void),
@@ -28,7 +28,7 @@ vi.mock("@web-kits/audio/react", () => ({
 }));
 vi.mock("./lib/api", async importOriginal => ({
   ...await importOriginal<typeof import("./lib/api")>(), native: true,
-  api: { snapshot: mocks.snapshot, history: mocks.history, operation: mocks.operation, operationSummary: mocks.operationSummary, destinations: mocks.destinations, preview: mocks.preview, organize: mocks.organize, undo: mocks.undo, save: mocks.save, retryMonitoring: mocks.retryMonitoring },
+  api: { snapshot: mocks.snapshot, history: mocks.history, operation: mocks.operation, operationSummary: mocks.operationSummary, destinations: mocks.destinations, filePreview: mocks.filePreview, preview: mocks.preview, organize: mocks.organize, undo: mocks.undo, save: mocks.save, retryMonitoring: mocks.retryMonitoring },
 }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async (name, callback) => {
   mocks.events.set(name, callback); return () => mocks.events.delete(name);
@@ -92,6 +92,7 @@ beforeEach(() => {
     if (!operation) throw new Error("Operação não encontrada");
     return structuredClone(operation);
   });
+  mocks.filePreview.mockResolvedValue({ data_url: null, width: null, height: null });
   mocks.destinations.mockResolvedValue({ folders: [], other_folders: 0, other_files: 0 });
   mocks.operationSummary.mockImplementation(async (id: number) => {
     const operation = snapshot.history.find(op => op.id === id);
@@ -532,6 +533,20 @@ describe("feedback de operações breves", () => {
 });
 
 describe("composição desktop", () => {
+  it("visualiza o arquivo da tabela sem preparar organização e restaura o foco ao fechar", async () => {
+    await start(); navigate("Arquivos");
+    const trigger = screen.getByRole("button", { name: "Visualizar a.txt" });
+    fireEvent.click(trigger);
+    const dialog = await screen.findByRole("dialog", { name: "Visualizar arquivo" });
+    await within(dialog).findByText("Visualização não disponível para este formato.");
+    expect(mocks.filePreview).toHaveBeenCalledExactlyOnceWith(snapshot.files[0]);
+    expect(mocks.preview).not.toHaveBeenCalled();
+    expect(mocks.organize).not.toHaveBeenCalled();
+    expect(mocks.undo).not.toHaveBeenCalled();
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(document.activeElement).toBe(trigger);
+  });
   it.each(["dark", "light"] as const)("usa o símbolo oficial com contraste no tema %s, preservando os demais ícones", async theme => {
     snapshot.preferences.theme = theme;
     await start();
