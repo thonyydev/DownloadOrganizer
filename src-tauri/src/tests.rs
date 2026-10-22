@@ -14,6 +14,7 @@ use tempfile::TempDir;
 #[cfg(windows)]
 mod directory_cleanup;
 mod history_pagination;
+mod startup;
 
 fn prepare_move(
     entry: &engine::FileEntry,

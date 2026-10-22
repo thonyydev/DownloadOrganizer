@@ -1,4 +1,5 @@
 use crate::engine::{self, Preferences, Result, Stamp};
+use crate::startup::StartupError;
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde::Serialize;
 use std::{
@@ -62,35 +63,31 @@ pub struct Store {
 }
 
 impl Store {
-    pub fn open(path: &Path, default_source: &str) -> Result<Self> {
+    pub fn open(path: &Path, default_source: &str) -> std::result::Result<Self, StartupError> {
         let lock = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
             .truncate(false)
             .open(path.with_extension("lock"))
-            .map_err(|e| e.to_string())?;
-        lock.try_lock().map_err(|e| {
-            format!("Banco em uso por outra instância ou bloqueio indisponível: {e}")
-        })?;
-        let db = Connection::open(path).map_err(|e| e.to_string())?;
-        db.busy_timeout(std::time::Duration::from_secs(5))
-            .map_err(|e| e.to_string())?;
+            .map_err(|_| StartupError::StorageAccess)?;
+        lock.try_lock().map_err(|_| StartupError::DatabaseLocked)?;
+        let new_database = !path.try_exists().map_err(|_| StartupError::StorageAccess)?;
+        let db = Connection::open(path)?;
+        db.busy_timeout(std::time::Duration::from_secs(5))?;
         db.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;
             CREATE TABLE IF NOT EXISTS preferences(id INTEGER PRIMARY KEY CHECK(id=1), value TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS rules(category TEXT PRIMARY KEY, enabled INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS operations(id INTEGER PRIMARY KEY, created INTEGER NOT NULL, kind TEXT NOT NULL);
-            CREATE TABLE IF NOT EXISTS movements(id INTEGER PRIMARY KEY, operation_id INTEGER NOT NULL REFERENCES operations(id), source TEXT NOT NULL, destination TEXT NOT NULL, status TEXT NOT NULL, error TEXT, size INTEGER NOT NULL, modified INTEGER NOT NULL, digest TEXT NOT NULL);") .map_err(|e| e.to_string())?;
-        let version: u32 = db
-            .pragma_query_value(None, "user_version", |row| row.get(0))
-            .map_err(|e| e.to_string())?;
+            CREATE TABLE IF NOT EXISTS movements(id INTEGER PRIMARY KEY, operation_id INTEGER NOT NULL REFERENCES operations(id), source TEXT NOT NULL, destination TEXT NOT NULL, status TEXT NOT NULL, error TEXT, size INTEGER NOT NULL, modified INTEGER NOT NULL, digest TEXT NOT NULL);")?;
+        let version: u32 = db.pragma_query_value(None, "user_version", |row| row.get(0))?;
         match version {
             0 => db.execute_batch("BEGIN IMMEDIATE;
                 CREATE TABLE created_directories(id INTEGER PRIMARY KEY, operation_id INTEGER NOT NULL REFERENCES operations(id), path TEXT NOT NULL, identity TEXT, state TEXT NOT NULL, error TEXT);
                 CREATE INDEX directories_operation ON created_directories(operation_id);
-                PRAGMA user_version=1; COMMIT;").map_err(|e| e.to_string())?,
+                PRAGMA user_version=1; COMMIT;")?,
             1 => (),
-            _ => return Err("Banco de uma versão mais recente; atualize o aplicativo".into()),
+            _ => return Err(StartupError::NewerVersion),
         }
         let prefs = Preferences {
             source: default_source.into(),
@@ -99,21 +96,22 @@ impl Store {
             enabled_categories: engine::categories().iter().map(|c| c.id.clone()).collect(),
             theme: "dark".into(),
         };
-        db.execute(
-            "INSERT OR IGNORE INTO preferences VALUES(1,?1)",
-            [serde_json::to_string(&prefs).map_err(|e| e.to_string())?],
-        )
-        .map_err(|e| e.to_string())?;
+        // Defaults belong only to a new database, never to an incomplete existing one.
+        if new_database {
+            db.execute(
+                "INSERT INTO preferences VALUES(1,?1)",
+                [serde_json::to_string(&prefs).map_err(|_| StartupError::Preferences)?],
+            )?;
+        }
         for c in engine::categories() {
-            db.execute("INSERT OR IGNORE INTO rules VALUES(?1,1)", [&c.id])
-                .map_err(|e| e.to_string())?;
+            db.execute("INSERT OR IGNORE INTO rules VALUES(?1,1)", [&c.id])?;
         }
         db.execute_batch(
             "CREATE INDEX IF NOT EXISTS movements_operation ON movements(operation_id);",
-        )
-        .map_err(|e| e.to_string())?;
+        )?;
         let store = Self { db, _lock: lock };
-        store.recover()?;
+        store.preferences().map_err(|_| StartupError::Preferences)?;
+        store.recover().map_err(|_| StartupError::Recovery)?;
         Ok(store)
     }
 

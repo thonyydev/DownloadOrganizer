@@ -2,6 +2,7 @@ mod directories;
 mod engine;
 mod monitor;
 mod queue;
+mod startup;
 mod store;
 #[cfg(test)]
 mod tests;
@@ -486,7 +487,14 @@ async fn retry_monitoring(app: AppHandle) -> Result<()> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    if let Err(error) = run_application() {
+        startup::show_error(error);
+        std::process::exit(1);
+    }
+}
+
+fn run_application() -> std::result::Result<(), startup::StartupError> {
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
                 let result = window.show().and_then(|()| {
@@ -506,37 +514,6 @@ pub fn run() {
                 .with_state_flags(StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED)
                 .build(),
         )
-        .setup(|app| {
-            let data = app.path().app_data_dir()?;
-            std::fs::create_dir_all(&data)?;
-            let default_source = app
-                .path()
-                .download_dir()
-                .map(|p| p.to_string_lossy().into_owned())
-                .unwrap_or_default();
-            let store = Store::open(&data.join("organizer.sqlite3"), &default_source)
-                .map_err(std::io::Error::other)?;
-            let (events, receiver) = mpsc::sync_channel(1024);
-            let mut runtime = Runtime {
-                store,
-                preview: None,
-                sequence: 0,
-                watcher: None,
-                session: None,
-                watch_error: None,
-                overflow: Arc::new(AtomicU64::new(0)),
-            };
-            if let Err(error) = monitor::configure(&mut runtime, &events) {
-                runtime.watch_error = Some(error);
-            }
-            app.manage(AppState {
-                runtime: Mutex::new(runtime),
-                events,
-            });
-            let handle = app.handle().clone();
-            std::thread::spawn(move || monitor::worker(handle, receiver));
-            Ok(())
-        })
         .invoke_handler(tauri::generate_handler![
             snapshot,
             history_page,
@@ -549,6 +526,31 @@ pub fn run() {
             save_preferences,
             retry_monitoring
         ])
-        .run(tauri::generate_context!())
-        .expect("Falha ao iniciar Download Organizer");
+        .build(tauri::generate_context!())
+        .map_err(|_| startup::StartupError::Runtime)?;
+    // Plugins (including Single Instance) are initialized by build; windows by run.
+    let data = app
+        .path()
+        .app_data_dir()
+        .map_err(|_| startup::StartupError::DataDirectory)?;
+    let default_source = app
+        .path()
+        .download_dir()
+        .map(|path| path.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let mut runtime = startup::initialize(&data, &default_source)?;
+    let (events, receiver) = mpsc::sync_channel(1024);
+    if let Err(error) = monitor::configure(&mut runtime, &events) {
+        runtime.watch_error = Some(error);
+    }
+    app.manage(AppState {
+        runtime: Mutex::new(runtime),
+        events,
+    });
+    let handle = app.handle().clone();
+    std::thread::Builder::new()
+        .spawn(move || monitor::worker(handle, receiver))
+        .map_err(|_| startup::StartupError::Runtime)?;
+    app.run(|_, _| {});
+    Ok(())
 }
