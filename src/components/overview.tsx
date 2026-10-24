@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Activity } from "@/components/history";
 import { AnimatedCount } from "@/components/motion/animated-count";
 import { useMotionAllowed } from "@/components/motion/feedback";
-import { basename, bytes, type OperationSummary, type Snapshot } from "@/lib/api";
+import { displayPath, basename, bytes, type OperationSummary, type Snapshot } from "@/lib/api";
 
 const categoryIcons: Record<string, typeof Image> = { images: Image, videos: Video, audio: AudioLines, documents: FileText, archives: Package, installers: Download, code: Code2, other: Boxes };
 
@@ -25,9 +25,9 @@ export function Overview({ data, onFiles, onSettings, onCategory, onHistory, onO
   ];
   return <div className="overview">
     <section data-motion-group className="source-section" aria-labelledby="source-heading">
-      <div className="source-heading"><span className="folder-mark"><FolderOpen size={20} aria-hidden="true" /></span><div className="folder-copy"><span className="section-label">Pasta de origem</span><h2 id="source-heading">{data?.preferences.source ? basename(data.preferences.source) : "Nenhuma pasta conectada"}</h2></div><Button variant="outline" size="sm" onClick={onSettings}>Configurar</Button></div>
-      {data?.preferences.source ? <Tooltip.Root><Tooltip.Trigger asChild><code className="source-path" tabIndex={0}>{data.preferences.source}</code></Tooltip.Trigger><Tooltip.Portal><Tooltip.Content className="path-tooltip" sideOffset={6} collisionPadding={12}>{data.preferences.source}</Tooltip.Content></Tooltip.Portal></Tooltip.Root> : <p className="source-path">Selecione uma pasta nas configurações para começar.</p>}
-      <div className="source-meta"><span className={"monitor-status " + (data?.monitoring ? "online" : "")}><span className="small-dot" />{data?.monitoring ? "Monitoramento ativo" : "Monitoramento pausado"}</span>{data && <span className="source-destination">Destino <code>{data.preferences.destination}</code></span>}<Button variant="ghost" size="sm" onClick={onFiles}>Explorar arquivos<ArrowRight aria-hidden="true" /></Button></div>
+      <div className="source-heading"><span className="folder-mark"><FolderOpen size={20} aria-hidden="true" /></span><div className="folder-copy"><span className="section-label">Pasta de origem</span><h2 id="source-heading">{data?.preferences.source ? displayPath(basename(data.preferences.source)) : "Nenhuma pasta conectada"}</h2></div><Button variant="outline" size="sm" onClick={onSettings}>Configurar</Button></div>
+      {data?.preferences.source ? <Tooltip.Root><Tooltip.Trigger asChild><code className="source-path" tabIndex={0}>{displayPath(data.preferences.source)}</code></Tooltip.Trigger><Tooltip.Portal><Tooltip.Content className="path-tooltip" sideOffset={6} collisionPadding={12}>{displayPath(data.preferences.source)}</Tooltip.Content></Tooltip.Portal></Tooltip.Root> : <p className="source-path">Selecione uma pasta nas configurações para começar.</p>}
+      <div className="source-meta"><span className={"monitor-status " + (data?.monitoring ? "online" : "")}><span className="small-dot" />{data?.monitoring ? "Monitoramento ativo" : "Monitoramento pausado"}</span>{data && <span className="source-destination">Destino <code>{displayPath(data.preferences.destination)}</code></span>}<Button variant="ghost" size="sm" onClick={onFiles}>Explorar arquivos<ArrowRight aria-hidden="true" /></Button></div>
       <dl className="file-summary">{stats.map(([label, value, description]) => <div key={label}><dt>{label}</dt><dd>{data ? label === "Conflitos" ? value : <AnimatedCount value={value} /> : "—"}<span>{data ? description : "Aguardando desktop"}</span></dd></div>)}</dl>
       <p className="operational-note"><ShieldCheck size={14} aria-hidden="true" />Confira a prévia antes de mover. Conflitos nunca são sobrescritos.</p>
     </section>

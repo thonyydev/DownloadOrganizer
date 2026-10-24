@@ -1,5 +1,7 @@
 mod directories;
 mod engine;
+mod file_preview;
+mod media_preview;
 mod monitor;
 mod queue;
 mod startup;
@@ -32,6 +34,9 @@ struct Runtime {
 struct AppState {
     runtime: Mutex<Runtime>,
     events: mpsc::SyncSender<monitor::Message>,
+    file_previews: Mutex<file_preview::Access>,
+    file_preview_job: Mutex<()>,
+    media_previews: Mutex<media_preview::Sessions>,
 }
 
 #[derive(Clone, Serialize)]
@@ -353,10 +358,16 @@ async fn snapshot(app: AppHandle) -> Result<Snapshot> {
         let scan = engine::scan(&prefs);
         let scan_error = scan.as_ref().err().cloned();
         let history = runtime.store.history_page(None)?;
+        let files = scan.unwrap_or_default();
+        state
+            .file_previews
+            .lock()
+            .map_err(|_| "Visualização indisponível; reinicie o aplicativo")?
+            .update(&prefs, &files);
         Ok(Snapshot {
             preferences: prefs,
             categories: engine::categories(),
-            files: scan.unwrap_or_default(),
+            files,
             history: history.operations,
             history_cursor: history.next_cursor,
             monitoring: runtime.watcher.is_some(),
@@ -368,6 +379,82 @@ async fn snapshot(app: AppHandle) -> Result<Snapshot> {
                 .filter(|p| (0..300).contains(&engine::now().saturating_sub(p.created)))
                 .map(|p| p.id),
         })
+    })
+    .await
+}
+
+#[tauri::command]
+async fn file_preview(
+    app: AppHandle,
+    path: String,
+    size: u64,
+    modified: i64,
+) -> Result<file_preview::FilePreview> {
+    blocking(move || {
+        let state = app.state::<AppState>();
+        let _job = state
+            .file_preview_job
+            .try_lock()
+            .map_err(|_| "Outra imagem está sendo preparada. Tente novamente em instantes.")?;
+        let authorize = || {
+            let prefs = lock(&state)?.store.preferences()?;
+            state
+                .file_previews
+                .lock()
+                .map_err(|_| "Visualização indisponível; reinicie o aplicativo")?
+                .authorize(&prefs, &path, size, modified)
+        };
+        let expected = authorize()?;
+        let result = file_preview::load(Path::new(&path), &expected)?;
+        if authorize()? != expected {
+            return Err("O arquivo mudou. Atualize a lista e tente novamente.".into());
+        }
+        Ok(result)
+    })
+    .await
+}
+
+fn authorize_media(state: &AppState, path: &str, size: u64, modified: i64) -> Result<Stamp> {
+    let prefs = lock(state)?.store.preferences()?;
+    state
+        .file_previews
+        .lock()
+        .map_err(|_| "Visualização indisponível")?
+        .authorize(&prefs, path, size, modified)
+}
+
+#[tauri::command]
+async fn open_media_preview(
+    app: AppHandle,
+    path: String,
+    size: u64,
+    modified: i64,
+) -> Result<media_preview::MediaPreview> {
+    blocking(move || {
+        let state = app.state::<AppState>();
+        let stamp = authorize_media(&state, &path, size, modified)?;
+        let session = media_preview::Session::open(Path::new(&path), stamp.clone())?;
+        if authorize_media(&state, &path, size, modified)? != stamp {
+            return Err("O arquivo mudou. Atualize a lista.".into());
+        }
+        state
+            .media_previews
+            .lock()
+            .map_err(|_| "Visualização indisponível")?
+            .insert(session)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn close_media_preview(app: AppHandle, token: String) -> Result<()> {
+    blocking(move || {
+        app.state::<AppState>()
+            .media_previews
+            .lock()
+            .map_err(|_| "Visualização indisponível")?
+            .close(&token);
+        Ok(())
     })
     .await
 }
@@ -514,8 +601,70 @@ fn run_application() -> std::result::Result<(), startup::StartupError> {
                 .with_state_flags(StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED)
                 .build(),
         )
+        .register_asynchronous_uri_scheme_protocol(
+            "media-preview",
+            |context, request, responder| {
+                let app = context.app_handle().clone();
+                let main = context.webview_label() == "main";
+                tauri::async_runtime::spawn_blocking(move || {
+                    let origin = request.headers().get("Origin").cloned();
+                    let allowed = origin.as_ref().is_none_or(|value| {
+                        matches!(
+                            value.to_str(),
+                            Ok("http://tauri.localhost"
+                                | "https://tauri.localhost"
+                                | "tauri://localhost")
+                        ) || (cfg!(debug_assertions)
+                            && value.to_str().ok()
+                                == app
+                                    .config()
+                                    .build
+                                    .dev_url
+                                    .as_ref()
+                                    .map(|url| url.origin().ascii_serialization())
+                                    .as_deref())
+                    });
+                    let mut response = if !main || !allowed {
+                        media_preview::response(tauri::http::StatusCode::FORBIDDEN, Vec::new())
+                    } else if let Some(state) = app.try_state::<AppState>() {
+                        match state.media_previews.lock() {
+                            Ok(mut sessions) => sessions.respond(&request, |path, stamp| {
+                                let current = authorize_media(
+                                    &state,
+                                    path.to_str().ok_or("Caminho inválido")?,
+                                    stamp.size as u64,
+                                    stamp.modified / 1_000_000,
+                                )?;
+                                if current != *stamp {
+                                    return Err("A mídia mudou".into());
+                                }
+                                Ok(())
+                            }),
+                            Err(_) => media_preview::response(
+                                tauri::http::StatusCode::SERVICE_UNAVAILABLE,
+                                Vec::new(),
+                            ),
+                        }
+                    } else {
+                        media_preview::response(
+                            tauri::http::StatusCode::SERVICE_UNAVAILABLE,
+                            Vec::new(),
+                        )
+                    };
+                    if allowed && let Some(origin) = origin {
+                        response
+                            .headers_mut()
+                            .insert("Access-Control-Allow-Origin", origin);
+                    }
+                    responder.respond(response);
+                });
+            },
+        )
         .invoke_handler(tauri::generate_handler![
             snapshot,
+            file_preview,
+            open_media_preview,
+            close_media_preview,
             history_page,
             operation_summary,
             operation_details,
@@ -546,6 +695,9 @@ fn run_application() -> std::result::Result<(), startup::StartupError> {
     app.manage(AppState {
         runtime: Mutex::new(runtime),
         events,
+        file_previews: Mutex::new(file_preview::Access::default()),
+        file_preview_job: Mutex::new(()),
+        media_previews: Mutex::new(media_preview::Sessions::default()),
     });
     let handle = app.handle().clone();
     std::thread::Builder::new()

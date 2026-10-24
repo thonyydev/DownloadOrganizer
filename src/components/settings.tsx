@@ -3,7 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { FolderOpen, Moon, Sun, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { type Category, type Preferences } from "@/lib/api";
+import { displayPath, type Category, type Preferences } from "@/lib/api";
 import { AudioSettings } from "@/components/audio/audio-settings";
 
 export function Settings({ draft, categories, busy, dirty, external, onChange: setDraft, onDiscard, onAcceptExternal }: {
@@ -19,12 +19,12 @@ export function Settings({ draft, categories, busy, dirty, external, onChange: s
     } catch (error) { setPickerError(String(error)); }
   }
   return <div className="settings-stack">
-    {external && <section className="banner error-banner" role="alert"><div><strong>As configurações salvas foram atualizadas</strong><p>Seu rascunho foi preservado. Compare a versão atual antes de decidir qual salvar.</p><dl className="external-preferences"><dt>Origem salva</dt><dd>{external.source}</dd><dt>Destino salvo</dt><dd>{external.destination}</dd><dt>Automação salva</dt><dd>{external.automatic ? "Ativada" : "Desativada"}</dd><dt>Categorias salvas</dt><dd>{categories.filter(c => external.enabled_categories.includes(c.id)).map(c => c.name).join(", ") || "Nenhuma"}</dd><dt>Tema salvo</dt><dd>{external.theme === "dark" ? "Escuro" : "Claro"}</dd></dl><div className="notice-actions"><Button variant="outline" disabled={busy} onClick={onDiscard}>Descartar rascunho e carregar atuais</Button><Button variant="outline" disabled={busy} onClick={onAcceptExternal}>Manter rascunho sobre esta versão</Button></div></div></section>}
+    {external && <section className="banner error-banner" role="alert"><div><strong>As configurações salvas foram atualizadas</strong><p>Seu rascunho foi preservado. Compare a versão atual antes de decidir qual salvar.</p><dl className="external-preferences"><dt>Origem salva</dt><dd>{displayPath(external.source)}</dd><dt>Destino salvo</dt><dd>{displayPath(external.destination)}</dd><dt>Automação salva</dt><dd>{external.automatic ? "Ativada" : "Desativada"}</dd><dt>Categorias salvas</dt><dd>{categories.filter(c => external.enabled_categories.includes(c.id)).map(c => c.name).join(", ") || "Nenhuma"}</dd><dt>Tema salvo</dt><dd>{external.theme === "dark" ? "Escuro" : "Claro"}</dd></dl><div className="notice-actions"><Button variant="outline" disabled={busy} onClick={onDiscard}>Descartar rascunho e carregar atuais</Button><Button variant="outline" disabled={busy} onClick={onAcceptExternal}>Manter rascunho sobre esta versão</Button></div></div></section>}
     <p className="draft-status" role="status">{external ? "As configurações salvas mudaram. Revise seu rascunho antes de salvar." : dirty ? "Alterações não salvas. As configurações salvas continuam em uso." : "Todas as alterações estão salvas."}</p>
     <section data-motion-group className="settings-section" aria-labelledby="directories-heading">
       <div className="settings-section-heading"><h2 id="directories-heading">Diretórios</h2><p>Somente arquivos da primeira camada são organizados.</p></div>
       <div className="settings-body">
-        {(["source", "destination"] as const).map(field => <div className="setting-row directory-row" key={field}><div><h3 id={"directory-" + field}>{field === "source" ? "Pasta de origem" : "Destino da organização"}</h3><p>{field === "source" ? "Pasta monitorada para receber arquivos." : "As subpastas de categorias serão criadas aqui."}</p><code>{draft[field] || "Nenhuma pasta selecionada"}</code></div><Button variant="outline" size="sm" onClick={() => choose(field)} disabled={busy} aria-label={field === "source" ? "Selecionar pasta de origem" : "Selecionar destino da organização"}><FolderOpen aria-hidden="true" />Selecionar</Button></div>)}
+        {(["source", "destination"] as const).map(field => <div className="setting-row directory-row" key={field}><div><h3 id={"directory-" + field}>{field === "source" ? "Pasta de origem" : "Destino da organização"}</h3><p>{field === "source" ? "Pasta monitorada para receber arquivos." : "As subpastas de categorias serão criadas aqui."}</p><code>{displayPath(draft[field]) || "Nenhuma pasta selecionada"}</code></div><Button variant="outline" size="sm" onClick={() => choose(field)} disabled={busy} aria-label={field === "source" ? "Selecionar pasta de origem" : "Selecionar destino da organização"}><FolderOpen aria-hidden="true" />Selecionar</Button></div>)}
         {pickerError && <p className="inline-error" role="alert">{pickerError}</p>}
         <p className="settings-draft-note">Escolha um destino no mesmo volume da origem. A organização entre volumes diferentes não é suportada.</p>
       </div>

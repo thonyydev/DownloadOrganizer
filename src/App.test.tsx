@@ -10,7 +10,7 @@ import { audioStorageKey } from "@/components/audio/audio-provider";
 import type { ReactNode } from "react";
 
 const mocks = vi.hoisted(() => ({
-  snapshot: vi.fn(), history: vi.fn(), operation: vi.fn(), operationSummary: vi.fn(), destinations: vi.fn(), preview: vi.fn(), organize: vi.fn(), undo: vi.fn(), save: vi.fn(), retryMonitoring: vi.fn(),
+  snapshot: vi.fn(), history: vi.fn(), operation: vi.fn(), operationSummary: vi.fn(), destinations: vi.fn(), filePreview: vi.fn(), preview: vi.fn(), organize: vi.fn(), undo: vi.fn(), save: vi.fn(), retryMonitoring: vi.fn(),
   close: vi.fn(), choose: vi.fn(),
   events: new Map<string, (event: { payload: unknown }) => void>(),
   closeHandler: null as null | ((event: { preventDefault: () => void }) => void),
@@ -28,7 +28,7 @@ vi.mock("@web-kits/audio/react", () => ({
 }));
 vi.mock("./lib/api", async importOriginal => ({
   ...await importOriginal<typeof import("./lib/api")>(), native: true,
-  api: { snapshot: mocks.snapshot, history: mocks.history, operation: mocks.operation, operationSummary: mocks.operationSummary, destinations: mocks.destinations, preview: mocks.preview, organize: mocks.organize, undo: mocks.undo, save: mocks.save, retryMonitoring: mocks.retryMonitoring },
+  api: { snapshot: mocks.snapshot, history: mocks.history, operation: mocks.operation, operationSummary: mocks.operationSummary, destinations: mocks.destinations, filePreview: mocks.filePreview, preview: mocks.preview, organize: mocks.organize, undo: mocks.undo, save: mocks.save, retryMonitoring: mocks.retryMonitoring },
 }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async (name, callback) => {
   mocks.events.set(name, callback); return () => mocks.events.delete(name);
@@ -92,6 +92,7 @@ beforeEach(() => {
     if (!operation) throw new Error("Operação não encontrada");
     return structuredClone(operation);
   });
+  mocks.filePreview.mockResolvedValue({ data_url: null, width: null, height: null });
   mocks.destinations.mockResolvedValue({ folders: [], other_folders: 0, other_files: 0 });
   mocks.operationSummary.mockImplementation(async (id: number) => {
     const operation = snapshot.history.find(op => op.id === id);
@@ -112,38 +113,40 @@ describe("histórico paginado", () => {
   function seedHistory(count: number) {
     snapshot.history = Array.from({ length: count }, (_, index) => ({ ...structuredClone(operation), id: count - index }));
   }
+  // Two rendered pages, Undo and navigation exceeded 5s on Windows CI; keep the margin local.
   it("carrega e restaura uma operação antiga sem perder páginas, expansão ou identidade", async () => {
     seedHistory(1006); await start(); navigate("Histórico");
     expect(document.querySelectorAll(".history-operation")).toHaveLength(100);
     expect(mocks.operation).not.toHaveBeenCalled();
     // Avoid computing accessible names for every action in the loaded history.
     const loadMore = screen.getByText("Carregar mais", { selector: "button" });
-    fireEvent.click(loadMore);
-    const row = await screen.findByRole("region", { name: "Operação 900" });
+    // Flush the mocked command, then locate its unique accessible label without scanning every region's styles.
+    await act(async () => { fireEvent.click(loadMore); });
+    const row = screen.getByLabelText("Operação 900", { selector: "section" });
     expect(mocks.history).toHaveBeenCalledExactlyOnceWith(907);
     fireEvent.click(within(row).getByRole("button", { name: /1 arquivo organizado/ }));
     expect(within(row).getByText("Arquivos envolvidos")).toBeTruthy();
     expect(mocks.operation).not.toHaveBeenCalled();
-    fireEvent.click(within(row).getByRole("button", { name: "Desfazer" }));
-    const dialog = await screen.findByRole("dialog", { name: "Restaurar os arquivos à origem?" });
+    await act(async () => { fireEvent.click(within(row).getByRole("button", { name: "Desfazer" })); });
+    const dialog = screen.getByRole("dialog", { name: "Restaurar os arquivos à origem?" });
     expect(mocks.operation).toHaveBeenCalledExactlyOnceWith(900);
     mocks.undo.mockImplementationOnce(async (id: number) => { snapshot.history.find(op => op.id === id)!.movements[0].status = "undone"; });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Confirmar restauração" }));
-    await within(dialog).findByText(/1 restaurado\(s\) · 0 ainda no destino/);
+    await act(async () => { fireEvent.click(within(dialog).getByRole("button", { name: "Confirmar restauração" })); });
+    expect(within(dialog).getByText(/1 restaurado\(s\) · 0 ainda no destino/)).toBeTruthy();
     expect(mocks.undo).toHaveBeenCalledExactlyOnceWith(900);
-    fireEvent.click(within(dialog.querySelector<HTMLElement>('[data-slot="dialog-footer"]')!).getByRole("button", { name: /^Fechar$/ }));
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await act(async () => { fireEvent.click(within(dialog.querySelector<HTMLElement>('[data-slot="dialog-footer"]')!).getByRole("button", { name: /^Fechar$/ })); });
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(document.querySelectorAll(".history-operation")).toHaveLength(200);
-    const updated = screen.getByRole("region", { name: "Operação 900" });
+    const updated = screen.getByLabelText("Operação 900", { selector: "section" });
     expect(updated).toBe(row);
     expect(within(updated).getByRole("button", { name: /1 arquivo restaurado/ }).getAttribute("aria-expanded")).toBe("true");
     expect((within(updated).getByRole("button", { name: "Desfazer" }) as HTMLButtonElement).disabled).toBe(true);
     navigate("Arquivos"); navigate("Histórico");
     expect(document.querySelectorAll(".history-operation")).toHaveLength(200);
-    const returned = screen.getByRole("region", { name: "Operação 900" });
+    const returned = screen.getByLabelText("Operação 900", { selector: "section" });
     expect(within(returned).getByRole("button", { name: /1 arquivo restaurado/, expanded: true })).toBeTruthy();
     expect((within(returned).getByRole("button", { name: "Desfazer" }) as HTMLButtonElement).disabled).toBe(true);
-  });
+  }, 10_000);
   it("mantém a página após erro, oferece nova tentativa e sinaliza chegadas sem inserir duplicatas", async () => {
     seedHistory(5);
     mocks.snapshot.mockResolvedValueOnce({ ...snapshotPayload(), history: snapshot.history.slice(0, 2).map(summarizeOperation), history_cursor: 4 });
@@ -532,6 +535,20 @@ describe("feedback de operações breves", () => {
 });
 
 describe("composição desktop", () => {
+  it("visualiza o arquivo da tabela sem preparar organização e restaura o foco ao fechar", async () => {
+    await start(); navigate("Arquivos");
+    const trigger = screen.getByRole("button", { name: "Visualizar a.txt" });
+    fireEvent.click(trigger);
+    const dialog = await screen.findByRole("dialog", { name: "Visualizar arquivo" });
+    await within(dialog).findByText("Visualização não disponível para este formato.");
+    expect(mocks.filePreview).toHaveBeenCalledExactlyOnceWith(snapshot.files[0]);
+    expect(mocks.preview).not.toHaveBeenCalled();
+    expect(mocks.organize).not.toHaveBeenCalled();
+    expect(mocks.undo).not.toHaveBeenCalled();
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(document.activeElement).toBe(trigger);
+  });
   it.each(["dark", "light"] as const)("usa o símbolo oficial com contraste no tema %s, preservando os demais ícones", async theme => {
     snapshot.preferences.theme = theme;
     await start();

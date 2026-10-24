@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useId, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Undo2 } from "lucide-react";
-import { basename, type Movement } from "@/lib/api";
+import { displayPath, basename, type Movement } from "@/lib/api";
 
 export function UndoFileList({ movements }: { movements: Movement[] }) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -27,7 +27,7 @@ export function UndoFileList({ movements }: { movements: Movement[] }) {
       previousEnd = item.end;
       return <Fragment key={item.key}>{gap > 0 && <li aria-hidden="true" role="presentation" style={{ height: gap }} />}
         <li className="undo-file-row" data-undo-movement-id={movement.id} data-index={item.index} ref={virtual ? virtualizer.measureElement : undefined} aria-posinset={item.index + 1} aria-setsize={movements.length}>
-          <Undo2 size={16} aria-hidden="true" /><div><strong>{basename(movement.source)}</strong><small>Local atual: {movement.destination}</small><small>Restaurar para: {movement.source}</small></div>
+          <Undo2 size={16} aria-hidden="true" /><div><strong>{basename(movement.source)}</strong><small>Local atual: {displayPath(movement.destination)}</small><small>Restaurar para: {displayPath(movement.source)}</small></div>
         </li></Fragment>;
     })}{virtual && virtualizer.getTotalSize() > previousEnd && <li aria-hidden="true" role="presentation" style={{ height: virtualizer.getTotalSize() - previousEnd }} />}</ol>
       : <p className="undo-summary" role="status">Nenhum arquivo disponível para restaurar.</p>}
