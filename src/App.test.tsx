@@ -113,38 +113,40 @@ describe("histórico paginado", () => {
   function seedHistory(count: number) {
     snapshot.history = Array.from({ length: count }, (_, index) => ({ ...structuredClone(operation), id: count - index }));
   }
+  // Two rendered pages, Undo and navigation exceeded 5s on Windows CI; keep the margin local.
   it("carrega e restaura uma operação antiga sem perder páginas, expansão ou identidade", async () => {
     seedHistory(1006); await start(); navigate("Histórico");
     expect(document.querySelectorAll(".history-operation")).toHaveLength(100);
     expect(mocks.operation).not.toHaveBeenCalled();
     // Avoid computing accessible names for every action in the loaded history.
     const loadMore = screen.getByText("Carregar mais", { selector: "button" });
-    fireEvent.click(loadMore);
-    const row = await screen.findByRole("region", { name: "Operação 900" });
+    // Flush the mocked command, then locate its unique accessible label without scanning every region's styles.
+    await act(async () => { fireEvent.click(loadMore); });
+    const row = screen.getByLabelText("Operação 900", { selector: "section" });
     expect(mocks.history).toHaveBeenCalledExactlyOnceWith(907);
     fireEvent.click(within(row).getByRole("button", { name: /1 arquivo organizado/ }));
     expect(within(row).getByText("Arquivos envolvidos")).toBeTruthy();
     expect(mocks.operation).not.toHaveBeenCalled();
-    fireEvent.click(within(row).getByRole("button", { name: "Desfazer" }));
-    const dialog = await screen.findByRole("dialog", { name: "Restaurar os arquivos à origem?" });
+    await act(async () => { fireEvent.click(within(row).getByRole("button", { name: "Desfazer" })); });
+    const dialog = screen.getByRole("dialog", { name: "Restaurar os arquivos à origem?" });
     expect(mocks.operation).toHaveBeenCalledExactlyOnceWith(900);
     mocks.undo.mockImplementationOnce(async (id: number) => { snapshot.history.find(op => op.id === id)!.movements[0].status = "undone"; });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Confirmar restauração" }));
-    await within(dialog).findByText(/1 restaurado\(s\) · 0 ainda no destino/);
+    await act(async () => { fireEvent.click(within(dialog).getByRole("button", { name: "Confirmar restauração" })); });
+    expect(within(dialog).getByText(/1 restaurado\(s\) · 0 ainda no destino/)).toBeTruthy();
     expect(mocks.undo).toHaveBeenCalledExactlyOnceWith(900);
-    fireEvent.click(within(dialog.querySelector<HTMLElement>('[data-slot="dialog-footer"]')!).getByRole("button", { name: /^Fechar$/ }));
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await act(async () => { fireEvent.click(within(dialog.querySelector<HTMLElement>('[data-slot="dialog-footer"]')!).getByRole("button", { name: /^Fechar$/ })); });
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(document.querySelectorAll(".history-operation")).toHaveLength(200);
-    const updated = screen.getByRole("region", { name: "Operação 900" });
+    const updated = screen.getByLabelText("Operação 900", { selector: "section" });
     expect(updated).toBe(row);
     expect(within(updated).getByRole("button", { name: /1 arquivo restaurado/ }).getAttribute("aria-expanded")).toBe("true");
     expect((within(updated).getByRole("button", { name: "Desfazer" }) as HTMLButtonElement).disabled).toBe(true);
     navigate("Arquivos"); navigate("Histórico");
     expect(document.querySelectorAll(".history-operation")).toHaveLength(200);
-    const returned = screen.getByRole("region", { name: "Operação 900" });
+    const returned = screen.getByLabelText("Operação 900", { selector: "section" });
     expect(within(returned).getByRole("button", { name: /1 arquivo restaurado/, expanded: true })).toBeTruthy();
     expect((within(returned).getByRole("button", { name: "Desfazer" }) as HTMLButtonElement).disabled).toBe(true);
-  });
+  }, 10_000);
   it("mantém a página após erro, oferece nova tentativa e sinaliza chegadas sem inserir duplicatas", async () => {
     seedHistory(5);
     mocks.snapshot.mockResolvedValueOnce({ ...snapshotPayload(), history: snapshot.history.slice(0, 2).map(summarizeOperation), history_cursor: 4 });

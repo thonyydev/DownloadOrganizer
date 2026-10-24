@@ -1,8 +1,14 @@
 use super::*;
 use std::fs;
 
+fn temp_directory() -> tempfile::TempDir {
+    // Production scan returns canonical paths; TEMP may use case/8.3 aliases on Windows CI.
+    let root = fs::canonicalize(std::env::temp_dir()).unwrap();
+    tempfile::tempdir_in(root).unwrap()
+}
+
 fn sample(format: ImageFormat) -> (tempfile::TempDir, std::path::PathBuf, Stamp) {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = temp_directory();
     let path = temp
         .path()
         .join(format!("image.{}", format.extensions_str()[0]));
@@ -44,7 +50,7 @@ fn supported_images_become_bounded_png_without_modifying_the_source() {
 
 #[test]
 fn thumbnail_keeps_resolution_metadata_and_limits_output_dimensions() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = temp_directory();
     let path = temp.path().join("large.png");
     DynamicImage::new_rgb8(1200, 800).save(&path).unwrap();
     let response = load(
@@ -68,7 +74,7 @@ fn thumbnail_keeps_resolution_metadata_and_limits_output_dimensions() {
 
 #[test]
 fn gif_returns_only_the_first_static_frame() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = temp_directory();
     let path = temp.path().join("animated.gif");
     let mut encoder = image::codecs::gif::GifEncoder::new(File::create(&path).unwrap());
     for color in [[255, 0, 0, 255], [0, 0, 255, 255]] {
@@ -107,7 +113,7 @@ fn gif_returns_only_the_first_static_frame() {
 
 #[test]
 fn unsupported_content_is_metadata_only_and_never_interpreted_as_markup() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = temp_directory();
     for extension in ["svg", "html", "exe", "pdf", "mp4", "mp3", "txt"] {
         let path = temp.path().join(format!("unsupported.{extension}"));
         let contents = b"<svg onload='never-run'><script>invalid</script></svg>";
@@ -138,7 +144,7 @@ fn missing_changed_and_temporary_files_fail_without_writes() {
 
 #[test]
 fn oversized_input_is_rejected_before_allocating_the_file_contents() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = temp_directory();
     let path = temp.path().join("huge.png");
     File::create(&path).unwrap().set_len(MAX_INPUT + 1).unwrap();
     let expected = engine::stamp(&fs::metadata(&path).unwrap()).unwrap();
@@ -185,7 +191,7 @@ fn malformed_truncated_or_disguised_images_fail_safely() {
 
 #[test]
 fn only_the_latest_authorized_snapshot_and_configuration_can_grant_access() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = temp_directory();
     let source = engine::validate_directory(temp.path()).unwrap();
     let path = source.join("one.png");
     DynamicImage::new_rgb8(2, 2).save(&path).unwrap();
@@ -365,7 +371,7 @@ fn windows_junction_ancestors_never_authorize_reading_their_targets() {
 #[cfg(windows)]
 #[test]
 fn physical_path_checks_preserve_unicode_names_and_verbatim_paths() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = temp_directory();
     let path = temp.path().join("Visão_日本語.PNG");
     DynamicImage::new_rgb8(4, 3)
         .save_with_format(&path, ImageFormat::Png)
@@ -374,6 +380,75 @@ fn physical_path_checks_preserve_unicode_names_and_verbatim_paths() {
     assert!(load(&path, &stamp).is_ok());
     let verbatim = fs::canonicalize(&path).unwrap();
     assert!(load(&verbatim, &stamp).is_ok());
+    let text = verbatim.to_str().unwrap();
+    let ordinary = if let Some(tail) = text.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{tail}")
+    } else {
+        text.strip_prefix(r"\\?\").unwrap_or(text).to_owned()
+    };
+    assert!(load(Path::new(&ordinary), &stamp).is_ok());
+}
+
+#[cfg(windows)]
+#[test]
+fn scan_authorizes_canonical_previews_for_case_and_short_path_aliases() {
+    use std::os::windows::ffi::{OsStrExt, OsStringExt};
+    use windows_sys::Win32::Storage::FileSystem::GetShortPathNameW;
+    let temp = temp_directory();
+    let folder = temp.path().join("MixedCaseParent");
+    fs::create_dir(&folder).unwrap();
+    let path = folder.join("Visão_日本語.PNG");
+    DynamicImage::new_rgb8(4, 3)
+        .save_with_format(&path, ImageFormat::Png)
+        .unwrap();
+    let differently_cased = temp.path().join("mixedcaseparent");
+    let name: Vec<u16> = folder.as_os_str().encode_wide().chain(Some(0)).collect();
+    let mut buffer = vec![0u16; 32768];
+    let length =
+        unsafe { GetShortPathNameW(name.as_ptr(), buffer.as_mut_ptr(), buffer.len() as u32) }
+            as usize;
+    assert!(length > 0 && length < buffer.len());
+    // If 8.3 generation is disabled, Windows may return the original spelling.
+    let short = std::path::PathBuf::from(std::ffi::OsString::from_wide(&buffer[..length]));
+    let original = fs::read(&path).unwrap();
+    for source in [differently_cased, short] {
+        let prefs = Preferences {
+            source: source.to_str().unwrap().into(),
+            destination: source.to_str().unwrap().into(),
+            automatic: false,
+            enabled_categories: vec!["images".into()],
+            theme: "dark".into(),
+        };
+        let files = engine::scan(&prefs).unwrap();
+        let entry = files
+            .iter()
+            .find(|entry| entry.name == "Visão_日本語.PNG")
+            .unwrap();
+        assert_eq!(Path::new(&entry.path), fs::canonicalize(&path).unwrap());
+        let mut access = Access::default();
+        access.update(&prefs, &files);
+        let stamp = access
+            .authorize(&prefs, &entry.path, entry.size, entry.modified)
+            .unwrap();
+        let raw_alias = source.join("visão_日本語.png");
+        assert_eq!(
+            engine::stamp(&fs::metadata(&raw_alias).unwrap()).unwrap(),
+            stamp
+        );
+        assert!(
+            access
+                .authorize(
+                    &prefs,
+                    raw_alias.to_str().unwrap(),
+                    entry.size,
+                    entry.modified
+                )
+                .is_err()
+        );
+        let response = load(Path::new(&entry.path), &stamp).unwrap();
+        assert_eq!((response.width, response.height), (Some(4), Some(3)));
+    }
+    assert_eq!(fs::read(path).unwrap(), original);
 }
 
 #[cfg(unix)]
