@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef } from "react";
 import { Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { t } from "@/lib/i18n";
 import { useContentMotion } from "@/components/motion/transitions";
 import { useMotionAllowed } from "@/components/motion/feedback";
 
@@ -48,9 +49,9 @@ export function SettingsActions({ busy, dirty, external, onSave, onDiscard }: {
     };
   }, [surfaceRef]);
   return <div className="settings-actions-rail" ref={railRef}>
-    <div className="settings-actions" ref={surfaceRef} role="region" aria-label="Ações das configurações">
-      <Button variant="outline" onClick={onDiscard} disabled={busy || !dirty}>Descartar alterações</Button>
-      <Button onClick={onSave} disabled={busy || !dirty || external}><Save aria-hidden="true" /><span className="settings-save-label"><span aria-hidden="true" className="settings-save-size">Salvar preferências</span><span>{busy ? "Salvando…" : "Salvar preferências"}</span></span></Button>
+    <div className="settings-actions" ref={surfaceRef} role="region" aria-label={t("Ações das configurações", "Settings actions")}>
+      <Button variant="outline" onClick={onDiscard} disabled={busy || !dirty}>{t("Descartar alterações", "Discard changes")}</Button>
+      <Button onClick={onSave} disabled={busy || !dirty || external}><Save aria-hidden="true" /><span className="settings-save-label"><span aria-hidden="true" className="settings-save-size">{t("Salvar preferências", "Save preferences")}</span><span>{busy ? t("Salvando…", "Saving…") : t("Salvar preferências", "Save preferences")}</span></span></Button>
     </div>
   </div>;
 }

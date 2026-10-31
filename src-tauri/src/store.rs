@@ -1,4 +1,5 @@
 use crate::engine::{self, Preferences, Result, Stamp};
+use crate::i18n::t;
 use crate::startup::StartupError;
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde::Serialize;
@@ -95,6 +96,7 @@ impl Store {
             automatic: false,
             enabled_categories: engine::categories().iter().map(|c| c.id.clone()).collect(),
             theme: "dark".into(),
+            language: crate::i18n::SYSTEM.into(),
         };
         // Defaults belong only to a new database, never to an incomplete existing one.
         if new_database {
@@ -153,7 +155,7 @@ impl Store {
         if let Some(expected) = expected
             && Self::read_preferences(&tx)? != *expected
         {
-            return Err("PREFERENCES_CHANGED: As configurações foram atualizadas fora deste formulário. Revise a versão atual antes de salvar.".into());
+            return Err(t("PREFERENCES_CHANGED: As configurações foram atualizadas fora deste formulário. Revise a versão atual antes de salvar.", "PREFERENCES_CHANGED: The settings were updated outside this form. Review the current version before saving.").into());
         }
         tx.execute(
             "UPDATE preferences SET value=?1 WHERE id=1",
@@ -232,7 +234,9 @@ impl Store {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
             Err(error) => return Err(error.to_string()),
         }
-        let path_text = path.to_str().ok_or("Caminho de pasta inválido")?;
+        let path_text = path
+            .to_str()
+            .ok_or(t("Caminho de pasta inválido", "Invalid folder path"))?;
         self.db
             .execute(
                 "INSERT INTO created_directories(operation_id,path,state) VALUES(?1,?2,'intent')",
@@ -279,7 +283,11 @@ impl Store {
             Ok(())
         } else {
             Err(format!(
-                "Os arquivos foram preservados, mas não foi possível concluir a limpeza das pastas: {}",
+                "{}: {}",
+                t(
+                    "Os arquivos foram preservados, mas não foi possível concluir a limpeza das pastas",
+                    "The files were preserved, but the folder cleanup could not be finished"
+                ),
                 errors.join("; ")
             ))
         }
@@ -287,7 +295,15 @@ impl Store {
 
     fn reconcile_directories(&self, operation: Option<i64>) -> Result<Vec<String>> {
         // Missing evidence is never reconstructed from a path or from old movement records.
-        self.db.execute("UPDATE created_directories SET state='unverified',error='Criação interrompida sem identidade confirmada; pasta preservada' WHERE state='intent'", []).map_err(|e| e.to_string())?;
+        self.db
+            .execute(
+                "UPDATE created_directories SET state='unverified',error=?1 WHERE state='intent'",
+                [t(
+                    "Criação interrompida sem identidade confirmada; pasta preservada",
+                    "Creation interrupted without a confirmed identity; folder preserved",
+                )],
+            )
+            .map_err(|e| e.to_string())?;
         // Earlier operations cannot own this newly created directory instance, even at the same path.
         let mut query = self
             .db
@@ -316,9 +332,20 @@ impl Store {
             .map_err(|e| e.to_string())?;
         drop(query);
         let protected = self.preferences().and_then(|prefs| {
-            [prefs.source, prefs.destination].iter().map(|path| {
-                fs::canonicalize(path).map_err(|error| format!("Não foi possível validar as pastas configuradas antes da limpeza: {error}"))
-            }).collect::<Result<Vec<_>>>()
+            [prefs.source, prefs.destination]
+                .iter()
+                .map(|path| {
+                    fs::canonicalize(path).map_err(|error| {
+                        format!(
+                            "{}: {error}",
+                            t(
+                                "Não foi possível validar as pastas configuradas antes da limpeza",
+                                "Could not validate the configured folders before cleanup"
+                            )
+                        )
+                    })
+                })
+                .collect::<Result<Vec<_>>>()
         });
         let mut errors = Vec::new();
         for (id, path, identity, owner) in rows {
@@ -327,7 +354,18 @@ impl Store {
                     .iter()
                     .any(|protected| protected.starts_with(Path::new(&path)))
             }) {
-                self.db.execute("UPDATE created_directories SET error='Pasta usada pelas configurações atuais; preservada' WHERE id=?1", [id]).map_err(|e| e.to_string())?;
+                self.db
+                    .execute(
+                        "UPDATE created_directories SET error=?1 WHERE id=?2",
+                        params![
+                            t(
+                                "Pasta usada pelas configurações atuais; preservada",
+                                "Folder used by the current settings; preserved"
+                            ),
+                            id
+                        ],
+                    )
+                    .map_err(|e| e.to_string())?;
                 continue;
             }
             let result = match (&protected, fs::symlink_metadata(&path)) {
@@ -338,7 +376,12 @@ impl Store {
             };
             let (state, error) = match result {
                 Ok(true) => ("removed", None),
-                Ok(false) => ("created", Some("Pasta não vazia; preservada".to_owned())),
+                Ok(false) => (
+                    "created",
+                    Some(
+                        t("Pasta não vazia; preservada", "Folder not empty; preserved").to_owned(),
+                    ),
+                ),
                 Err(error) => {
                     // Old cleanup failures remain journaled without failing an unrelated operation.
                     if operation.is_none_or(|op| op == owner) {
@@ -359,7 +402,7 @@ impl Store {
 
     pub fn history_page(&self, before: Option<i64>) -> Result<HistoryPage> {
         if before.is_some_and(|id| id <= 0) {
-            return Err("Cursor de histórico inválido".into());
+            return Err(t("Cursor de histórico inválido", "Invalid history cursor").into());
         }
         let bound = before.map_or(i64::MAX, |id| id - 1);
         let operations = self.summaries(1, bound, 100)?;
@@ -385,7 +428,7 @@ impl Store {
     pub fn operation_summary(&self, id: i64) -> Result<OperationSummary> {
         self.summaries(id, id, 1)?
             .pop()
-            .ok_or("Operação não encontrada".into())
+            .ok_or(t("Operação não encontrada", "Operation not found").into())
     }
 
     fn summaries(&self, lower: i64, upper: i64, limit: i64) -> Result<Vec<OperationSummary>> {
@@ -420,7 +463,7 @@ impl Store {
             )
             .optional()
             .map_err(|error| error.to_string())?
-            .ok_or("Operação não encontrada")?;
+            .ok_or(t("Operação não encontrada", "Operation not found"))?;
         Ok(Operation {
             id,
             created,
@@ -482,16 +525,10 @@ impl Store {
                 let source = engine::verify_file(Path::new(&item.source), &expected, &item.digest);
                 let target =
                     engine::verify_file(Path::new(&item.destination), &expected, &item.digest);
-                if source
-                    .as_ref()
-                    .err()
-                    .is_some_and(|e| e == "Arquivo ocupado")
-                    || target
-                        .as_ref()
-                        .err()
-                        .is_some_and(|e| e == "Arquivo ocupado")
+                if source.as_ref().err().is_some_and(|e| engine::is_busy(e))
+                    || target.as_ref().err().is_some_and(|e| engine::is_busy(e))
                 {
-                    self.status(item.id, &item.status, Some("Arquivo ocupado; libere e reinicie para verificar a operação interrompida"))?;
+                    self.status(item.id, &item.status, Some(t("Arquivo ocupado; libere e reinicie para verificar a operação interrompida", "File is busy; release it and restart to check the interrupted operation")))?;
                     continue;
                 }
                 let at_source = source.is_ok();
@@ -514,7 +551,10 @@ impl Store {
                 self.status(
                     item.id,
                     state,
-                    Some("Operação interrompida; estado verificado ao iniciar"),
+                    Some(t(
+                        "Operação interrompida; estado verificado ao iniciar",
+                        "Operation interrupted; state checked at startup",
+                    )),
                 )?;
             }
         }

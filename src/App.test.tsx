@@ -39,7 +39,7 @@ vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => ({
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: mocks.choose }));
 
 let snapshot: Omit<Snapshot, "history" | "history_cursor"> & { history: Operation[] };
-const initial: Preferences = { source: "/isolated/source", destination: "/isolated/destination", theme: "dark", automatic: false, enabled_categories: ["documents"] };
+const initial: Preferences = { source: "/isolated/source", destination: "/isolated/destination", language: "system", theme: "dark", automatic: false, enabled_categories: ["documents"] };
 const operation: Operation = { id: 42, created: 1_700_000_000, kind: "manual", movements: [{ id: 1, source: "/isolated/source/a.txt", destination: "/isolated/destination/Documentos/a.txt", status: "moved", error: null, size: 1 }] };
 function snapshotPayload(): Snapshot { return { ...snapshot, history: snapshot.history.slice(0, 100).map(summarizeOperation), history_cursor: snapshot.history.length > 100 ? snapshot.history[99].id : null }; }
 
@@ -79,7 +79,7 @@ beforeEach(() => {
   snapshot = {
     preferences: structuredClone(initial), categories: [{ id: "documents", name: "Documentos", extensions: ["txt"] }],
     files: [{ name: "a.txt", path: "/isolated/source/a.txt", destination: "/isolated/destination/Documentos/a.txt", extension: "txt", category: "documents", modified: 1_700_000_000_000, size: 1, status: "ready", reason: null }],
-    history: [], monitoring: false, scan_error: null, watch_error: null, preview_id: null,
+    history: [], monitoring: false, scan_error: null, watch_error: null, preview_id: null, language: "pt-BR",
   };
   mocks.snapshot.mockImplementation(async () => structuredClone(snapshotPayload()));
   mocks.history.mockImplementation(async (before: number | null) => {
@@ -549,6 +549,13 @@ describe("composição desktop", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(document.activeElement).toBe(trigger);
   });
+  it("usa o idioma do sistema informado pelo aplicativo nativo", async () => {
+    snapshot.language = "en";
+    render(<App />);
+    expect(await screen.findByRole("heading", { level: 1, name: "Overview" })).toBeTruthy();
+    expect(document.documentElement.lang).toBe("en");
+  });
+
   it.each(["dark", "light"] as const)("usa o símbolo oficial com contraste no tema %s, preservando os demais ícones", async theme => {
     snapshot.preferences.theme = theme;
     await start();

@@ -1,14 +1,15 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { locale, t, type Language } from "./i18n";
 
 export interface Category { id: string; name: string; extensions: string[] }
-export interface Preferences { source: string; destination: string; automatic: boolean; enabled_categories: string[]; theme: "dark" | "light" }
+export interface Preferences { source: string; destination: string; automatic: boolean; enabled_categories: string[]; theme: "dark" | "light"; language: "system" | Language }
 export interface FileEntry { name: string; path: string; extension: string; category: string; size: number; modified: number; destination: string; status: "ready" | "ignored" | "conflict"; reason: string | null }
 export interface Movement { id: number; source: string; destination: string; status: string; error: string | null; size: number }
 export interface Operation { id: number; created: number; kind: string; movements: Movement[] }
 export interface OperationSummary { id: number; created: number; kind: string; total: number; moved: number; undone: number; errors: number }
 export interface HistoryPage { operations: OperationSummary[]; next_cursor: number | null }
 export interface DestinationSummary { folders: [string, number][]; other_folders: number; other_files: number }
-export interface Snapshot { preferences: Preferences; categories: Category[]; files: FileEntry[]; history: OperationSummary[]; history_cursor: number | null; monitoring: boolean; watch_error: string | null; scan_error: string | null; preview_id: number | null }
+export interface Snapshot { preferences: Preferences; categories: Category[]; files: FileEntry[]; history: OperationSummary[]; history_cursor: number | null; monitoring: boolean; watch_error: string | null; scan_error: string | null; preview_id: number | null; language: Language }
 export interface Preview { id: number; created: number; files: FileEntry[] }
 export interface FilePreview { data_url: string | null; width: number | null; height: number | null }
 export interface MediaPreview { token: string; kind: "audio" | "video"; mime: string }
@@ -45,9 +46,9 @@ export function summarizeOperation(operation: Operation | OperationSummary): Ope
 export function bytes(value: number) {
   if (!value) return "0 B";
   const unit = Math.min(Math.floor(Math.log(value) / Math.log(1024)), 3);
-  return `${new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 }).format(value / 1024 ** unit)} ${["B", "KB", "MB", "GB"][unit]}`;
+  return `${new Intl.NumberFormat(locale(), { maximumFractionDigits: 1 }).format(value / 1024 ** unit)} ${["B", "KB", "MB", "GB"][unit]}`;
 }
-export function date(value: number) { return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(value); }
+export function date(value: number) { return new Intl.DateTimeFormat(locale(), { dateStyle: "short", timeStyle: "short" }).format(value); }
 export function basename(path: string) { return path.split(/[\\/]/).pop() || path; }
 // Presentation only: keep original paths for identities, persistence and native commands.
 export function displayPath(path: string): string {
@@ -56,4 +57,16 @@ export function displayPath(path: string): string {
   if (unc && ![".", "..", "?"].includes(unc[1]) && ![".", ".."].includes(unc[2])) return "\\\\" + path.slice(8);
   return path;
 }
-export const labels: Record<string, string> = { ready: "Pronto", ignored: "Ignorado", conflict: "Conflito", moved: "Organizado", undone: "Desfeito", failed: "Falhou", uncertain: "Verificar", pending: "Interrompido", undo_pending: "Verificar" };
+export function statusLabel(status: string) {
+  switch (status) {
+    case "ready": return t("Pronto", "Ready");
+    case "ignored": return t("Ignorado", "Ignored");
+    case "conflict": return t("Conflito", "Conflict");
+    case "moved": return t("Organizado", "Organized");
+    case "undone": return t("Desfeito", "Undone");
+    case "failed": return t("Falhou", "Failed");
+    case "uncertain": case "undo_pending": return t("Verificar", "Check");
+    case "pending": return t("Interrompido", "Interrupted");
+    default: return status;
+  }
+}

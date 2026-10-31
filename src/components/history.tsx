@@ -5,6 +5,7 @@ import { Collapse } from "@/components/motion/collapse";
 import { useContentMotion } from "@/components/motion/transitions";
 import { displayPath, api, date, summarizeOperation, type DestinationSummary, type Operation, type OperationSummary as Summary } from "@/lib/api";
 import { plural } from "@/lib/utils";
+import { t } from "@/lib/i18n";
 import { useEffect, useMemo, useState } from "react";
 import { OperationExplorer } from "@/components/operation-explorer";
 
@@ -32,11 +33,11 @@ function OperationSummary({ operation }: { operation: Operation | Summary }) {
   const remaining = summary.destinations.slice(5);
   const folders = destinations ?? { folders: summary.destinations.slice(0, 5), other_folders: remaining.length, other_files: remaining.reduce((count, [, value]) => count + value, 0) };
   return <div className="operation-summary">
-    <dl className="operation-totals"><div><dt>Arquivos envolvidos</dt><dd>{summary.total}</dd></div><div><dt>Organizados no destino</dt><dd>{summary.moved}</dd></div><div><dt>Restaurados</dt><dd>{summary.undone}</dd></div><div><dt>Falhas ou verificação</dt><dd>{summary.errors}</dd></div></dl>
-    <p className="summary-meta">{operation.kind === "automatic" ? "Automação" : operation.kind === "manual" ? "Organização manual" : operation.kind} · {date(operation.created * 1000)}</p>
-    {!("movements" in operation) && !destinations && !error && <p className="summary-meta" role="status">Consultando destinos…</p>}
-    {error && <p className="inline-error" role="alert">Não foi possível consultar os destinos. <Button variant="outline" size="sm" onClick={() => setRetry(value => value + 1)}>Tentar novamente</Button></p>}
-    {folders.folders.length > 0 && <div className="destination-summary"><strong>Pastas de destino registradas</strong><dl>{folders.folders.map(([folder, count]) => <div key={folder}><dt>{displayPath(folder)}</dt><dd>{plural(count, "arquivo", "arquivos")}</dd></div>)}</dl>{folders.other_folders > 0 && <p>{plural(folders.other_folders, "outra pasta", "outras pastas")} · {plural(folders.other_files, "arquivo", "arquivos")}. Consulte os caminhos no explorador.</p>}</div>}
+    <dl className="operation-totals"><div><dt>{t("Arquivos envolvidos", "Files involved")}</dt><dd>{summary.total}</dd></div><div><dt>{t("Organizados no destino", "Organized at the destination")}</dt><dd>{summary.moved}</dd></div><div><dt>{t("Restaurados", "Restored")}</dt><dd>{summary.undone}</dd></div><div><dt>{t("Falhas ou verificação", "Failures or checks")}</dt><dd>{summary.errors}</dd></div></dl>
+    <p className="summary-meta">{operation.kind === "automatic" ? t("Automação", "Automation") : operation.kind === "manual" ? t("Organização manual", "Manual organization") : operation.kind} · {date(operation.created * 1000)}</p>
+    {!("movements" in operation) && !destinations && !error && <p className="summary-meta" role="status">{t("Consultando destinos…", "Looking up destinations…")}</p>}
+    {error && <p className="inline-error" role="alert">{t("Não foi possível consultar os destinos.", "Could not look up the destinations.")} <Button variant="outline" size="sm" onClick={() => setRetry(value => value + 1)}>{t("Tentar novamente", "Try again")}</Button></p>}
+    {folders.folders.length > 0 && <div className="destination-summary"><strong>{t("Pastas de destino registradas", "Recorded destination folders")}</strong><dl>{folders.folders.map(([folder, count]) => <div key={folder}><dt>{displayPath(folder)}</dt><dd>{plural(count, t("arquivo", "file"), t("arquivos", "files"))}</dd></div>)}</dl>{folders.other_folders > 0 && <p>{plural(folders.other_folders, t("outra pasta", "other folder"), t("outras pastas", "other folders"))} · {plural(folders.other_files, t("arquivo", "file"), t("arquivos", "files"))}. {t("Consulte os caminhos no explorador.", "See the paths in the explorer.")}</p>}</div>}
     <OperationExplorer operation={operation} />
   </div>;
 }
@@ -49,10 +50,10 @@ export function Activity({ operation, onOpen, expanded, motionAllowed = false }:
       {undone ? <Undo2 ref={mark} size={16} aria-hidden="true" /> : <CircleCheck ref={mark} size={16} aria-hidden="true" />}
     </span>
     <span className="activity-copy">
-      <strong>{undone ? undone + " arquivo" + (undone !== 1 ? "s restaurados" : " restaurado") : moved + " arquivo" + (moved !== 1 ? "s organizados" : " organizado")}</strong>
-      <small><span className="operation-id">#{operation.id}</span>{operation.kind === "automatic" ? "Automação" : "Organização manual"}<span>·</span><time dateTime={new Date(operation.created * 1000).toISOString()}>{date(operation.created * 1000)}</time>{undone > 0 && moved > 0 && <span>· {moved} ainda no destino</span>}</small>
+      <strong>{undone ? plural(undone, t("arquivo restaurado", "file restored"), t("arquivos restaurados", "files restored")) : plural(moved, t("arquivo organizado", "file organized"), t("arquivos organizados", "files organized"))}</strong>
+      <small><span className="operation-id">#{operation.id}</span>{operation.kind === "automatic" ? t("Automação", "Automation") : t("Organização manual", "Manual organization")}<span>·</span><time dateTime={new Date(operation.created * 1000).toISOString()}>{date(operation.created * 1000)}</time>{undone > 0 && moved > 0 && <span>· {moved} {t("ainda no destino", "still at the destination")}</span>}</small>
     </span>
-    {errors > 0 && <span className="status status-conflict">{plural(errors, "ocorrência", "ocorrências")}</span>}
+    {errors > 0 && <span className="status status-conflict">{plural(errors, t("ocorrência", "issue"), t("ocorrências", "issues"))}</span>}
     {expanded ? <ChevronDown size={16} aria-hidden="true" /> : <ChevronRight size={16} aria-hidden="true" />}
   </button>;
 }
@@ -65,11 +66,11 @@ export function HistoryView({ history, expanded, working, openingUndo, onExpand,
 }) {
   const motionAllowed = useMotionAllowed();
   const ref = useContentMotion(history.slice(0, 4).map(op => op.id).join(":"), motionAllowed);
-  if (!history.length) return <div ref={ref} data-motion-group className="empty" role="status"><History size={24} aria-hidden="true" /><h2>Nenhuma operação registrada</h2><p>Após organizar arquivos, consulte aqui os resultados e as opções de desfazer.</p></div>;
-  return <><div className="table-footer">{plural(history.length, "operação carregada", "operações carregadas")}, da mais recente para a mais antiga{newAvailable && <Button variant="outline" size="sm" disabled={loading || working} onClick={onReload}>Novas operações — atualizar lista</Button>}</div><div ref={ref} data-motion-group className="history-list" aria-label="Operações registradas">{history.map(op => <section className="history-operation" key={op.id} aria-label={"Operação " + op.id}>
+  if (!history.length) return <div ref={ref} data-motion-group className="empty" role="status"><History size={24} aria-hidden="true" /><h2>{t("Nenhuma operação registrada", "No recorded operations")}</h2><p>{t("Após organizar arquivos, consulte aqui os resultados e as opções de desfazer.", "After you organize files, the results and undo options appear here.")}</p></div>;
+  return <><div className="table-footer">{plural(history.length, t("operação carregada", "operation loaded"), t("operações carregadas", "operations loaded"))}{t(", da mais recente para a mais antiga", ", newest first")}{newAvailable && <Button variant="outline" size="sm" disabled={loading || working} onClick={onReload}>{t("Novas operações — atualizar lista", "New operations — refresh the list")}</Button>}</div><div ref={ref} data-motion-group className="history-list" aria-label={t("Operações registradas", "Recorded operations")}>{history.map(op => <section className="history-operation" key={op.id} aria-label={t("Operação", "Operation") + " " + op.id}>
     <div className="history-header"><Activity operation={op} motionAllowed={motionAllowed} expanded={expanded === op.id} onOpen={() => onExpand(expanded === op.id ? null : op.id)} />
-      <Button variant="outline" size="sm" disabled={working || !summarizeOperation(op).moved} onClick={() => onUndo(op)}><Undo2 aria-hidden="true" />{openingUndo === op.id ? "Preparando restauração…" : "Desfazer"}</Button>
+      <Button variant="outline" size="sm" disabled={working || !summarizeOperation(op).moved} onClick={() => onUndo(op)}><Undo2 aria-hidden="true" />{openingUndo === op.id ? t("Preparando restauração…", "Preparing restore…") : t("Desfazer", "Undo")}</Button>
     </div>
     <Collapse open={expanded === op.id} className="movement-list" id={"movements-" + op.id}>{expanded === op.id ? <OperationSummary operation={op} /> : null}</Collapse>
-  </section>)}</div>{pageError && <div role="alert" className="inline-error">{pageError}<Button variant="outline" size="sm" disabled={loading || working} onClick={onRetry}>Tentar carregar novamente</Button></div>}{hasMore && <div className="table-footer"><Button variant="outline" disabled={loading || working} onClick={onLoadMore}>{loading ? "Carregando operações…" : "Carregar mais"}</Button></div>}</>;
+  </section>)}</div>{pageError && <div role="alert" className="inline-error">{pageError}<Button variant="outline" size="sm" disabled={loading || working} onClick={onRetry}>{t("Tentar carregar novamente", "Try loading again")}</Button></div>}{hasMore && <div className="table-footer"><Button variant="outline" disabled={loading || working} onClick={onLoadMore}>{loading ? t("Carregando operações…", "Loading operations…") : t("Carregar mais", "Load more")}</Button></div>}</>;
 }

@@ -1,3 +1,4 @@
+use crate::i18n::t;
 use crate::{
     Runtime,
     engine::{self, Preview, Result, Stamp},
@@ -45,7 +46,7 @@ impl Queue {
         }
         let event = event.and_then(|event| {
             if event.need_rescan() {
-                Err(notify::Error::generic("Monitoramento pausado: o sistema perdeu eventos. Confira os arquivos com uma prévia e salve as configurações para reativar."))
+                Err(notify::Error::generic(t("Monitoramento pausado: o sistema perdeu eventos. Confira os arquivos com uma prévia e salve as configurações para reativar.", "Monitoring paused: the system lost events. Review the files with a preview and save the settings to turn it back on.")))
             } else {
                 Ok(event)
             }
@@ -123,7 +124,7 @@ impl Queue {
             runtime.watcher = None;
             runtime.session = None;
             self.synchronize(runtime);
-            return Err("Monitoramento pausado por excesso de eventos. Confira os arquivos com uma prévia e salve as configurações para reativar.".into());
+            return Err(t("Monitoramento pausado por excesso de eventos. Confira os arquivos com uma prévia e salve as configurações para reativar.", "Monitoring paused by too many events. Review the files with a preview and save the settings to turn it back on.").into());
         }
         let due: HashSet<_> = self
             .pending
@@ -157,11 +158,14 @@ impl Queue {
             .into_iter()
             .filter(|f| due.contains(Path::new(&f.path)) && f.status == "ready")
         {
-            let captured = file.stamp.as_ref().ok_or("Metadados indisponíveis")?;
+            let captured = file
+                .stamp
+                .as_ref()
+                .ok_or(t("Metadados indisponíveis", "Metadata unavailable"))?;
             if self.attempted.get(Path::new(&file.path)) == Some(captured) {
                 continue;
             }
-            if engine::locked_file(Path::new(&file.path)).is_err_and(|e| e == "Arquivo ocupado") {
+            if engine::locked_file(Path::new(&file.path)).is_err_and(|e| engine::is_busy(&e)) {
                 self.pending.insert(PathBuf::from(&file.path), time);
             } else {
                 self.attempted

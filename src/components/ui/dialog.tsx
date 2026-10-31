@@ -4,6 +4,7 @@ import { XIcon } from "lucide-react"
 import { Dialog as DialogPrimitive } from "radix-ui"
 
 import { Button } from "@/components/ui/button"
+import { t } from "@/lib/i18n"
 import { useContentMotion } from "@/components/motion/transitions"
 import { useMotionAllowed } from "@/components/motion/feedback"
 
@@ -87,7 +88,7 @@ function DialogContent({
             className="absolute top-4 right-4 rounded-xs opacity-70 ring-offset-background hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
           >
             <XIcon />
-            <span className="sr-only">Fechar</span>
+            <span className="sr-only">{t("Fechar", "Close")}</span>
           </DialogPrimitive.Close>
         )}</DialogPanel>
       </DialogPrimitive.Content>
@@ -125,7 +126,7 @@ function DialogFooter({
       {children}
       {showCloseButton && (
         <DialogPrimitive.Close asChild>
-          <Button variant="outline">Fechar</Button>
+          <Button variant="outline">{t("Fechar", "Close")}</Button>
         </DialogPrimitive.Close>
       )}
     </div>

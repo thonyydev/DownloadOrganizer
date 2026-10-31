@@ -1,4 +1,5 @@
 use crate::engine::{self, FileEntry, Preferences, Result, Stamp};
+use crate::i18n::t;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use image::{DynamicImage, ImageDecoder, ImageEncoder, ImageFormat, ImageReader, Limits};
 use serde::Serialize;
@@ -13,8 +14,12 @@ const MAX_INPUT: u64 = 16 * 1024 * 1024;
 const MAX_PIXELS: u64 = 16_000_000;
 const MAX_DECODED: u64 = 64 * 1024 * 1024;
 const MAX_OUTPUT: usize = 2 * 1024 * 1024;
-const CHANGED: &str =
-    "O arquivo mudou ou não está mais disponível. Atualize a lista e tente novamente.";
+fn changed() -> &'static str {
+    t(
+        "O arquivo mudou ou não está mais disponível. Atualize a lista e tente novamente.",
+        "The file changed or is no longer available. Refresh the list and try again.",
+    )
+}
 
 #[derive(Default)]
 pub struct Access {
@@ -49,7 +54,10 @@ impl Access {
                     && u64::try_from(stamp.size).ok() == Some(size)
                     && stamp.modified / 1_000_000 == modified
             })
-            .ok_or("Esta visualização não está mais autorizada. Atualize a lista de arquivos.")?;
+            .ok_or(t(
+                "Esta visualização não está mais autorizada. Atualize a lista de arquivos.",
+                "This preview is no longer authorized. Refresh the file list.",
+            ))?;
         Ok(captured.clone())
     }
 }
@@ -81,7 +89,11 @@ pub(super) fn identity(file: &File) -> Result<Identity> {
             )
         } == 0
         {
-            return Err("Não foi possível verificar a identidade do arquivo.".into());
+            return Err(t(
+                "Não foi possível verificar a identidade do arquivo.",
+                "Could not verify the file's identity.",
+            )
+            .into());
         }
         Ok(Identity(
             id.VolumeSerialNumber,
@@ -91,7 +103,7 @@ pub(super) fn identity(file: &File) -> Result<Identity> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
-        let meta = file.metadata().map_err(|_| CHANGED)?;
+        let meta = file.metadata().map_err(|_| changed())?;
         Ok(Identity(meta.dev(), meta.ino().into()))
     }
 }
@@ -110,9 +122,13 @@ fn verify_physical_path(file: &File, expected: &Path) -> Result<()> {
         )
     } as usize;
     if length == 0 || length >= buffer.len() {
-        return Err("Não foi possível confirmar o caminho seguro do arquivo.".into());
+        return Err(t(
+            "Não foi possível confirmar o caminho seguro do arquivo.",
+            "Could not confirm the file's safe path.",
+        )
+        .into());
     }
-    let actual = String::from_utf16(&buffer[..length]).map_err(|_| CHANGED)?;
+    let actual = String::from_utf16(&buffer[..length]).map_err(|_| changed())?;
     let normalize = |name: &str| {
         if let Some(tail) = name.strip_prefix(r"\\?\UNC\") {
             format!(r"\\{tail}")
@@ -121,16 +137,20 @@ fn verify_physical_path(file: &File, expected: &Path) -> Result<()> {
         }
     };
     // Compare the resolved handle, never canonicalize the requested path after opening.
-    if normalize(&actual) != normalize(expected.to_str().ok_or(CHANGED)?) {
-        return Err(CHANGED.into());
+    if normalize(&actual) != normalize(expected.to_str().ok_or(changed())?) {
+        return Err(changed().into());
     }
     Ok(())
 }
 
 pub(super) fn open_source(path: &Path, expected: &Stamp) -> Result<(File, Vec<File>)> {
-    let parent = path.parent().ok_or(CHANGED)?;
-    let directories = engine::guard_directory(parent)
-        .map_err(|_| "A pasta mudou, está inacessível ou contém um link. Atualize a lista.")?;
+    let parent = path.parent().ok_or(changed())?;
+    let directories = engine::guard_directory(parent).map_err(|_| {
+        t(
+            "A pasta mudou, está inacessível ou contém um link. Atualize a lista.",
+            "The folder changed, is inaccessible or contains a link. Refresh the list.",
+        )
+    })?;
     #[cfg(windows)]
     let file = {
         use std::os::windows::fs::OpenOptionsExt;
@@ -155,44 +175,44 @@ pub(super) fn open_source(path: &Path, expected: &Stamp) -> Result<(File, Vec<Fi
             },
         };
         // Resolve each component relative to its held parent, never following links.
-        directories.push(File::open("/").map_err(|_| CHANGED)?);
+        directories.push(File::open("/").map_err(|_| changed())?);
         for component in parent
             .components()
             .filter(|part| matches!(part, std::path::Component::Normal(_)))
         {
-            let name = CString::new(component.as_os_str().as_bytes()).map_err(|_| CHANGED)?;
+            let name = CString::new(component.as_os_str().as_bytes()).map_err(|_| changed())?;
             let fd = unsafe {
                 libc::openat(
-                    directories.last().ok_or(CHANGED)?.as_raw_fd(),
+                    directories.last().ok_or(changed())?.as_raw_fd(),
                     name.as_ptr(),
                     libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
                 )
             };
             if fd < 0 {
-                return Err(CHANGED.into());
+                return Err(changed().into());
             }
             directories.push(unsafe { File::from_raw_fd(fd) });
         }
         let name =
-            CString::new(path.file_name().ok_or(CHANGED)?.as_bytes()).map_err(|_| CHANGED)?;
+            CString::new(path.file_name().ok_or(changed())?.as_bytes()).map_err(|_| changed())?;
         let fd = unsafe {
             libc::openat(
-                directories.last().ok_or(CHANGED)?.as_raw_fd(),
+                directories.last().ok_or(changed())?.as_raw_fd(),
                 name.as_ptr(),
                 libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC,
             )
         };
         if fd < 0 {
-            return Err(CHANGED.into());
+            return Err(changed().into());
         }
         Ok(unsafe { File::from_raw_fd(fd) })
     };
-    let file = file.map_err(|_| "Não foi possível ler o arquivo. Ele pode ter sido removido, estar em uso ou sem permissão de leitura.")?;
+    let file = file.map_err(|_| t("Não foi possível ler o arquivo. Ele pode ter sido removido, estar em uso ou sem permissão de leitura.", "Could not read the file. It may have been removed, be in use or lack read permission."))?;
     #[cfg(windows)]
     verify_physical_path(&file, path)?;
-    let meta = file.metadata().map_err(|_| CHANGED)?;
+    let meta = file.metadata().map_err(|_| changed())?;
     if !meta.is_file() || engine::linked(&meta) || engine::stamp(&meta)? != *expected {
-        return Err(CHANGED.into());
+        return Err(changed().into());
     }
     Ok((file, directories))
 }
@@ -205,10 +225,10 @@ fn verify_source(
 ) -> Result<()> {
     let (mut file, _directories) = open_source(path, expected)?;
     if identity(&file)? != *original {
-        return Err(CHANGED.into());
+        return Err(changed().into());
     }
     if blake3::hash(&read_buffer(&mut file, expected)?) != *digest {
-        return Err(CHANGED.into());
+        return Err(changed().into());
     }
     Ok(())
 }
@@ -218,22 +238,28 @@ fn read_buffer(file: &mut File, expected: &Stamp) -> Result<Vec<u8>> {
     (&mut *file)
         .take(MAX_INPUT + 1)
         .read_to_end(&mut bytes)
-        .map_err(|_| "Não foi possível concluir a leitura da imagem.")?;
+        .map_err(|_| {
+            t(
+                "Não foi possível concluir a leitura da imagem.",
+                "Could not finish reading the image.",
+            )
+        })?;
     if bytes.len() as u64 > MAX_INPUT
         || bytes.len() as i64 != expected.size
-        || engine::stamp(&file.metadata().map_err(|_| CHANGED)?)? != *expected
+        || engine::stamp(&file.metadata().map_err(|_| changed())?)? != *expected
     {
-        return Err(CHANGED.into());
+        return Err(changed().into());
     }
     Ok(bytes)
 }
 
 pub fn load(path: &Path, expected: &Stamp) -> Result<FilePreview> {
     if engine::temporary(path) {
-        return Err(
-            "Arquivo temporário ou download incompleto. Aguarde a conclusão e atualize a lista."
-                .into(),
-        );
+        return Err(t(
+            "Arquivo temporário ou download incompleto. Aguarde a conclusão e atualize a lista.",
+            "Temporary file or incomplete download. Wait for it to finish and refresh the list.",
+        )
+        .into());
     }
     let format = match path
         .extension()
@@ -259,7 +285,11 @@ pub fn load(path: &Path, expected: &Stamp) -> Result<FilePreview> {
         });
     };
     if expected.size < 0 || expected.size as u64 > MAX_INPUT {
-        return Err("Imagem grande demais para visualização segura. O limite é 16 MB.".into());
+        return Err(t(
+            "Imagem grande demais para visualização segura. O limite é 16 MB.",
+            "Image is too large for a safe preview. The limit is 16 MB.",
+        )
+        .into());
     }
     let bytes = read_buffer(&mut file, expected)?;
     let digest = blake3::hash(&bytes);
@@ -274,7 +304,7 @@ pub fn load(path: &Path, expected: &Stamp) -> Result<FilePreview> {
 
 fn decode(bytes: &[u8], format: ImageFormat) -> Result<FilePreview> {
     let malformed = || {
-        "Não foi possível interpretar a imagem. Ela pode estar danificada ou ter um formato diferente da extensão.".to_owned()
+        t("Não foi possível interpretar a imagem. Ela pode estar danificada ou ter um formato diferente da extensão.", "Could not interpret the image. It may be damaged or have a format that differs from its extension.").to_owned()
     };
     if image::guess_format(bytes).map_err(|_| malformed())? != format {
         return Err(malformed());
@@ -286,7 +316,7 @@ fn decode(bytes: &[u8], format: ImageFormat) -> Result<FilePreview> {
     let mut reader = ImageReader::with_format(Cursor::new(bytes), format);
     reader.limits(limits);
     let mut decoder = reader.into_decoder().map_err(|error| match error {
-        image::ImageError::Limits(_) => "A imagem excede os limites de resolução ou memória para visualização segura (máximo de 8192 px por lado).".to_owned(),
+        image::ImageError::Limits(_) => t("A imagem excede os limites de resolução ou memória para visualização segura (máximo de 8192 px por lado).", "The image exceeds the resolution or memory limits for a safe preview (8192 px per side at most).").to_owned(),
         _ => malformed(),
     })?;
     let (width, height) = decoder.dimensions();
@@ -295,7 +325,7 @@ fn decode(bytes: &[u8], format: ImageFormat) -> Result<FilePreview> {
     }
     if u64::from(width) * u64::from(height) > MAX_PIXELS || decoder.total_bytes() > MAX_DECODED {
         return Err(
-            "A imagem excede os limites de visualização segura: 16 megapixels ou 64 MB decodificados.".into(),
+            t("A imagem excede os limites de visualização segura: 16 megapixels ou 64 MB decodificados.", "The image exceeds the safe preview limits: 16 megapixels or 64 MB decoded.").into(),
         );
     }
     let orientation = decoder.orientation().map_err(|_| malformed())?;
@@ -310,7 +340,12 @@ fn decode(bytes: &[u8], format: ImageFormat) -> Result<FilePreview> {
             thumbnail.height(),
             image::ExtendedColorType::Rgba8,
         )
-        .map_err(|_| "Não foi possível preparar a miniatura com segurança.")?;
+        .map_err(|_| {
+            t(
+                "Não foi possível preparar a miniatura com segurança.",
+                "Could not prepare the thumbnail safely.",
+            )
+        })?;
     Ok(FilePreview {
         data_url: Some(format!(
             "data:image/png;base64,{}",
@@ -325,7 +360,10 @@ struct Output(Vec<u8>);
 impl Write for Output {
     fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
         if bytes.len() > MAX_OUTPUT.saturating_sub(self.0.len()) {
-            return Err(std::io::Error::other("Limite da miniatura"));
+            return Err(std::io::Error::other(t(
+                "Limite da miniatura",
+                "Thumbnail limit",
+            )));
         }
         self.0.extend_from_slice(bytes);
         Ok(bytes.len())

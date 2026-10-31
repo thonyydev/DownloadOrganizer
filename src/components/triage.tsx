@@ -1,4 +1,5 @@
 import { plural } from "@/lib/utils";
+import { t } from "@/lib/i18n";
 
 export interface TriageCounts { ready: number; conflict: number; ignored: number }
 
@@ -12,7 +13,7 @@ export function triageCounts(files: readonly { status: "ready" | "conflict" | "i
 }
 
 function triageLabels({ ready, conflict, ignored }: TriageCounts) {
-  return [plural(ready, "pronto", "prontos"), plural(conflict, "conflito", "conflitos"), plural(ignored, "ignorado", "ignorados")];
+  return [plural(ready, t("pronto", "ready"), t("prontos", "ready")), plural(conflict, t("conflito", "conflict"), t("conflitos", "conflicts")), plural(ignored, t("ignorado", "ignored"), t("ignorados", "ignored"))];
 }
 
 export function TriageLegend({ counts }: { counts: TriageCounts }) {
@@ -25,7 +26,7 @@ export function TriageBar({ counts }: { counts: TriageCounts }) {
   const total = counts.ready + counts.conflict + counts.ignored;
   const parts = (["ready", "conflict", "ignored"] as const).filter(part => counts[part] > 0);
   return <div className="triage">
-    <div className="triage-bar" role="img" aria-label={total ? triageLabels(counts).join(", ") : "Nenhum arquivo na pasta de origem"}>
+    <div className="triage-bar" role="img" aria-label={total ? triageLabels(counts).join(", ") : t("Nenhum arquivo na pasta de origem", "No files in the source folder")}>
       {total === 0 ? <span className="triage-empty" /> : parts.map(part => <span key={part} className={`triage-part triage-${part}${total > maxTicks ? " solid" : ""}`} style={{ flexGrow: counts[part] }}>
         {total <= maxTicks && Array.from({ length: counts[part] }, (_, index) => <i key={index} />)}
       </span>)}

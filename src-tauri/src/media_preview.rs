@@ -1,3 +1,4 @@
+use crate::i18n::t;
 use crate::{
     engine::{self, Result, Stamp},
     file_preview::{Identity, identity, open_source},
@@ -15,8 +16,12 @@ use tauri::http::{Request, Response, StatusCode};
 const MAX_FILE: u64 = 8 * 1024 * 1024 * 1024;
 const CHUNK: u64 = 1024 * 1024;
 const LIFETIME: Duration = Duration::from_secs(4 * 60 * 60);
-const CHANGED: &str =
-    "A mídia mudou ou não está mais disponível. Feche a visualização e atualize a lista.";
+fn changed() -> &'static str {
+    t(
+        "A mídia mudou ou não está mais disponível. Feche a visualização e atualize a lista.",
+        "The media changed or is no longer available. Close the preview and refresh the list.",
+    )
+}
 
 #[derive(Clone, Debug, Serialize)]
 pub struct MediaPreview {
@@ -38,19 +43,31 @@ pub struct Session {
 impl Session {
     pub fn open(path: &Path, stamp: Stamp) -> Result<Self> {
         if engine::temporary(path) {
-            return Err("Aguarde o término do download e atualize a lista.".into());
+            return Err(t(
+                "Aguarde o término do download e atualize a lista.",
+                "Wait for the download to finish and refresh the list.",
+            )
+            .into());
         }
         if stamp.size <= 0 || stamp.size as u64 > MAX_FILE {
-            return Err("Mídia vazia ou grande demais. O limite de visualização é 8 GB.".into());
+            return Err(t(
+                "Mídia vazia ou grande demais. O limite de visualização é 8 GB.",
+                "Media is empty or too large. The preview limit is 8 GB.",
+            )
+            .into());
         }
         let (mut file, directories) = open_source(path, &stamp)?;
         let original = identity(&file)?;
         let mut header = [0u8; 4096];
-        let length = file.read(&mut header).map_err(|_| CHANGED)?;
+        let length = file.read(&mut header).map_err(|_| changed())?;
         let (kind, mime) = media_type(path, &header[..length])?;
         let mut random = [0u8; 32];
-        getrandom::fill(&mut random)
-            .map_err(|_| "Não foi possível iniciar uma sessão segura de mídia.")?;
+        getrandom::fill(&mut random).map_err(|_| {
+            t(
+                "Não foi possível iniciar uma sessão segura de mídia.",
+                "Could not start a secure media session.",
+            )
+        })?;
         let token = random.iter().map(|byte| format!("{byte:02x}")).collect();
         Ok(Self {
             path: path.to_owned(),
@@ -66,9 +83,9 @@ impl Session {
     fn verify(&self) -> Result<()> {
         let (file, _directories) = open_source(&self.path, &self.stamp)?;
         if identity(&file)? != self.identity
-            || engine::stamp(&self.file.metadata().map_err(|_| CHANGED)?)? != self.stamp
+            || engine::stamp(&self.file.metadata().map_err(|_| changed())?)? != self.stamp
         {
-            return Err(CHANGED.into());
+            return Err(changed().into());
         }
         Ok(())
     }
@@ -90,7 +107,7 @@ fn media_type(path: &Path, header: &[u8]) -> Result<(&'static str, &'static str)
         "m4a" if mp4 => ("audio", "audio/mp4"),
         "mp4" | "m4v" | "mov" if mp4 => ("video", "video/mp4"),
         "webm" if header.starts_with(&[0x1a, 0x45, 0xdf, 0xa3]) && header.windows(4).any(|part| part == b"webm") => ("video", "video/webm"),
-        _ => return Err("Formato de mídia não reconhecido ou arquivo danificado. Nenhuma conversão será realizada.".into()),
+        _ => return Err(t("Formato de mídia não reconhecido ou arquivo danificado. Nenhuma conversão será realizada.", "Media format not recognized or file damaged. Nothing will be converted.").into()),
     };
     Ok(result)
 }
@@ -101,7 +118,11 @@ impl Sessions {
     pub fn insert(&mut self, session: Session) -> Result<MediaPreview> {
         self.0.retain(|_, value| value.created.elapsed() < LIFETIME);
         if self.0.len() >= 4 {
-            return Err("Feche as outras visualizações de mídia e tente novamente.".into());
+            return Err(t(
+                "Feche as outras visualizações de mídia e tente novamente.",
+                "Close the other media previews and try again.",
+            )
+            .into());
         }
         let descriptor = session.descriptor.clone();
         self.0.insert(descriptor.token.clone(), session);
@@ -189,7 +210,7 @@ impl Sessions {
 
 fn byte_range(value: Option<&str>, size: u64) -> Result<(u64, u64)> {
     if size == 0 {
-        return Err("Range inválido".into());
+        return Err(t("Range inválido", "Invalid range").into());
     }
     let Some(value) = value else {
         return Ok((0, size.min(CHUNK) - 1));
@@ -197,24 +218,29 @@ fn byte_range(value: Option<&str>, size: u64) -> Result<(u64, u64)> {
     let (start, end) = value
         .strip_prefix("bytes=")
         .and_then(|value| value.split_once('-'))
-        .ok_or("Range inválido")?;
+        .ok_or(t("Range inválido", "Invalid range"))?;
     let (start, end) = if start.is_empty() {
-        let suffix: u64 = end.parse().map_err(|_| "Range inválido")?;
+        let suffix: u64 = end
+            .parse()
+            .map_err(|_| t("Range inválido", "Invalid range"))?;
         if suffix == 0 {
-            return Err("Range inválido".into());
+            return Err(t("Range inválido", "Invalid range").into());
         }
         (size.saturating_sub(suffix), size - 1)
     } else {
-        let start: u64 = start.parse().map_err(|_| "Range inválido")?;
+        let start: u64 = start
+            .parse()
+            .map_err(|_| t("Range inválido", "Invalid range"))?;
         let end = if end.is_empty() {
             size - 1
         } else {
-            end.parse().map_err(|_| "Range inválido")?
+            end.parse()
+                .map_err(|_| t("Range inválido", "Invalid range"))?
         };
         (start, end.min(size - 1))
     };
     if start >= size || end < start {
-        return Err("Range inválido".into());
+        return Err(t("Range inválido", "Invalid range").into());
     }
     Ok((start, end.min(start.saturating_add(CHUNK - 1))))
 }
