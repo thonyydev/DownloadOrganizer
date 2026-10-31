@@ -1,3 +1,5 @@
+![Download Organizer](.github/assets/banner.png)
+
 # Download Organizer
 
 **Keep your downloads organized, effortlessly.**
