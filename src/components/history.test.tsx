@@ -71,7 +71,7 @@ it("resume os estados reais e agrupa os caminhos de destino sem montar arquivos"
   expect(total("Arquivos envolvidos")).toBe("6"); expect(total("Organizados no destino")).toBe("2");
   expect(total("Restaurados")).toBe("1"); expect(total("Falhas ou verificação")).toBe("4");
   expect(screen.getByText("/isolated/destination/Documents/")).toBeTruthy(); expect(screen.getByText("C:\\isolated\\Images\\")).toBeTruthy();
-  expect(screen.getByText("5 arquivo(s)")).toBeTruthy(); expect(screen.queryByText("Bloqueado")).toBeNull();
+  expect(screen.getByText("5 arquivos")).toBeTruthy(); expect(screen.queryByText("Bloqueado")).toBeNull();
   expect(document.querySelectorAll("[data-movement-id]")).toHaveLength(0);
   expect(screen.queryByRole("dialog")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Desfazer" })); expect(props.onUndo).toHaveBeenCalledExactlyOnceWith(op);
@@ -94,7 +94,7 @@ it("mantém a distribuição compacta mesmo quando cada arquivo tem uma pasta di
   const op = operationOf(5000); op.movements.forEach((movement, index) => { movement.destination = "/isolated/folder-" + index + "/file.txt"; });
   render(<HistoryView {...props} history={[op]} />);
   expect(document.querySelectorAll(".destination-summary dt")).toHaveLength(5);
-  expect(screen.getByText("4995 outras pastas · 4995 arquivo(s). Consulte os caminhos no explorador.")).toBeTruthy();
+  expect(screen.getByText("4995 outras pastas · 4995 arquivos. Consulte os caminhos no explorador.")).toBeTruthy();
 });
 
 it("busca por nome, filtra status e problemas e apresenta os caminhos e erros", () => {
@@ -105,7 +105,7 @@ it("busca por nome, filtra status e problemas e apresenta os caminhos e erros", 
   const input = within(dialog).getByRole("textbox", { name: "Buscar arquivos da operação" });
   const filter = within(dialog).getByRole("combobox", { name: "Filtrar por status" });
   fireEvent.change(input, { target: { value: "FILE-4999" } });
-  expect(within(dialog).getByText("1 de 5000 arquivo(s) · Ocorrências primeiro")).toBeTruthy();
+  expect(within(dialog).getByText("1 de 5000 arquivos · Ocorrências primeiro")).toBeTruthy();
   expect(within(dialog).getByText(op.movements[4999].destination)).toBeTruthy();
   fireEvent.change(filter, { target: { value: "failed" } }); expect(within(dialog).getByText("Nenhum arquivo corresponde aos filtros")).toBeTruthy();
   fireEvent.click(within(dialog).getByRole("button", { name: "Limpar filtros" }));

@@ -132,7 +132,7 @@ describe("histórico paginado", () => {
     expect(mocks.operation).toHaveBeenCalledExactlyOnceWith(900);
     mocks.undo.mockImplementationOnce(async (id: number) => { snapshot.history.find(op => op.id === id)!.movements[0].status = "undone"; });
     await act(async () => { fireEvent.click(within(dialog).getByRole("button", { name: "Confirmar restauração" })); });
-    expect(within(dialog).getByText(/1 restaurado\(s\) · 0 ainda no destino/)).toBeTruthy();
+    expect(within(dialog).getByText(/1 restaurado · 0 ainda no destino/)).toBeTruthy();
     expect(mocks.undo).toHaveBeenCalledExactlyOnceWith(900);
     await act(async () => { fireEvent.click(within(dialog.querySelector<HTMLElement>('[data-slot="dialog-footer"]')!).getByRole("button", { name: /^Fechar$/ })); });
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -342,7 +342,7 @@ describe("feedback sonoro de ações reais", () => {
     mocks.organize.mockImplementationOnce(async () => { snapshot.history = [structuredClone(operation)]; return 42; });
     mocks.sound.mockImplementationOnce(() => { throw new Error("Dispositivo ausente"); });
     await start(); const dialog = await confirmOrganization();
-    await within(dialog).findByText(/1 organizado\(s\) · 0 ocorrência/);
+    await within(dialog).findByText(/1 organizado · 0 ocorrência/);
     expect(mocks.sound).toHaveBeenCalledExactlyOnceWith(sounds.organize);
     expect(screen.queryByText("Dispositivo ausente")).toBeNull();
   });
@@ -571,17 +571,17 @@ describe("composição desktop", () => {
     act(() => searchInput.focus());
     fireEvent.change(screen.getByRole("textbox", { name: "Buscar arquivos" }), { target: { value: "ARQUIVO-09999" } });
     expect(document.activeElement).toBe(searchInput);
-    expect(screen.getByText("1 arquivo(s)")).toBeTruthy(); expect(screen.getByText("Arquivo-09999.txt")).toBeTruthy();
+    expect(screen.getByText("1 arquivo")).toBeTruthy(); expect(screen.getByText("Arquivo-09999.txt")).toBeTruthy();
     expect(normalizedFiles()).toBe(10000);
     fireEvent.change(screen.getByRole("textbox", { name: "Buscar arquivos" }), { target: { value: "" } });
     fireEvent.change(screen.getByRole("combobox", { name: "Filtrar por categoria" }), { target: { value: "images" } });
-    expect(screen.getByText("5000 arquivo(s)")).toBeTruthy();
+    expect(screen.getByText("5000 arquivos")).toBeTruthy();
     navigate("Configurações"); fireEvent.click(screen.getByRole("button", { name: "Claro" })); navigate("Arquivos");
     expect(normalizedFiles()).toBe(10000);
-    expect(screen.getByText("5000 arquivo(s)")).toBeTruthy();
+    expect(screen.getByText("5000 arquivos")).toBeTruthy();
     fireEvent.change(screen.getByRole("textbox", { name: "Buscar arquivos" }), { target: { value: "inexistente" } });
     fireEvent.click(screen.getByRole("button", { name: "Limpar filtros" }));
-    expect(screen.getByText("10000 arquivo(s)")).toBeTruthy();
+    expect(screen.getByText("10000 arquivos")).toBeTruthy();
     expect(document.querySelectorAll("tr[data-file-path]").length).toBeLessThan(25);
   });
   it("leva da categoria real à tabela filtrada e mantém os nomes de navegação estáveis", async () => {
@@ -604,7 +604,7 @@ describe("composição desktop", () => {
     await start(); navigate("Histórico");
     const row = screen.getByRole("region", { name: "Operação 42" });
     expect(within(row).getByText("#42")).toBeTruthy();
-    expect(within(row).getByText("1 ocorrência(s)")).toBeTruthy();
+    expect(within(row).getByText("1 ocorrência")).toBeTruthy();
     expect((within(row).getByRole("button", { name: "Desfazer" }) as HTMLButtonElement).disabled).toBe(false);
     const expand = within(row).getByRole("button", { name: /1 arquivo organizado/ });
     fireEvent.click(expand);
@@ -749,7 +749,7 @@ describe("prévia e operações", () => {
     snapshot.history = [structuredClone(operation)]; snapshot.preview_id = null;
     await act(async () => pending.resolve(42));
     expect(within(dialog).getByText("Processamento concluído")).toBeTruthy();
-    expect(within(dialog).getByText(/1 organizado\(s\)/)).toBeTruthy();
+    expect(within(dialog).getByText(/1 organizado/)).toBeTruthy();
     act(() => vi.advanceTimersByTime(300));
     expect(within(dialog).queryByRole("progressbar")).toBeNull();
     expect(within(dialog).getByText("Processamento concluído")).toBeTruthy();
@@ -762,7 +762,7 @@ describe("prévia e operações", () => {
     snapshot.history = [{ ...structuredClone(operation), kind: "automatic" }];
     await act(async () => send("completed", 5000, 42));
     expect(screen.getByText("Processamento concluído")).toBeTruthy();
-    expect(screen.getByText(/1 organizado\(s\)/)).toBeTruthy();
+    expect(screen.getByText(/1 organizado/)).toBeTruthy();
     act(() => vi.advanceTimersByTime(150)); expect(screen.queryByRole("progressbar")).toBeNull();
     send("preparing", 0, null); send("organizing", 0, 43); send("organizing", 100, 43);
     act(() => vi.advanceTimersByTime(150));
@@ -796,7 +796,7 @@ describe("prévia e operações", () => {
     snapshot.history = [structuredClone(operation)]; snapshot.preview_id = null;
     await act(async () => pending.reject("Falha ao registrar o próximo arquivo"));
     await within(dialog).findByText("Falha ao registrar o próximo arquivo");
-    expect(within(dialog).getByText(/1 organizado\(s\)/)).toBeTruthy();
+    expect(within(dialog).getByText(/1 organizado/)).toBeTruthy();
     expect((within(dialog).getByRole("button", { name: "Confirmar organização" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(within(dialog).getByRole("button", { name: "Ver resultado no histórico" }));
     expect(screen.getByRole("button", { name: /1 arquivo organizado/ }).getAttribute("aria-expanded")).toBe("true");
@@ -821,10 +821,10 @@ describe("prévia e operações", () => {
     await start();
     progress({ kind: "automatic", phase: "completed", operation_id: 43, completed: 1, total: 1, name: "" });
     const feedback = screen.getByText("Processamento concluído").closest("[role=status]")! as HTMLElement;
-    expect(within(feedback).queryByText(/1 organizado\(s\)/)).toBeNull();
+    expect(within(feedback).queryByText(/1 organizado/)).toBeNull();
     snapshot.history.unshift({ ...structuredClone(operation), id: 43, kind: "automatic" });
     await updateSnapshot();
-    expect(within(feedback).getByText(/1 organizado\(s\)/)).toBeTruthy();
+    expect(within(feedback).getByText(/1 organizado/)).toBeTruthy();
   });
   it("bloqueia prévia expirada e exige conferir uma nova versão", async () => {
     await start();
@@ -869,7 +869,7 @@ describe("prévia e operações", () => {
     snapshot.history = [structuredClone(operation)]; snapshot.files = []; snapshot.preview_id = null;
     await act(async () => pending.resolve(42));
     await screen.findByRole("dialog", { name: "Resultado da organização" });
-    expect(within(dialog).getByText(/1 organizado\(s\)/)).toBeTruthy();
+    expect(within(dialog).getByText(/1 organizado/)).toBeTruthy();
     expect(mocks.close).not.toHaveBeenCalled();
     fireEvent.click(within(dialog).getByRole("button", { name: "Ver resultado no histórico" }));
     const history = screen.getByRole("button", { name: /1 arquivo organizado/ });
@@ -893,7 +893,7 @@ describe("prévia e operações", () => {
     await start(); navigate("Histórico");
     fireEvent.click(screen.getByRole("button", { name: "Desfazer" }));
     const dialog = await screen.findByRole("dialog", { name: "Restaurar os arquivos à origem?" });
-    expect(within(dialog).getByText("Operação #42 · 10000 de 10000 arquivo(s) para restaurar.")).toBeTruthy();
+    expect(within(dialog).getByText("Operação #42 · 10000 de 10000 arquivos para restaurar")).toBeTruthy();
     const rows = dialog.querySelectorAll("[data-undo-movement-id]");
     expect(rows.length).toBeGreaterThan(0); expect(rows.length).toBeLessThan(25);
     const pending = deferred<void>(); mocks.undo.mockReturnValueOnce(pending.promise);
@@ -905,7 +905,7 @@ describe("prévia e operações", () => {
     snapshot.history[0].movements = snapshot.history[0].movements.map(movement => ({ ...movement, status: "undone" }));
     await act(async () => pending.resolve());
     await screen.findByRole("dialog", { name: "Resultado da restauração" });
-    expect(within(dialog).getByText(/10000 restaurado\(s\) · 0 ainda no destino/)).toBeTruthy();
+    expect(within(dialog).getByText(/10000 restaurados · 0 ainda no destino/)).toBeTruthy();
     expect(dialog.querySelectorAll("[data-undo-movement-id]")).toHaveLength(0);
   });
   it("mostra restauração em andamento e resultados reais de desfazer", async () => {
@@ -925,7 +925,7 @@ describe("prévia e operações", () => {
     act(() => vi.advanceTimersByTime(150));
     vi.useRealTimers();
     await screen.findByRole("dialog", { name: "Resultado da restauração" });
-    expect(within(dialog).getByText(/1 restaurado\(s\) · 0 ainda no destino/)).toBeTruthy();
+    expect(within(dialog).getByText(/1 restaurado · 0 ainda no destino/)).toBeTruthy();
   });
   it("atualiza os itens reversíveis após uma restauração interrompida", async () => {
     snapshot.history = [structuredClone(operation)]; await start(); navigate("Histórico");
@@ -937,7 +937,7 @@ describe("prévia e operações", () => {
     snapshot.history[0].movements[0].status = "undone";
     await act(async () => pending.reject("Lote interrompido após restaurar"));
     await within(dialog).findByText("Lote interrompido após restaurar");
-    expect(within(dialog).getByText(/1 restaurado\(s\) · 0 ainda no destino/)).toBeTruthy();
+    expect(within(dialog).getByText(/1 restaurado · 0 ainda no destino/)).toBeTruthy();
     expect(within(dialog).queryByText("Restaurar para: /isolated/source/a.txt")).toBeNull();
     expect((within(dialog).getByRole("button", { name: "Confirmar restauração" }) as HTMLButtonElement).disabled).toBe(true);
     expect(within(dialog).getByRole("button", { name: "Ver resultado no histórico" })).toBeTruthy();

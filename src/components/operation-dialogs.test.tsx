@@ -47,7 +47,7 @@ it.each([0, 1, 100, 5000, 10000])("mostra a contagem real, mantém DOM limitado 
   const current = operationOf(count);
   render(<OperationDialogs {...props} undoTarget={current} />);
   const dialog = panel();
-  expect(within(dialog).getByText(`Operação #42 · ${count} de ${count} arquivo(s) para restaurar.`)).toBeTruthy();
+  expect(within(dialog).getByText(`Operação #42 · ${count} de ${count} ${count === 1 ? "arquivo" : "arquivos"} para restaurar`)).toBeTruthy();
   const region = within(dialog).getByRole("region", { name: "Arquivos para restaurar" });
   expect(region.getAttribute("tabindex")).toBe("0");
   expect((within(dialog).getByRole("button", { name: "Confirmar restauração" }) as HTMLButtonElement).disabled).toBe(count === 0);
@@ -76,7 +76,7 @@ it("atualiza movimentos parcialmente reversíveis sem remontar a lista nem perde
   expect(region.scrollTop).toBe(top); expect(within(region).getByText("File-4999.txt")).toBeTruthy();
   const partial = operationOf(5); partial.movements[0].status = "undone"; partial.movements[1].status = "failed"; partial.movements[2].status = "uncertain";
   view.rerender(<OperationDialogs {...props} undoTarget={current} operation={partial} action={{ kind: "undo", phase: "error", operationId: 42, error: "Falha parcial" }} />);
-  expect(within(panel()).getByText("Operação #42 · 2 de 5 arquivo(s) para restaurar.")).toBeTruthy();
+  expect(within(panel()).getByText("Operação #42 · 2 de 5 arquivos para restaurar")).toBeTruthy();
   expect(within(region).queryByText("File-0.txt")).toBeNull(); expect(within(region).getByText("File-3.txt")).toBeTruthy();
   expect(within(panel()).getByRole("alert").textContent).toContain("Falha parcial");
   expect((within(panel()).getByRole("button", { name: "Confirmar restauração" }) as HTMLButtonElement).disabled).toBe(false);
@@ -97,7 +97,7 @@ it.each(["Escape", "X", "Cancelar"])("fecha 5.000 movimentos por %s mantendo a l
   fireEvent.click(within(old).getByText("Confirmar restauração")); expect(props.onUndo).not.toHaveBeenCalled();
   endExit(); await waitFor(() => expect(props.onRestoreFocus).toHaveBeenCalledOnce()); expect(panel()).toBeNull();
   view.rerender(<OperationDialogs {...props} undoTarget={{ ...operationOf(1), id: 43 }} />);
-  expect(within(panel()).getByText("Operação #43 · 1 de 1 arquivo(s) para restaurar.")).toBeTruthy();
+  expect(within(panel()).getByText("Operação #43 · 1 de 1 arquivo para restaurar")).toBeTruthy();
   expect(panel().querySelectorAll("[data-undo-movement-id]")).toHaveLength(1);
 });
 

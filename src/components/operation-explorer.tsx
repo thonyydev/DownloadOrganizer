@@ -3,6 +3,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { displayPath, api, basename, labels, type Movement, type Operation, type OperationSummary } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { plural } from "@/lib/utils";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 
 export function movementProblem(movement: Movement) {
@@ -40,7 +41,7 @@ function MovementList({ movements }: { movements: Movement[] }) {
       <label className="search-field"><span>Buscar por nome</span><Input aria-label="Buscar arquivos da operação" value={search} onChange={event => setSearch(event.target.value)} placeholder="Nome do arquivo…" /></label>
       <label className="filter-select"><span>Filtrar por status</span><select value={status} onChange={event => setStatus(event.target.value)}><option value="all">Todos os status</option><option value="problems">Com problemas</option>{statuses.map(value => <option key={value} value={value}>{labels[value] ?? value}</option>)}</select></label>
     </div>
-    <p className="explorer-count">{results.length} de {movements.length} arquivo(s) · Ocorrências primeiro</p>
+    <p className="explorer-count">{results.length} de {plural(movements.length, "arquivo", "arquivos")} · Ocorrências primeiro</p>
     <div ref={scrollRef} className="movement-scroll" role="region" aria-label="Arquivos da operação" tabIndex={0} onKeyDown={event => {
       if (event.target !== event.currentTarget || !results.length || !["Home", "End"].includes(event.key)) return;
       event.preventDefault();
