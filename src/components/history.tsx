@@ -4,6 +4,7 @@ import { useFeedbackMotion, useMotionAllowed } from "@/components/motion/feedbac
 import { Collapse } from "@/components/motion/collapse";
 import { useContentMotion } from "@/components/motion/transitions";
 import { displayPath, api, date, summarizeOperation, type DestinationSummary, type Operation, type OperationSummary as Summary } from "@/lib/api";
+import { plural } from "@/lib/utils";
 import { useEffect, useMemo, useState } from "react";
 import { OperationExplorer } from "@/components/operation-explorer";
 
@@ -35,7 +36,7 @@ function OperationSummary({ operation }: { operation: Operation | Summary }) {
     <p className="summary-meta">{operation.kind === "automatic" ? "Automação" : operation.kind === "manual" ? "Organização manual" : operation.kind} · {date(operation.created * 1000)}</p>
     {!("movements" in operation) && !destinations && !error && <p className="summary-meta" role="status">Consultando destinos…</p>}
     {error && <p className="inline-error" role="alert">Não foi possível consultar os destinos. <Button variant="outline" size="sm" onClick={() => setRetry(value => value + 1)}>Tentar novamente</Button></p>}
-    {folders.folders.length > 0 && <div className="destination-summary"><strong>Pastas de destino registradas</strong><dl>{folders.folders.map(([folder, count]) => <div key={folder}><dt>{displayPath(folder)}</dt><dd>{count} arquivo(s)</dd></div>)}</dl>{folders.other_folders > 0 && <p>{folders.other_folders} outras pastas · {folders.other_files} arquivo(s). Consulte os caminhos no explorador.</p>}</div>}
+    {folders.folders.length > 0 && <div className="destination-summary"><strong>Pastas de destino registradas</strong><dl>{folders.folders.map(([folder, count]) => <div key={folder}><dt>{displayPath(folder)}</dt><dd>{plural(count, "arquivo", "arquivos")}</dd></div>)}</dl>{folders.other_folders > 0 && <p>{plural(folders.other_folders, "outra pasta", "outras pastas")} · {plural(folders.other_files, "arquivo", "arquivos")}. Consulte os caminhos no explorador.</p>}</div>}
     <OperationExplorer operation={operation} />
   </div>;
 }
@@ -51,7 +52,7 @@ export function Activity({ operation, onOpen, expanded, motionAllowed = false }:
       <strong>{undone ? undone + " arquivo" + (undone !== 1 ? "s restaurados" : " restaurado") : moved + " arquivo" + (moved !== 1 ? "s organizados" : " organizado")}</strong>
       <small><span className="operation-id">#{operation.id}</span>{operation.kind === "automatic" ? "Automação" : "Organização manual"}<span>·</span><time dateTime={new Date(operation.created * 1000).toISOString()}>{date(operation.created * 1000)}</time>{undone > 0 && moved > 0 && <span>· {moved} ainda no destino</span>}</small>
     </span>
-    {errors > 0 && <span className="status status-conflict">{errors} ocorrência(s)</span>}
+    {errors > 0 && <span className="status status-conflict">{plural(errors, "ocorrência", "ocorrências")}</span>}
     {expanded ? <ChevronDown size={16} aria-hidden="true" /> : <ChevronRight size={16} aria-hidden="true" />}
   </button>;
 }
@@ -65,7 +66,7 @@ export function HistoryView({ history, expanded, working, openingUndo, onExpand,
   const motionAllowed = useMotionAllowed();
   const ref = useContentMotion(history.slice(0, 4).map(op => op.id).join(":"), motionAllowed);
   if (!history.length) return <div ref={ref} data-motion-group className="empty" role="status"><History size={24} aria-hidden="true" /><h2>Nenhuma operação registrada</h2><p>Após organizar arquivos, consulte aqui os resultados e as opções de desfazer.</p></div>;
-  return <><div className="table-footer">{history.length} operações carregadas. Da mais recente para a mais antiga.{newAvailable && <Button variant="outline" size="sm" disabled={loading || working} onClick={onReload}>Novas operações — atualizar lista</Button>}</div><div ref={ref} data-motion-group className="history-list" aria-label="Operações registradas">{history.map(op => <section className="history-operation" key={op.id} aria-label={"Operação " + op.id}>
+  return <><div className="table-footer">{plural(history.length, "operação carregada", "operações carregadas")}, da mais recente para a mais antiga{newAvailable && <Button variant="outline" size="sm" disabled={loading || working} onClick={onReload}>Novas operações — atualizar lista</Button>}</div><div ref={ref} data-motion-group className="history-list" aria-label="Operações registradas">{history.map(op => <section className="history-operation" key={op.id} aria-label={"Operação " + op.id}>
     <div className="history-header"><Activity operation={op} motionAllowed={motionAllowed} expanded={expanded === op.id} onOpen={() => onExpand(expanded === op.id ? null : op.id)} />
       <Button variant="outline" size="sm" disabled={working || !summarizeOperation(op).moved} onClick={() => onUndo(op)}><Undo2 aria-hidden="true" />{openingUndo === op.id ? "Preparando restauração…" : "Desfazer"}</Button>
     </div>

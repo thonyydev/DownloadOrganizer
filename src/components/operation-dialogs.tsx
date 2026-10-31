@@ -1,11 +1,12 @@
 import { FolderDown, Loader2, Undo2 } from "lucide-react";
 import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { FileTable } from "@/components/file-table";
 import { OperationFeedback } from "@/components/operation-feedback";
 import { UndoFileList } from "@/components/undo-file-list";
+import { TriageLegend } from "@/components/triage";
+import { plural } from "@/lib/utils";
 import type { Category, Operation, OperationSummary, Preview } from "@/lib/api";
 import type { Action } from "@/lib/experience";
 
@@ -35,9 +36,9 @@ export function OperationDialogs({ preview, undoTarget, categories, action, busy
         <OperationFeedback action={previewAction} operation={done(previewAction) || previewAction?.phase === "error" ? operation : undefined} />
         {!done(previewAction) && <>
           {issue && <p className="inline-error" role="alert">{issue}</p>}
-          <div className="preview-summary"><Badge variant="secondary">{ready} prontos</Badge><Badge variant="outline">{counts.conflict} conflitos</Badge><Badge variant="outline">{counts.ignored} ignorados</Badge></div>
+          <TriageLegend counts={counts} />
           <div className="preview-files"><FileTable files={preview?.files ?? []} categories={categories} preview /></div>
-          <label className="review-confirmation"><input type="checkbox" checked={reviewed} disabled={working || !!issue} onChange={e => onReviewed(e.target.checked)} />Conferi os arquivos e destinos desta prévia.</label>
+          <label className="review-confirmation"><input type="checkbox" checked={reviewed} disabled={working || !!issue} onChange={e => onReviewed(e.target.checked)} />Conferi os arquivos e destinos desta prévia</label>
         </>}
         <DialogFooter>{done(previewAction) ? footer : <>
           <Button variant="outline" disabled={busy} onClick={onClose}>Cancelar</Button>
@@ -51,7 +52,7 @@ export function OperationDialogs({ preview, undoTarget, categories, action, busy
       <DialogContent className="undo-dialog" showCloseButton={!busy} onCloseAutoFocus={e => { e.preventDefault(); onRestoreFocus(); }} onEscapeKeyDown={e => { if (busy) e.preventDefault(); }} onPointerDownOutside={e => { if (busy) e.preventDefault(); }}>
         <DialogHeader><DialogTitle>{done(undoAction) ? "Resultado da restauração" : "Restaurar os arquivos à origem?"}</DialogTitle><DialogDescription>Arquivos alterados, ausentes ou com conflitos serão preservados. O resultado individual ficará no histórico.</DialogDescription></DialogHeader>
         <OperationFeedback action={undoAction} operation={done(undoAction) || undoAction?.phase === "error" ? operation : undefined} />
-        {!done(undoAction) && <><p className="undo-summary">Operação #{undoable?.id} · {reversible.length} de {undoable?.movements.length ?? 0} arquivo(s) para restaurar.</p><UndoFileList key={undoable?.id} movements={reversible} /></>}
+        {!done(undoAction) && <><p className="undo-summary">Operação #{undoable?.id} · {reversible.length} de {plural(undoable?.movements.length ?? 0, "arquivo", "arquivos")} para restaurar</p><UndoFileList key={undoable?.id} movements={reversible} /></>}
         <DialogFooter>{done(undoAction) ? footer : <><Button variant="outline" disabled={busy} onClick={onClose}>Cancelar</Button>{undoAction?.phase === "error" && operation && <Button variant="outline" onClick={onViewResult}>Ver resultado no histórico</Button>}<Button disabled={working || !reversible.length} onClick={onUndo}>{busy ? <Loader2 className="spin" aria-hidden="true" /> : <Undo2 aria-hidden="true" />}{busy ? "Restaurando…" : "Confirmar restauração"}</Button></>}</DialogFooter>
       </DialogContent>
     </Dialog>

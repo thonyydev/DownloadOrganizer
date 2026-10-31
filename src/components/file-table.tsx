@@ -7,10 +7,14 @@ import { Collapse } from "@/components/motion/collapse";
 import { useContentMotion } from "@/components/motion/transitions";
 import { useMotionAllowed } from "@/components/motion/feedback";
 
+function FileName({ file }: { file: FileEntry }) {
+  return <><strong>{file.name}</strong>{!file.extension && <small className="file-extension">Sem extensão</small>}</>;
+}
+
 function FileDetails({ file, open, onToggle }: { file: FileEntry; open: boolean; onToggle: () => void }) {
   const interacted = useRef(false);
   const id = useId();
-  return <div className="file-details"><button className="file-disclosure" aria-expanded={open} aria-controls={id} onClick={() => { interacted.current = true; onToggle(); }}><ChevronRight size={12} aria-hidden="true" />Ver caminho e destino</button><Collapse open={open} id={id} animateInitial={interacted.current}><p>Origem: {displayPath(file.path)}</p><p>Destino previsto: {displayPath(file.destination)}</p></Collapse></div>;
+  return <div className="file-name"><button className="file-disclosure" aria-expanded={open} aria-controls={id} onClick={() => { interacted.current = true; onToggle(); }}><ChevronRight size={16} aria-hidden="true" /><span className="sr-only">Ver caminho e destino</span></button><div className="file-copy"><FileName file={file} /><Collapse open={open} id={id} className="file-details" animateInitial={interacted.current}><p>Origem: {displayPath(file.path)}</p><p>Destino previsto: {displayPath(file.destination)}</p></Collapse></div></div>;
 }
 
 function RowSpace({ height, columns }: { height: number; columns: number }) {
@@ -25,10 +29,10 @@ function FileRow({ file, index, preview, category, open, onToggle, onView, rowRe
   const size = useMemo(() => bytes(file.size), [file.size]);
   const modified = useMemo(() => preview ? "" : date(file.modified), [file.modified, preview]);
   return <tr data-index={index} data-file-path={file.path} aria-rowindex={index + 2} ref={rowRef}>
-    <td><div className="file-name"><span className={"file-icon tone-" + file.category}><File size={16} aria-hidden="true" /></span><div className="file-copy"><strong>{file.name}</strong><small className="file-extension">{file.extension ? "." + file.extension : "Sem extensão"}</small>{!preview && <FileDetails file={file} open={open} onToggle={() => onToggle(file.path)} />}</div></div></td>
-    {!preview && <td><span className={"category-label tone-" + file.category}>{category}</span></td>}
-    <td className="tabular number-cell">{size}</td><td>{preview ? <span className="destination"><ArrowRight size={14} aria-hidden="true" />{displayPath(file.destination)}</span> : <span className="tabular">{modified}</span>}</td>
-    <td><span className={"status status-" + file.status}>{labels[file.status]}</span>{file.reason && <small className="reason">{file.reason}</small>}{!preview && onView && <Button variant="ghost" size="sm" className="file-view-button" aria-haspopup="dialog" aria-label={`Visualizar ${file.name}`} onClick={event => onView(file, event.currentTarget)}><Eye size={14} aria-hidden="true" />Visualizar</Button>}</td>
+    <td>{preview ? <div className="file-name"><span className="file-icon"><File size={16} aria-hidden="true" /></span><div className="file-copy"><FileName file={file} /></div></div> : <FileDetails file={file} open={open} onToggle={() => onToggle(file.path)} />}</td>
+    {!preview && <td><span className={"category-label tone-" + file.category}><span className="tone-dot" aria-hidden="true" />{category}</span></td>}
+    <td className="tabular number-cell">{size}</td><td>{preview ? <span className="destination"><ArrowRight size={16} aria-hidden="true" /><span>{displayPath(file.destination)}</span></span> : <span className="tabular">{modified}</span>}</td>
+    <td><div className="status-cell"><div><span className={"status status-" + file.status}>{labels[file.status]}</span>{file.reason && <small className="reason">{file.reason}</small>}</div>{!preview && onView && <Button variant="ghost" size="icon-xs" className="file-view-button" aria-haspopup="dialog" aria-label={`Visualizar ${file.name}`} onClick={event => onView(file, event.currentTarget)}><Eye className="size-4" aria-hidden="true" /></Button>}</div></td>
   </tr>;
 }
 
@@ -59,7 +63,7 @@ export function FileTable({ files, categories, preview = false, filtered = false
     count: files.length,
     getScrollElement: () => scrollRef.current,
     getItemKey,
-    estimateSize: () => preview ? 88 : 92,
+    estimateSize: () => preview ? 56 : 41,
     overscan: 5,
     enabled: virtual,
     paddingStart: headerHeight,
