@@ -10,7 +10,8 @@ Sort files into categories, preview changes before applying them, and undo previ
 
 [![CI](https://github.com/thonyydev/DownloadOrganizer/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/thonyydev/DownloadOrganizer/actions/workflows/ci.yml)
 ![Windows](https://img.shields.io/badge/Windows-11-0078D4?logo=windows11&logoColor=white)
-![Status](https://img.shields.io/badge/Status-In%20Development-orange)
+![Status](https://img.shields.io/badge/Status-Beta-orange)
+![License](https://img.shields.io/badge/License-MIT-blue)
 
 ## Features
 
@@ -35,15 +36,46 @@ You can also enable automatic organization to sort new downloads while the app i
 
 ## Download
 
-Download Organizer is currently in development, with Windows 11 as its initial target platform.
+Get the installer from the [Releases page](https://github.com/thonyydev/DownloadOrganizer/releases). Download Organizer is in beta and supports Windows 11.
 
-A public release is not available yet. Stay tuned for updates!
+The installer isn't code-signed yet, so Windows SmartScreen may warn you when you run it. Each release lists a SHA-256 hash you can check before installing.
+
+**To update,** install the new version over the old one. Your history and settings are kept.
+
+**To uninstall,** use Windows Settings. Your organized files are never touched. Settings and history stay in `%APPDATA%\com.thonyy.download-organizer` unless you remove them.
+
+## Good to Know
+
+- Only files at the top level of the source folder are organized, not subfolders.
+- The destination must be on the same volume as the source.
+- Files with a name that already exists at the destination are skipped, never overwritten.
+- Automatic organization is off by default. It only runs while the app is open, handles new files, and waits until a file has gone 10 seconds without writes.
+- Temporary files and downloads still being written are skipped, but no check can catch every case. Use the preview if you're unsure.
+- Undo restores a file only if it hasn't changed since it was moved.
+
+## Privacy
+
+Download Organizer has no account, telemetry or cloud service. Its local database stores file paths, sizes, dates and content hashes so that it can show your history and undo safely. When reporting a problem, remove personal file names and paths, and don't attach the database.
 
 ## Feedback & Suggestions
 
 Have an idea or found a bug?
 
 Feel free to [open an issue](https://github.com/thonyydev/DownloadOrganizer/issues). Feedback and suggestions are always welcome.
+
+## Building from Source
+
+You need [Node.js](https://nodejs.org), [Rust](https://rustup.rs) and the [Tauri prerequisites for Windows](https://v2.tauri.app/start/prerequisites/).
+
+```powershell
+npm ci
+npm run tauri dev
+npm run tauri build
+```
+
+## License
+
+[MIT](LICENSE). The Download Organizer name and logo aren't covered by this license. Third-party notices are in [`public/`](public).
 
 ---
 

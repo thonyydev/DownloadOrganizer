@@ -1,8 +1,10 @@
 [package]
 name = "download-organizer"
 version = "0.1.0"
-description = "Organização local e segura de downloads"
-authors = ["Download Organizer"]
+description = "Organize your downloads safely, with a preview and undo"
+authors = ["Thonyy"]
+license = "MIT"
+repository = "https://github.com/thonyydev/DownloadOrganizer"
 edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

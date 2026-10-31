@@ -1,0 +1,65 @@
+name: Release
+
+# Builds the installer for a version tag and leaves it in a draft release.
+# Publishing stays a manual step, after testing the installer from the draft.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  draft:
+    name: Windows installer
+    runs-on: windows-2022
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check that the tag matches the app version
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          test "$GITHUB_REF_NAME" = "v$version" || { echo "Tag $GITHUB_REF_NAME does not match version $version"; exit 1; }
+          grep -q "^version = \"$version\"$" src-tauri/Cargo.toml || { echo "src-tauri/Cargo.toml is not at $version"; exit 1; }
+
+      - name: Run tests
+        run: |
+          npm run test:ui
+          cargo test --manifest-path src-tauri/Cargo.toml --locked
+
+      - name: Build installer
+        run: npm run tauri build -- --bundles nsis
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd src-tauri/target/release/bundle/nsis
+          installer="$(ls *-setup.exe)"
+          sha256sum "$installer" > "$installer.sha256"
+          gh release create "$GITHUB_REF_NAME" "$installer" "$installer.sha256" \
+            --repo "$GITHUB_REPOSITORY" --draft --prerelease --title "Download Organizer $GITHUB_REF_NAME" \
+            --notes "See [CHANGELOG.md](https://github.com/$GITHUB_REPOSITORY/blob/$GITHUB_REF_NAME/CHANGELOG.md)."
