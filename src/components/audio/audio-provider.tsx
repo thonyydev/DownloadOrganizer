@@ -1,3 +1,4 @@
+import { t } from "@/lib/i18n";
 import { Component, createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from "react";
 import { flushSync } from "react-dom";
 import { SoundProvider, useAnalyser, useSound } from "@web-kits/audio/react";
@@ -109,7 +110,7 @@ export function AudioProvider({ children }: { children: ReactNode }) {
     try { localStorage.setItem(audioStorageKey, JSON.stringify(captured)); }
     catch {
       setStorageError(true);
-      throw new Error("Não foi possível salvar o áudio neste dispositivo. O rascunho não foi confirmado.");
+      throw new Error(t("Não foi possível salvar o áudio neste dispositivo. O rascunho não foi confirmado.", "Could not save the audio settings on this device. The draft was not confirmed."));
     }
     // Apply the saved provider values before the terminal confirmation can play.
     flushSync(() => { setPreferences(captured); setDraft(current => current === captured ? captured : current); setStorageError(false); });

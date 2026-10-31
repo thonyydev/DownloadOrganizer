@@ -1,6 +1,8 @@
+use i18n::t;
 mod directories;
 mod engine;
 mod file_preview;
+mod i18n;
 mod media_preview;
 mod monitor;
 mod queue;
@@ -52,6 +54,7 @@ struct Progress {
 struct Snapshot {
     preferences: Preferences,
     categories: &'static [engine::Category],
+    language: &'static str,
     files: Vec<engine::FileEntry>,
     history: Vec<OperationSummary>,
     history_cursor: Option<i64>,
@@ -86,10 +89,13 @@ fn progress(
 }
 
 fn lock(state: &AppState) -> Result<std::sync::MutexGuard<'_, Runtime>> {
-    state
-        .runtime
-        .lock()
-        .map_err(|_| "Estado interno indisponível; reinicie o aplicativo".into())
+    state.runtime.lock().map_err(|_| {
+        t(
+            "Estado interno indisponível; reinicie o aplicativo",
+            "Internal state unavailable; restart the app",
+        )
+        .into()
+    })
 }
 
 fn execute(
@@ -110,7 +116,11 @@ fn execute(
             .filter(|f| f.status == "ready")
             .collect();
         if ready.is_empty() {
-            return Err("Nenhum arquivo pronto para organizar".into());
+            return Err(t(
+                "Nenhum arquivo pronto para organizar",
+                "No files ready to organize",
+            )
+            .into());
         }
         let operation = runtime.store.begin(kind)?;
         operation_id = Some(operation);
@@ -125,7 +135,10 @@ fn execute(
                 "preparing",
                 operation_id,
             );
-            let captured = entry.stamp.as_ref().ok_or("Metadados inválidos")?;
+            let captured = entry
+                .stamp
+                .as_ref()
+                .ok_or(t("Metadados inválidos", "Invalid metadata"))?;
             match engine::prepare_move(&entry, &prefs, |folder| {
                 runtime.store.create_directory(operation, folder)
             }) {
@@ -225,7 +238,11 @@ fn undo(runtime: &mut Runtime, operation: i64, app: Option<&AppHandle>) -> Resul
             .filter(|m| m.status == "moved")
             .collect();
         if movements.is_empty() {
-            return Err("Não há movimentações reversíveis nesta operação".into());
+            return Err(t(
+                "Não há movimentações reversíveis nesta operação",
+                "This operation has no reversible moves",
+            )
+            .into());
         }
         let total = movements.len();
         runtime.preview = None;
@@ -312,7 +329,7 @@ fn undo(runtime: &mut Runtime, operation: i64, app: Option<&AppHandle>) -> Resul
 
 fn take_preview(runtime: &mut Runtime, id: u64, now: i64) -> Result<Preview> {
     let invalid = || {
-        "PREVIEW_INVALID: A prévia expirou ou os arquivos mudaram. Atualize e confira os novos destinos antes de confirmar.".to_owned()
+        t("PREVIEW_INVALID: A prévia expirou ou os arquivos mudaram. Atualize e confira os novos destinos antes de confirmar.", "PREVIEW_INVALID: The preview expired or the files changed. Refresh it and review the new destinations before confirming.").to_owned()
     };
     let preview = runtime
         .preview
@@ -362,11 +379,17 @@ async fn snapshot(app: AppHandle) -> Result<Snapshot> {
         state
             .file_previews
             .lock()
-            .map_err(|_| "Visualização indisponível; reinicie o aplicativo")?
+            .map_err(|_| {
+                t(
+                    "Visualização indisponível; reinicie o aplicativo",
+                    "Preview unavailable; restart the app",
+                )
+            })?
             .update(&prefs, &files);
         Ok(Snapshot {
+            categories: engine::categories_for(i18n::resolve(&prefs.language)),
+            language: i18n::resolve(&prefs.language),
             preferences: prefs,
-            categories: engine::categories(),
             files,
             history: history.operations,
             history_cursor: history.next_cursor,
@@ -392,16 +415,23 @@ async fn file_preview(
 ) -> Result<file_preview::FilePreview> {
     blocking(move || {
         let state = app.state::<AppState>();
-        let _job = state
-            .file_preview_job
-            .try_lock()
-            .map_err(|_| "Outra imagem está sendo preparada. Tente novamente em instantes.")?;
+        let _job = state.file_preview_job.try_lock().map_err(|_| {
+            t(
+                "Outra imagem está sendo preparada. Tente novamente em instantes.",
+                "Another image is being prepared. Try again in a moment.",
+            )
+        })?;
         let authorize = || {
             let prefs = lock(&state)?.store.preferences()?;
             state
                 .file_previews
                 .lock()
-                .map_err(|_| "Visualização indisponível; reinicie o aplicativo")?
+                .map_err(|_| {
+                    t(
+                        "Visualização indisponível; reinicie o aplicativo",
+                        "Preview unavailable; restart the app",
+                    )
+                })?
                 .authorize(&prefs, &path, size, modified)
         };
         let expected = authorize()?;
@@ -419,7 +449,7 @@ fn authorize_media(state: &AppState, path: &str, size: u64, modified: i64) -> Re
     state
         .file_previews
         .lock()
-        .map_err(|_| "Visualização indisponível")?
+        .map_err(|_| t("Visualização indisponível", "Preview unavailable"))?
         .authorize(&prefs, path, size, modified)
 }
 
@@ -440,7 +470,7 @@ async fn open_media_preview(
         state
             .media_previews
             .lock()
-            .map_err(|_| "Visualização indisponível")?
+            .map_err(|_| t("Visualização indisponível", "Preview unavailable"))?
             .insert(session)
     })
     .await
@@ -452,7 +482,7 @@ async fn close_media_preview(app: AppHandle, token: String) -> Result<()> {
         app.state::<AppState>()
             .media_previews
             .lock()
-            .map_err(|_| "Visualização indisponível")?
+            .map_err(|_| t("Visualização indisponível", "Preview unavailable"))?
             .close(&token);
         Ok(())
     })
@@ -546,6 +576,7 @@ async fn save_preferences(
         runtime
             .store
             .save_if_unchanged(&preferences, Some(&expected))?;
+        i18n::set_language(&preferences.language);
         runtime.preview = None;
         if let Err(error) = monitor::configure(&mut runtime, &state.events) {
             runtime.watch_error = Some(error.clone());
@@ -591,7 +622,7 @@ fn run_application() -> std::result::Result<(), startup::StartupError> {
                     window.set_focus()
                 });
                 if let Err(error) = result {
-                    eprintln!("Não foi possível ativar a janela existente: {error}");
+                    eprintln!("Could not activate the existing window: {error}");
                 }
             }
         }))
@@ -631,12 +662,12 @@ fn run_application() -> std::result::Result<(), startup::StartupError> {
                             Ok(mut sessions) => sessions.respond(&request, |path, stamp| {
                                 let current = authorize_media(
                                     &state,
-                                    path.to_str().ok_or("Caminho inválido")?,
+                                    path.to_str().ok_or(t("Caminho inválido", "Invalid path"))?,
                                     stamp.size as u64,
                                     stamp.modified / 1_000_000,
                                 )?;
                                 if current != *stamp {
-                                    return Err("A mídia mudou".into());
+                                    return Err(t("A mídia mudou", "The media changed").into());
                                 }
                                 Ok(())
                             }),
@@ -677,6 +708,8 @@ fn run_application() -> std::result::Result<(), startup::StartupError> {
         ])
         .build(tauri::generate_context!())
         .map_err(|_| startup::StartupError::Runtime)?;
+    // Startup errors can happen before preferences load.
+    i18n::set_language(i18n::SYSTEM);
     // Plugins (including Single Instance) are initialized by build; windows by run.
     let data = app
         .path()
@@ -688,6 +721,9 @@ fn run_application() -> std::result::Result<(), startup::StartupError> {
         .map(|path| path.to_string_lossy().into_owned())
         .unwrap_or_default();
     let mut runtime = startup::initialize(&data, &default_source)?;
+    if let Ok(preferences) = runtime.store.preferences() {
+        i18n::set_language(&preferences.language);
+    }
     let (events, receiver) = mpsc::sync_channel(1024);
     if let Err(error) = monitor::configure(&mut runtime, &events) {
         runtime.watch_error = Some(error);

@@ -242,6 +242,7 @@ fn media_access_requires_the_current_authorized_snapshot() {
         automatic: false,
         enabled_categories: vec!["audio".into()],
         theme: "dark".into(),
+        language: "system".into(),
     };
     let files = engine::scan(&prefs).unwrap();
     let entry = files

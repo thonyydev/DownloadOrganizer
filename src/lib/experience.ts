@@ -1,4 +1,5 @@
 import type { Preferences, Preview, Progress } from "./api";
+import { t } from "./i18n";
 
 export interface PreferencesDraft { base: Preferences; value: Preferences }
 export interface Action {
@@ -11,7 +12,7 @@ export interface Action {
 }
 
 export function samePreferences(a: Preferences, b: Preferences) {
-  return a.source === b.source && a.destination === b.destination && a.automatic === b.automatic && a.theme === b.theme
+  return a.source === b.source && a.destination === b.destination && a.automatic === b.automatic && a.theme === b.theme && a.language === b.language
     && [...a.enabled_categories].sort().join("\n") === [...b.enabled_categories].sort().join("\n");
 }
 
@@ -23,8 +24,8 @@ export function reconcileDraft(current: PreferencesDraft | null, remote: Prefere
 }
 
 export function previewIssue(preview: Preview, activeId: number | null, now: number) {
-  if (now < preview.created * 1000 || now >= (preview.created + 300) * 1000) return "Esta prévia expirou. Atualize e confira os arquivos novamente.";
-  if (activeId !== preview.id) return "Esta prévia foi invalidada por outra operação. Atualize antes de confirmar.";
+  if (now < preview.created * 1000 || now >= (preview.created + 300) * 1000) return t("Esta prévia expirou. Atualize e confira os arquivos novamente.", "This preview expired. Refresh it and review the files again.");
+  if (activeId !== preview.id) return t("Esta prévia foi invalidada por outra operação. Atualize antes de confirmar.", "Another operation invalidated this preview. Refresh it before confirming.");
   return "";
 }
 

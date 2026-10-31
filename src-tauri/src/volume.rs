@@ -1,11 +1,21 @@
 use crate::engine::Result;
+use crate::i18n::t;
 use std::{fs::File, io, path::Path};
 
-const INCOMPATIBLE: &str = "A origem e o destino estão em volumes diferentes ou em compartilhamentos incompatíveis. Escolha um destino no mesmo volume da origem em Configurações e salve as preferências.";
+fn incompatible() -> &'static str {
+    t(
+        "A origem e o destino estão em volumes diferentes ou em compartilhamentos incompatíveis. Escolha um destino no mesmo volume da origem em Configurações e salve as preferências.",
+        "The source and destination are on different volumes or incompatible network shares. Choose a destination on the same volume as the source in Settings and save your preferences.",
+    )
+}
 
 fn unavailable(error: io::Error) -> String {
     format!(
-        "Não foi possível verificar se a origem e o destino estão no mesmo volume. Verifique o acesso às pastas ou escolha pastas locais no mesmo volume em Configurações. Detalhes: {error}"
+        "{}: {error}",
+        t(
+            "Não foi possível verificar se a origem e o destino estão no mesmo volume. Verifique o acesso às pastas ou escolha pastas locais no mesmo volume em Configurações. Detalhes",
+            "Could not check whether the source and destination are on the same volume. Check access to the folders or choose local folders on the same volume in Settings. Details"
+        )
     )
 }
 
@@ -25,7 +35,10 @@ fn open_directory(path: &Path) -> io::Result<File> {
     let file = options.open(path)?;
     let metadata = file.metadata()?;
     if !metadata.is_dir() || crate::engine::linked(&metadata) {
-        return Err(io::Error::other("Pasta inválida ou link"));
+        return Err(io::Error::other(t(
+            "Pasta inválida ou link",
+            "Invalid folder or link",
+        )));
     }
     Ok(file)
 }
@@ -45,7 +58,7 @@ pub fn validate(source: &File, destination: &Path) -> Result<()> {
 
 fn compare<T: PartialEq>(source: T, destination: T) -> Result<()> {
     if source != destination {
-        return Err(INCOMPATIBLE.into());
+        return Err(incompatible().into());
     }
     Ok(())
 }
@@ -77,7 +90,10 @@ fn final_path(file: &File, flags: u32) -> io::Result<std::path::PathBuf> {
         return Err(io::Error::last_os_error());
     }
     if written as usize >= buffer.len() {
-        return Err(io::Error::other("O caminho mudou durante a verificação"));
+        return Err(io::Error::other(t(
+            "O caminho mudou durante a verificação",
+            "The path changed during the check",
+        )));
     }
     Ok(OsString::from_wide(&buffer[..written as usize]).into())
 }
@@ -119,7 +135,10 @@ fn local_identity(path: &Path) -> io::Result<Identity> {
     {
         return Ok(Identity::Local(volume.to_ascii_lowercase()));
     }
-    Err(io::Error::other("Identidade do volume local indisponível"))
+    Err(io::Error::other(t(
+        "Identidade do volume local indisponível",
+        "Local volume identity unavailable",
+    )))
 }
 
 #[cfg(windows)]
@@ -135,9 +154,10 @@ fn remote_identity(path: &Path, serial: u64) -> io::Result<Identity> {
             serial,
         });
     }
-    Err(io::Error::other(
+    Err(io::Error::other(t(
         "Identidade do compartilhamento indisponível",
-    ))
+        "Network share identity unavailable",
+    )))
 }
 
 #[cfg(unix)]
@@ -148,7 +168,10 @@ fn identity(file: &File) -> io::Result<u64> {
 
 #[cfg(not(any(windows, unix)))]
 fn identity(_file: &File) -> io::Result<u64> {
-    Err(io::Error::other("Sistema ainda não suportado"))
+    Err(io::Error::other(t(
+        "Sistema ainda não suportado",
+        "System not supported yet",
+    )))
 }
 
 #[cfg(test)]
@@ -157,7 +180,7 @@ mod tests {
 
     #[test]
     fn different_volume_identities_are_refused() {
-        assert_eq!(compare(1u64, 2u64).unwrap_err(), INCOMPATIBLE);
+        assert_eq!(compare(1u64, 2u64).unwrap_err(), incompatible());
         assert!(compare(1u64, 1u64).is_ok());
     }
 
