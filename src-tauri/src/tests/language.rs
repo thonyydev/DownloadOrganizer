@@ -14,6 +14,27 @@ fn preferences_saved_before_languages_stay_in_portuguese() {
     assert_eq!(prefs.language, i18n::PORTUGUESE);
     let (_temp, _runtime, new_install) = fixture();
     assert_eq!(new_install.language, i18n::SYSTEM);
+    // Upgrades keep notifications and updates on, and never start with Windows until asked.
+    assert!(prefs.notifications && prefs.updates && !prefs.autostart);
+    assert!(new_install.notifications && new_install.updates && !new_install.autostart);
+}
+
+#[test]
+fn notification_mentions_issues_only_when_there_are_any() {
+    let summary = |errors| OperationSummary {
+        id: 1,
+        created: 0,
+        kind: "automatic".into(),
+        total: 4,
+        moved: 3,
+        undone: 0,
+        errors,
+    };
+    assert_eq!(organized_message(&summary(0)), "Arquivos organizados: 3");
+    assert_eq!(
+        organized_message(&summary(1)),
+        "Arquivos organizados: 3 · Precisam de atenção: 1"
+    );
 }
 
 #[test]

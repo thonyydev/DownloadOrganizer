@@ -53,7 +53,6 @@ pub fn t(portuguese: &'static str, english: &'static str) -> &'static str {
     }
 }
 
-#[cfg(any(windows, test))]
 fn language_for_ui(language_id: u16) -> &'static str {
     // The low 10 bits are the primary language, shared by every regional variant.
     match language_id & 0x3ff {
@@ -71,24 +70,10 @@ fn system_language() -> &'static str {
     PORTUGUESE
 }
 
-#[cfg(all(not(test), windows))]
+#[cfg(not(test))]
 fn system_language() -> &'static str {
     // The Windows display language, which only changes after signing in again.
     language_for_ui(unsafe { windows_sys::Win32::Globalization::GetUserDefaultUILanguage() })
-}
-
-#[cfg(all(not(test), not(windows)))]
-fn system_language() -> &'static str {
-    let locale = std::env::var("LANG").unwrap_or_default().to_lowercase();
-    [
-        ("pt", PORTUGUESE),
-        ("es", SPANISH),
-        ("fr", FRENCH),
-        ("it", ITALIAN),
-    ]
-    .into_iter()
-    .find(|(prefix, _)| locale.starts_with(prefix))
-    .map_or(ENGLISH, |(_, language)| language)
 }
 
 #[cfg(test)]

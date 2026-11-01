@@ -1,6 +1,7 @@
 use crate::i18n::{self, t};
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::HashSet,
     fs::{self, File, Metadata, OpenOptions},
     io::{self, Read, Seek},
     path::{Component, Path, PathBuf},
@@ -103,6 +104,10 @@ fn category_folder(id: &str, language: &str) -> &'static str {
         .map_or("", |category| category.name.as_str())
 }
 
+fn enabled_by_default() -> bool {
+    true
+}
+
 fn default_language() -> String {
     i18n::PORTUGUESE.into()
 }
@@ -146,6 +151,12 @@ pub struct Preferences {
     // Installs from before this field only knew Portuguese; new ones start on "system".
     #[serde(default = "default_language")]
     pub language: String,
+    #[serde(default = "enabled_by_default")]
+    pub notifications: bool,
+    #[serde(default = "enabled_by_default")]
+    pub updates: bool,
+    #[serde(default)]
+    pub autostart: bool,
 }
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Eq, Debug)]
@@ -181,15 +192,8 @@ pub fn now() -> i64 {
 }
 
 pub fn linked(meta: &Metadata) -> bool {
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::MetadataExt;
-        meta.file_attributes() & 0x400 != 0
-    }
-    #[cfg(not(windows))]
-    {
-        meta.file_type().is_symlink()
-    }
+    use std::os::windows::fs::MetadataExt;
+    meta.file_attributes() & 0x400 != 0
 }
 
 // Validate every ancestor: junctions and symlinks must never redirect a move.
@@ -225,9 +229,8 @@ pub fn validate_directory(path: &Path) -> Result<PathBuf> {
 }
 
 pub fn validate_preferences(prefs: &Preferences) -> Result<()> {
-    let source = validate_directory(Path::new(&prefs.source))?;
-    let destination = validate_directory(Path::new(&prefs.destination))?;
-    crate::volume::validate_directories(&source, &destination)?;
+    validate_directory(Path::new(&prefs.source))?;
+    validate_directory(Path::new(&prefs.destination))?;
     if !["dark", "light"].contains(&prefs.theme.as_str()) {
         return Err(t("Tema inválido", "Invalid theme").into());
     }
@@ -264,6 +267,11 @@ pub fn temporary(path: &Path) -> bool {
             "temp",
             "lock",
             "opdownload",
+            "!qb",
+            "!ut",
+            "bc!",
+            "aria2",
+            "dtapart",
         ]
         .contains(
             &path
@@ -286,6 +294,7 @@ pub struct FileEntry {
     pub destination: String,
     pub status: String,
     pub reason: Option<String>,
+    pub rename_to: Option<String>,
     #[serde(skip)]
     pub stamp: Option<Stamp>,
 }
@@ -364,6 +373,14 @@ pub fn scan_paths(
             reason = Some(t("Categoria desativada", "Category turned off").into());
         } else if captured.is_none() {
             reason = Some(t("Metadados indisponíveis", "Metadata unavailable").into());
+        } else if meta.modified().is_ok_and(|t| t.elapsed().is_err()) {
+            reason = Some(
+                t(
+                    "Data de modificação no futuro; ajuste a data do arquivo para organizá-lo",
+                    "Modification date is in the future; fix the file's date to organize it",
+                )
+                .into(),
+            );
         } else if meta
             .modified()
             .ok()
@@ -414,11 +431,44 @@ pub fn scan_paths(
             destination: target.to_string_lossy().into(),
             status: status.into(),
             reason,
+            rename_to: None,
             stamp: captured,
         });
     }
     files.sort_by_key(|f| f.name.to_lowercase());
+    plan_renames(&mut files);
     Ok(files)
+}
+
+// Suggests a free name for each conflict, avoiding names other files in this batch will take.
+fn plan_renames(files: &mut [FileEntry]) {
+    let mut taken: HashSet<String> = files
+        .iter()
+        .filter(|file| file.status == "ready")
+        .map(|file| file.destination.to_lowercase())
+        .collect();
+    for file in files.iter_mut().filter(|file| file.status == "conflict") {
+        let target = Path::new(&file.destination);
+        let (Some(folder), Some(stem)) = (target.parent(), target.file_stem()) else {
+            continue;
+        };
+        let stem = stem.to_string_lossy();
+        let extension = target.extension().map_or(String::new(), |value| {
+            format!(".{}", value.to_string_lossy())
+        });
+        let free = (2..=9999)
+            .map(|number| folder.join(format!("{stem} ({number}){extension}")))
+            .map(|path| path.to_string_lossy().into_owned())
+            .find(|path| {
+                !taken.contains(&path.to_lowercase())
+                    && fs::symlink_metadata(path)
+                        .is_err_and(|error| error.kind() == io::ErrorKind::NotFound)
+            });
+        if let Some(path) = free {
+            taken.insert(path.to_lowercase());
+            file.rename_to = Some(path);
+        }
+    }
 }
 
 pub struct LockedFile {
@@ -428,39 +478,33 @@ pub struct LockedFile {
 
 pub(crate) fn guard_directory(path: &Path) -> Result<Vec<File>> {
     validate_directory(path)?;
-    #[cfg(windows)]
     let mut handles = Vec::new();
-    #[cfg(not(windows))]
-    let handles = Vec::new();
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::OpenOptionsExt;
-        use windows_sys::Win32::Storage::FileSystem::{
-            FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
-        };
-        let mut current = PathBuf::new();
-        for component in path.components() {
-            current.push(component);
-            if matches!(component, Component::Prefix(_)) {
-                continue;
-            }
-            let handle = OpenOptions::new()
-                .read(true)
-                // Native rename needs directory write sharing; deny replacement via DELETE sharing.
-                .share_mode(3)
-                .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
-                .open(&current)
-                .map_err(|e| e.to_string())?;
-            let meta = handle.metadata().map_err(|e| e.to_string())?;
-            if linked(&meta) || !meta.is_dir() {
-                return Err(t(
-                    "Ancestral inválido ou link",
-                    "Invalid parent folder or link",
-                )
-                .into());
-            }
-            handles.push(handle);
+    use std::os::windows::fs::OpenOptionsExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
+    };
+    let mut current = PathBuf::new();
+    for component in path.components() {
+        current.push(component);
+        if matches!(component, Component::Prefix(_)) {
+            continue;
         }
+        let handle = OpenOptions::new()
+            .read(true)
+            // Native rename needs directory write sharing; deny replacement via DELETE sharing.
+            .share_mode(3)
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
+            .open(&current)
+            .map_err(|e| e.to_string())?;
+        let meta = handle.metadata().map_err(|e| e.to_string())?;
+        if linked(&meta) || !meta.is_dir() {
+            return Err(t(
+                "Ancestral inválido ou link",
+                "Invalid parent folder or link",
+            )
+            .into());
+        }
+        handles.push(handle);
     }
     Ok(handles)
 }
@@ -476,15 +520,12 @@ pub fn locked_file(path: &Path) -> Result<LockedFile> {
     }
     let mut options = OpenOptions::new();
     options.read(true);
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::OpenOptionsExt;
-        use windows_sys::Win32::Storage::FileSystem::{DELETE, FILE_FLAG_OPEN_REPARSE_POINT};
-        options
-            .share_mode(0)
-            .access_mode(0x80000000 | DELETE)
-            .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
-    }
+    use std::os::windows::fs::OpenOptionsExt;
+    use windows_sys::Win32::Storage::FileSystem::{DELETE, FILE_FLAG_OPEN_REPARSE_POINT};
+    options
+        .share_mode(0)
+        .access_mode(0x80000000 | DELETE)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
     let file = options.open(path).map_err(|e| {
         if matches!(e.raw_os_error(), Some(32 | 33)) {
             busy_message().into()
@@ -498,14 +539,6 @@ pub fn locked_file(path: &Path) -> Result<LockedFile> {
             )
         }
     })?;
-    #[cfg(unix)]
-    {
-        // shortcut: locks Unix são cooperativos; validar a plataforma antes de distribuir automação.
-        use std::os::fd::AsRawFd;
-        if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
-            return Err(busy_message().into());
-        }
-    }
     let meta = file.metadata().map_err(|e| e.to_string())?;
     if linked(&meta) || !meta.is_file() {
         return Err(t("Arquivo inválido ou link", "Invalid file or link").into());
@@ -536,10 +569,16 @@ pub fn verify_file(path: &Path, expected: &Stamp, digest: &str) -> Result<Locked
     Ok(file)
 }
 
+// Other file systems round dates by up to 2 seconds. The hash is what proves the content.
+fn same_stamp(a: &Stamp, b: &Stamp) -> bool {
+    a.size == b.size && a.modified.abs_diff(b.modified) <= 2_000_000_000
+}
+
 pub fn verify_open(file: &mut LockedFile, expected: &Stamp, digest: &str) -> Result<()> {
-    if stamp(&file.file.metadata().map_err(|e| e.to_string())?)? != *expected
+    let current = |file: &File| stamp(&file.metadata().map_err(|e| e.to_string())?);
+    if !same_stamp(&current(&file.file)?, expected)
         || fingerprint(&mut file.file)? != digest
-        || stamp(&file.file.metadata().map_err(|e| e.to_string())?)? != *expected
+        || !same_stamp(&current(&file.file)?, expected)
     {
         return Err(t(
             "O arquivo mudou desde a movimentação; preservado",
@@ -566,10 +605,12 @@ pub fn prepare_move(
     }
     let category = classify(path);
     let base = validate_directory(Path::new(&prefs.destination))?;
-    crate::volume::validate_directories(&source, &base)?;
     let folder = base.join(category_folder(&category.id, &prefs.language));
     let target = folder.join(path.file_name().ok_or(t("Nome inválido", "Invalid name"))?);
-    if target != Path::new(&entry.destination) || !prefs.enabled_categories.contains(&category.id) {
+    let destination = Path::new(&entry.destination);
+    let renamed = entry.rename_to.as_deref() == Some(entry.destination.as_str())
+        && destination.parent() == Some(folder.as_path());
+    if (target != destination && !renamed) || !prefs.enabled_categories.contains(&category.id) {
         return Err(t(
             "Destino ou categoria mudou; refaça a prévia",
             "Destination or category changed; generate the preview again",
@@ -605,10 +646,17 @@ pub fn prepare_move(
 #[cfg(test)]
 pub fn move_no_replace(source: &Path, destination: &Path) -> Result<()> {
     let mut file = locked_file(source)?;
-    move_locked(&mut file, source, destination)
+    let digest = fingerprint(&mut file.file)?;
+    move_locked(&mut file, source, destination, &digest)
 }
 
-pub fn move_locked(file: &mut LockedFile, source: &Path, destination: &Path) -> Result<()> {
+/// Moves without ever replacing. Between drives it copies, verifies and only then removes the original.
+pub fn move_locked(
+    file: &mut LockedFile,
+    source: &Path,
+    destination: &Path,
+    digest: &str,
+) -> Result<()> {
     validate_directory(
         source
             .parent()
@@ -619,91 +667,200 @@ pub fn move_locked(file: &mut LockedFile, source: &Path, destination: &Path) -> 
             .parent()
             .ok_or(t("Destino inválido", "Invalid destination"))?,
     )?);
-    crate::volume::validate(
-        &file.file,
-        destination
-            .parent()
-            .ok_or(t("Destino inválido", "Invalid destination"))?,
-    )?;
     let meta = file.file.metadata().map_err(|e| e.to_string())?;
     if linked(&meta) || !meta.is_file() {
         return Err(t("Origem inválida ou link", "Invalid source or link").into());
     }
-    #[cfg(windows)]
+    const ERROR_NOT_SAME_DEVICE: i32 = 17;
+    match rename_no_replace(&file.file, destination) {
+        Ok(()) => Ok(()),
+        Err(error) if error.raw_os_error() == Some(ERROR_NOT_SAME_DEVICE) => {
+            copy_then_remove(file, source, destination, digest, delete_open)
+        }
+        Err(error) => Err(format!(
+            "{}: {error}",
+            t(
+                "Movimentação recusada (conflito ou permissão)",
+                "Move refused (conflict or permission)"
+            )
+        )),
+    }
+}
+
+fn rename_no_replace(file: &File, destination: &Path) -> io::Result<()> {
+    use std::{
+        mem::{offset_of, size_of},
+        os::windows::{ffi::OsStrExt, io::AsRawHandle},
+        ptr,
+    };
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_RENAME_INFO, FileRenameInfo, SetFileInformationByHandle,
+    };
+    let too_long = || io::Error::other(t("Destino longo demais", "Destination is too long"));
+    let mut name: Vec<u16> = destination.as_os_str().encode_wide().collect();
+    if name.contains(&0) {
+        return Err(io::Error::other(t(
+            "Destino contém caractere inválido",
+            "Destination contains an invalid character",
+        )));
+    }
+    let name_bytes = name.len() * 2;
+    name.push(0);
+    let bytes = offset_of!(FILE_RENAME_INFO, FileName) + name.len() * 2;
+    let mut storage = vec![0u64; bytes.max(size_of::<FILE_RENAME_INFO>()).div_ceil(8)];
+    // Aligned storage includes the flexible UTF-16 name; zero keeps ReplaceIfExists=false.
+    let result = unsafe {
+        let info = storage.as_mut_ptr().cast::<FILE_RENAME_INFO>();
+        (*info).FileNameLength = name_bytes.try_into().map_err(|_| too_long())?;
+        ptr::copy_nonoverlapping(
+            name.as_ptr(),
+            ptr::addr_of_mut!((*info).FileName).cast::<u16>(),
+            name.len(),
+        );
+        SetFileInformationByHandle(
+            file.as_raw_handle(),
+            FileRenameInfo,
+            info.cast(),
+            bytes.try_into().map_err(|_| too_long())?,
+        )
+    };
+    if result == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+// Windows removes the file when the last handle closes, so this only works on files we hold.
+pub(crate) fn delete_open(file: &File) -> io::Result<()> {
+    use std::{mem::size_of, os::windows::io::AsRawHandle};
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_DISPOSITION_FLAG_DELETE, FILE_DISPOSITION_FLAG_IGNORE_READONLY_ATTRIBUTE,
+        FILE_DISPOSITION_INFO, FILE_DISPOSITION_INFO_EX, FileDispositionInfo,
+        FileDispositionInfoEx, SetFileInformationByHandle,
+    };
+    let info = FILE_DISPOSITION_INFO { DeleteFile: true };
+    if unsafe {
+        SetFileInformationByHandle(
+            file.as_raw_handle(),
+            FileDispositionInfo,
+            (&info as *const FILE_DISPOSITION_INFO).cast(),
+            size_of::<FILE_DISPOSITION_INFO>() as u32,
+        )
+    } != 0
     {
-        use std::{
-            mem::{offset_of, size_of},
-            os::windows::{ffi::OsStrExt, io::AsRawHandle},
-            ptr,
-        };
-        use windows_sys::Win32::Storage::FileSystem::{
-            FILE_RENAME_INFO, FileRenameInfo, SetFileInformationByHandle,
-        };
-        let mut name: Vec<u16> = destination.as_os_str().encode_wide().collect();
-        if name.contains(&0) {
+        return Ok(());
+    }
+    let error = io::Error::last_os_error();
+    // A plain delete refuses read-only files. The extended form isn't available on every file system.
+    let info = FILE_DISPOSITION_INFO_EX {
+        Flags: FILE_DISPOSITION_FLAG_DELETE | FILE_DISPOSITION_FLAG_IGNORE_READONLY_ATTRIBUTE,
+    };
+    if unsafe {
+        SetFileInformationByHandle(
+            file.as_raw_handle(),
+            FileDispositionInfoEx,
+            (&info as *const FILE_DISPOSITION_INFO_EX).cast(),
+            size_of::<FILE_DISPOSITION_INFO_EX>() as u32,
+        )
+    } == 0
+    {
+        return Err(error);
+    }
+    Ok(())
+}
+
+/// Where an interrupted copy is left. The digest keeps the name short and lets recovery find it.
+fn partial_path(destination: &Path, digest: &str) -> Option<PathBuf> {
+    let short = digest.get(..16)?;
+    Some(destination.parent()?.join(format!("~do-{short}.partial")))
+}
+
+/// Called at startup only after the complete file was verified elsewhere.
+pub fn remove_partial(destination: &Path, digest: &str) {
+    if let Some(partial) = partial_path(destination, digest) {
+        let _ = fs::remove_file(partial);
+    }
+}
+
+fn with_zone_stream(path: &Path) -> std::ffi::OsString {
+    let mut stream = path.as_os_str().to_owned();
+    stream.push(":Zone.Identifier");
+    stream
+}
+
+// shortcut: attributes and other alternate streams aren't copied, keep them if users ask.
+pub(crate) fn copy_then_remove(
+    file: &mut LockedFile,
+    source: &Path,
+    destination: &Path,
+    digest: &str,
+    remove_original: impl FnOnce(&File) -> io::Result<()>,
+) -> Result<()> {
+    use std::os::windows::fs::OpenOptionsExt;
+    use windows_sys::Win32::Storage::FileSystem::DELETE;
+    let failed = |error: String| {
+        format!(
+            "{}: {error}",
+            t(
+                "Não foi possível copiar para a outra unidade; o original foi preservado",
+                "Could not copy to the other drive; the original was kept"
+            )
+        )
+    };
+    let modified = file
+        .file
+        .metadata()
+        .and_then(|meta| meta.modified())
+        .map_err(|e| e.to_string())?;
+    let partial =
+        partial_path(destination, digest).ok_or(t("Destino inválido", "Invalid destination"))?;
+    let mut copy = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create_new(true)
+        .share_mode(0)
+        .access_mode(0x80000000 | 0x40000000 | DELETE)
+        .open(&partial)
+        .map_err(|e| failed(e.to_string()))?;
+    let result = (|| -> Result<()> {
+        file.file.rewind().map_err(|e| e.to_string())?;
+        io::copy(&mut file.file, &mut copy).map_err(|e| e.to_string())?;
+        copy.sync_all().map_err(|e| e.to_string())?;
+        if fingerprint(&mut copy)? != digest {
             return Err(t(
-                "Destino contém caractere inválido",
-                "Destination contains an invalid character",
+                "A cópia ficou diferente do original",
+                "The copy differs from the original",
             )
             .into());
         }
-        let name_bytes = name.len() * 2;
-        name.push(0);
-        let bytes = offset_of!(FILE_RENAME_INFO, FileName) + name.len() * 2;
-        let mut storage = vec![0u64; bytes.max(size_of::<FILE_RENAME_INFO>()).div_ceil(8)];
-        // Aligned storage includes the flexible UTF-16 name; zero keeps ReplaceIfExists=false.
-        let result = unsafe {
-            let info = storage.as_mut_ptr().cast::<FILE_RENAME_INFO>();
-            (*info).FileNameLength = name_bytes
-                .try_into()
-                .map_err(|_| t("Destino longo demais", "Destination is too long"))?;
-            ptr::copy_nonoverlapping(
-                name.as_ptr(),
-                ptr::addr_of_mut!((*info).FileName).cast::<u16>(),
-                name.len(),
-            );
-            SetFileInformationByHandle(
-                file.file.as_raw_handle(),
-                FileRenameInfo,
-                info.cast(),
-                bytes
-                    .try_into()
-                    .map_err(|_| t("Destino longo demais", "Destination is too long"))?,
+        // The "downloaded from the internet" mark must survive, or Windows stops warning about the file.
+        if let Ok(zone) = fs::read(with_zone_stream(source)) {
+            let _ = fs::write(with_zone_stream(&partial), zone);
+        }
+        copy.set_modified(modified).map_err(|e| e.to_string())?;
+        copy.sync_all().map_err(|e| e.to_string())?;
+        rename_no_replace(&copy, destination).map_err(|e| e.to_string())?;
+        // The final name must be on the disk before the original goes, even if the drive is pulled out.
+        copy.sync_all().map_err(|e| e.to_string())
+    })();
+    if let Err(error) = result {
+        let _ = delete_open(&copy);
+        return Err(failed(error));
+    }
+    if let Err(error) = remove_original(&file.file) {
+        let outcome = if delete_open(&copy).is_ok() {
+            t(
+                "Não foi possível remover o original depois da cópia; a cópia foi desfeita",
+                "Could not remove the original after copying; the copy was undone",
+            )
+        } else {
+            t(
+                "Não foi possível remover o original depois da cópia; a cópia continua no destino",
+                "Could not remove the original after copying; the copy is still at the destination",
             )
         };
-        if result == 0 {
-            return Err(format!(
-                "{}: {}",
-                t(
-                    "Movimentação recusada (conflito, permissão ou volumes distintos)",
-                    "Move refused (conflict, permission or different volumes)"
-                ),
-                io::Error::last_os_error()
-            ));
-        }
+        return Err(format!("{outcome}: {error}"));
     }
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
-    {
-        use std::{ffi::CString, os::unix::ffi::OsStrExt};
-        let from = CString::new(source.as_os_str().as_bytes()).map_err(|e| e.to_string())?;
-        let to = CString::new(destination.as_os_str().as_bytes()).map_err(|e| e.to_string())?;
-        #[cfg(target_os = "linux")]
-        let result = unsafe {
-            libc::renameat2(
-                libc::AT_FDCWD,
-                from.as_ptr(),
-                libc::AT_FDCWD,
-                to.as_ptr(),
-                libc::RENAME_NOREPLACE,
-            )
-        };
-        #[cfg(target_os = "macos")]
-        let result = unsafe { libc::renamex_np(from.as_ptr(), to.as_ptr(), libc::RENAME_EXCL) };
-        if result != 0 {
-            return Err(io::Error::last_os_error().to_string());
-        }
-    }
-    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
-    return Err(t("Sistema ainda não suportado", "System not supported yet").into());
+    file.file = copy;
     Ok(())
 }

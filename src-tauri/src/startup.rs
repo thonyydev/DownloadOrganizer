@@ -174,29 +174,26 @@ pub fn initialize(data: &Path, default_source: &str) -> Result<Runtime, StartupE
 
 pub fn show_error(error: StartupError) {
     let message = error.to_string();
-    #[cfg(windows)]
-    {
-        use windows_sys::Win32::UI::WindowsAndMessaging::{MB_ICONERROR, MB_OK, MessageBoxW};
-        let title: Vec<u16> = t(
-            "Download Organizer — Falha ao iniciar",
-            "Download Organizer — Failed to start",
+    use windows_sys::Win32::UI::WindowsAndMessaging::{MB_ICONERROR, MB_OK, MessageBoxW};
+    let title: Vec<u16> = t(
+        "Download Organizer — Falha ao iniciar",
+        "Download Organizer — Failed to start",
+    )
+    .encode_utf16()
+    .chain(Some(0))
+    .collect();
+    let text: Vec<u16> = message.encode_utf16().chain(Some(0)).collect();
+    // Independent of Tauri/WebView: both UTF-16 buffers live through the modal call.
+    if unsafe {
+        MessageBoxW(
+            std::ptr::null_mut(),
+            text.as_ptr(),
+            title.as_ptr(),
+            MB_OK | MB_ICONERROR,
         )
-        .encode_utf16()
-        .chain(Some(0))
-        .collect();
-        let text: Vec<u16> = message.encode_utf16().chain(Some(0)).collect();
-        // Independent of Tauri/WebView: both UTF-16 buffers live through the modal call.
-        if unsafe {
-            MessageBoxW(
-                std::ptr::null_mut(),
-                text.as_ptr(),
-                title.as_ptr(),
-                MB_OK | MB_ICONERROR,
-            )
-        } != 0
-        {
-            return;
-        }
+    } != 0
+    {
+        return;
     }
     eprintln!("{message}");
 }

@@ -89,7 +89,6 @@ fn failed_lock_preserves_database_and_sqlite_sidecars_then_allows_reopening() {
     assert!(initialize(temp.path(), "").is_ok());
 }
 
-#[cfg(windows)]
 #[test]
 fn windows_database_sharing_violation_is_safe_and_recoverable() {
     use std::os::windows::fs::OpenOptionsExt;
@@ -299,4 +298,41 @@ fn sqlite_errors_have_actionable_messages_without_technical_details_or_paths() {
         assert!(message.contains("Não foi possível iniciar o Download Organizer"));
         assert!(message.contains("Não exclua o banco"));
     }
+}
+
+#[test]
+fn only_a_healthy_automatic_login_starts_hidden() {
+    assert!(crate::starts_hidden(true, false, true));
+    assert!(!crate::starts_hidden(false, false, true));
+    assert!(!crate::starts_hidden(true, true, true));
+    assert!(!crate::starts_hidden(true, false, false));
+}
+
+#[test]
+fn refused_windows_startup_change_undoes_the_save() {
+    let (_temp, mut runtime, prefs) = fixture();
+    let on = Preferences {
+        autostart: true,
+        ..prefs.clone()
+    };
+    let error =
+        crate::save_with_autostart(&mut runtime.store, &on, &prefs, |_| Err("denied".into()));
+    assert_eq!(error.unwrap_err(), "denied");
+    assert_eq!(runtime.store.preferences().unwrap(), prefs);
+
+    crate::save_with_autostart(&mut runtime.store, &on, &prefs, |enabled| {
+        assert!(enabled);
+        Ok(())
+    })
+    .unwrap();
+    assert_eq!(runtime.store.preferences().unwrap(), on);
+
+    let dark = Preferences {
+        theme: "light".into(),
+        ..on.clone()
+    };
+    crate::save_with_autostart(&mut runtime.store, &dark, &on, |_| {
+        panic!("the Windows setting did not change")
+    })
+    .unwrap();
 }

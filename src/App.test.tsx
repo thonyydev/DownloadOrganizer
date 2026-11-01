@@ -11,7 +11,7 @@ import type { ReactNode } from "react";
 
 const mocks = vi.hoisted(() => ({
   snapshot: vi.fn(), history: vi.fn(), operation: vi.fn(), operationSummary: vi.fn(), destinations: vi.fn(), filePreview: vi.fn(), preview: vi.fn(), organize: vi.fn(), undo: vi.fn(), save: vi.fn(), retryMonitoring: vi.fn(),
-  close: vi.fn(), choose: vi.fn(),
+  installUpdate: vi.fn().mockResolvedValue(undefined), close: vi.fn(), hide: vi.fn().mockResolvedValue(undefined), choose: vi.fn(),
   events: new Map<string, (event: { payload: unknown }) => void>(),
   closeHandler: null as null | ((event: { preventDefault: () => void }) => void),
   sound: vi.fn(), soundStop: vi.fn(),
@@ -28,18 +28,18 @@ vi.mock("@web-kits/audio/react", () => ({
 }));
 vi.mock("./lib/api", async importOriginal => ({
   ...await importOriginal<typeof import("./lib/api")>(), native: true,
-  api: { snapshot: mocks.snapshot, history: mocks.history, operation: mocks.operation, operationSummary: mocks.operationSummary, destinations: mocks.destinations, filePreview: mocks.filePreview, preview: mocks.preview, organize: mocks.organize, undo: mocks.undo, save: mocks.save, retryMonitoring: mocks.retryMonitoring },
+  api: { snapshot: mocks.snapshot, history: mocks.history, operation: mocks.operation, operationSummary: mocks.operationSummary, destinations: mocks.destinations, filePreview: mocks.filePreview, preview: mocks.preview, organize: mocks.organize, undo: mocks.undo, save: mocks.save, retryMonitoring: mocks.retryMonitoring, installUpdate: mocks.installUpdate },
 }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async (name, callback) => {
   mocks.events.set(name, callback); return () => mocks.events.delete(name);
 }) }));
 vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => ({
-  close: mocks.close, onCloseRequested: async (callback: typeof mocks.closeHandler) => { mocks.closeHandler = callback; return () => { mocks.closeHandler = null; }; },
+  close: mocks.close, hide: mocks.hide, onCloseRequested: async (callback: typeof mocks.closeHandler) => { mocks.closeHandler = callback; return () => { mocks.closeHandler = null; }; },
 }) }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: mocks.choose }));
 
 let snapshot: Omit<Snapshot, "history" | "history_cursor"> & { history: Operation[] };
-const initial: Preferences = { source: "/isolated/source", destination: "/isolated/destination", language: "system", theme: "dark", automatic: false, enabled_categories: ["documents"] };
+const initial: Preferences = { source: "/isolated/source", destination: "/isolated/destination", language: "system", theme: "dark", automatic: false, enabled_categories: ["documents"], notifications: true, updates: true, autostart: false };
 const operation: Operation = { id: 42, created: 1_700_000_000, kind: "manual", movements: [{ id: 1, source: "/isolated/source/a.txt", destination: "/isolated/destination/Documentos/a.txt", status: "moved", error: null, size: 1 }] };
 function snapshotPayload(): Snapshot { return { ...snapshot, history: snapshot.history.slice(0, 100).map(summarizeOperation), history_cursor: snapshot.history.length > 100 ? snapshot.history[99].id : null }; }
 
@@ -79,7 +79,7 @@ beforeEach(() => {
   snapshot = {
     preferences: structuredClone(initial), categories: [{ id: "documents", name: "Documentos", extensions: ["txt"] }],
     files: [{ name: "a.txt", path: "/isolated/source/a.txt", destination: "/isolated/destination/Documentos/a.txt", extension: "txt", category: "documents", modified: 1_700_000_000_000, size: 1, status: "ready", reason: null }],
-    history: [], monitoring: false, scan_error: null, watch_error: null, preview_id: null, language: "pt-BR",
+    history: [], monitoring: false, scan_error: null, watch_error: null, preview_id: null, language: "pt-BR", update_version: null,
   };
   mocks.snapshot.mockImplementation(async () => structuredClone(snapshotPayload()));
   mocks.history.mockImplementation(async (before: number | null) => {
@@ -174,39 +174,39 @@ describe("histórico paginado", () => {
   });
 });
 
-describe("destinos compatíveis com a organização", () => {
-  const volumeError = "A origem e o destino estão em volumes diferentes ou em compartilhamentos incompatíveis. Escolha um destino no mesmo volume da origem em Configurações e salve as preferências.";
+describe("destinos recusados pelo aplicativo", () => {
+  const folderError = "A pasta de destino está indisponível. Escolha outra em Configurações e salve as preferências.";
 
   it("recusa salvar um destino incompatível e preserva o rascunho até descartar", async () => {
     await start(); navigate("Configurações");
-    mocks.choose.mockResolvedValueOnce("/isolated/another-volume");
+    mocks.choose.mockResolvedValueOnce("/isolated/unavailable");
     fireEvent.click(screen.getByRole("button", { name: "Selecionar destino da organização" }));
-    await screen.findByText("/isolated/another-volume");
-    mocks.save.mockRejectedValueOnce(volumeError);
+    await screen.findByText("/isolated/unavailable");
+    mocks.save.mockRejectedValueOnce(folderError);
     const save = screen.getByRole("button", { name: "Salvar preferências" });
     fireEvent.click(save);
-    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain(volumeError));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain(folderError));
     expect(snapshot.preferences).toEqual(initial);
-    expect(screen.getByText("/isolated/another-volume")).toBeTruthy();
+    expect(screen.getByText("/isolated/unavailable")).toBeTruthy();
     expect(screen.getByText("Alterações não salvas. As configurações salvas continuam em uso.")).toBeTruthy();
     expect((save as HTMLButtonElement).disabled).toBe(false);
     navigate("Arquivos"); navigate("Configurações");
-    expect(screen.getByText("/isolated/another-volume")).toBeTruthy();
+    expect(screen.getByText("/isolated/unavailable")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Descartar alterações" }));
-    expect(screen.queryByText("/isolated/another-volume")).toBeNull();
+    expect(screen.queryByText("/isolated/unavailable")).toBeNull();
     expect((screen.getByRole("button", { name: "Salvar preferências" }) as HTMLButtonElement).disabled).toBe(true);
     expect(mocks.organize).not.toHaveBeenCalled();
   });
 
   it("permite corrigir configurações antigas incompatíveis sem organizar arquivos", async () => {
-    snapshot.preferences.destination = "/isolated/another-volume";
-    snapshot.files = []; snapshot.scan_error = volumeError;
+    snapshot.preferences.destination = "/isolated/unavailable";
+    snapshot.files = []; snapshot.scan_error = folderError;
     render(<App />);
     const warning = await screen.findByRole("alert");
-    expect(warning.textContent).toContain(volumeError);
+    expect(warning.textContent).toContain(folderError);
     expect((screen.getByRole("button", { name: "Organizar arquivos" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(within(warning).getByRole("button", { name: "Revisar diretórios" }));
-    expect(screen.getByText("/isolated/another-volume")).toBeTruthy();
+    expect(screen.getByText("/isolated/unavailable")).toBeTruthy();
     mocks.choose.mockResolvedValueOnce(initial.destination);
     fireEvent.click(screen.getByRole("button", { name: "Selecionar destino da organização" }));
     await screen.findByText(initial.destination);
@@ -215,35 +215,35 @@ describe("destinos compatíveis com a organização", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Salvar preferências" }));
     await screen.findByText("Todas as alterações estão salvas.");
-    await waitFor(() => expect(screen.queryByText(volumeError)).toBeNull());
-    expect(mocks.save).toHaveBeenCalledWith(initial, { ...initial, destination: "/isolated/another-volume" });
+    await waitFor(() => expect(screen.queryByText(folderError)).toBeNull());
+    expect(mocks.save).toHaveBeenCalledWith(initial, { ...initial, destination: "/isolated/unavailable" });
     expect(mocks.organize).not.toHaveBeenCalled();
   });
 
-  it("não autoriza uma prévia recusada nem reutiliza a confirmação se o volume mudar", async () => {
+  it("não autoriza uma prévia recusada nem reutiliza a confirmação se a pasta mudar", async () => {
     await start();
-    mocks.preview.mockRejectedValueOnce(volumeError);
+    mocks.preview.mockRejectedValueOnce(folderError);
     fireEvent.click(screen.getByRole("button", { name: "Organizar arquivos" }));
-    await screen.findByText(volumeError);
+    await screen.findByText(folderError);
     expect(screen.queryByRole("dialog")).toBeNull();
     const dialog = await openPreview();
-    mocks.organize.mockRejectedValueOnce(volumeError);
-    fireEvent.click(within(dialog).getByRole("checkbox"));
+    mocks.organize.mockRejectedValueOnce(folderError);
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "Conferi os arquivos e destinos desta prévia" }));
     fireEvent.click(within(dialog).getByRole("button", { name: "Confirmar organização" }));
-    await within(dialog).findByText(volumeError);
+    await within(dialog).findByText(folderError);
     await waitFor(() => expect((within(dialog).getByRole("button", { name: "Confirmar organização" }) as HTMLButtonElement).disabled).toBe(true));
-    expect((within(dialog).getByRole("checkbox") as HTMLInputElement).checked).toBe(false);
+    expect((within(dialog).getByRole("checkbox", { name: "Conferi os arquivos e destinos desta prévia" }) as HTMLInputElement).checked).toBe(false);
     fireEvent.click(within(dialog).getByRole("button", { name: "Confirmar organização" }));
     expect(mocks.organize).toHaveBeenCalledOnce();
   });
 
-  it("desabilita uma prévia aberta quando a leitura detecta volumes incompatíveis", async () => {
+  it("desabilita uma prévia aberta quando a leitura detecta uma pasta indisponível", async () => {
     await start();
     const dialog = await openPreview();
-    fireEvent.click(within(dialog).getByRole("checkbox"));
-    snapshot.scan_error = volumeError; snapshot.files = [];
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "Conferi os arquivos e destinos desta prévia" }));
+    snapshot.scan_error = folderError; snapshot.files = [];
     await updateSnapshot();
-    await within(dialog).findByText(volumeError);
+    await within(dialog).findByText(folderError);
     expect((within(dialog).getByRole("button", { name: "Confirmar organização" }) as HTMLButtonElement).disabled).toBe(true);
     expect(mocks.organize).not.toHaveBeenCalled();
   });
@@ -252,7 +252,7 @@ describe("destinos compatíveis com a organização", () => {
 describe("feedback sonoro de ações reais", () => {
   async function confirmOrganization() {
     const dialog = await openPreview();
-    fireEvent.click(within(dialog).getByRole("checkbox"));
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "Conferi os arquivos e destinos desta prévia" }));
     fireEvent.click(within(dialog).getByRole("button", { name: "Confirmar organização" }));
     return dialog;
   }
@@ -420,6 +420,84 @@ describe("rascunho de áudio no fluxo global", () => {
     const event = new Event("beforeunload", { cancelable: true }); window.dispatchEvent(event); expect(event.defaultPrevented).toBe(true);
     expect(saveButton().disabled).toBe(false); expect(localStorage.getItem(audioStorageKey)).toBeNull(); expect(mocks.sound).not.toHaveBeenCalled();
   });
+  it("envia só os arquivos escolhidos e exige ao menos um", async () => {
+    await start(); const dialog = await openPreview();
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "Conferi os arquivos e destinos desta prévia" }));
+    const confirm = within(dialog).getByRole("button", { name: "Confirmar organização" }) as HTMLButtonElement;
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "Organizar a.txt" }));
+    within(dialog).getByText("0 de 1 selecionados");
+    expect(confirm.disabled).toBe(true);
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "Selecionar todos os arquivos prontos" }));
+    within(dialog).getByText("1 de 1 selecionados");
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "Organizar a.txt" }));
+    expect(confirm.disabled).toBe(true);
+  });
+  it("mostra o novo nome antes de renomear um conflito e o envia ao confirmar", async () => {
+    snapshot.files = [{ ...snapshot.files[0], status: "conflict", reason: "Já existe", rename_to: "/isolated/destination/Documentos/a (2).txt" }];
+    await start(); const dialog = await openPreview();
+    expect(within(dialog).queryByText(/a \(2\)\.txt/)).toBeNull();
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "Renomear arquivos em conflito" }));
+    within(dialog).getByText(/a \(2\)\.txt/);
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "Conferi os arquivos e destinos desta prévia" }));
+    mocks.organize.mockResolvedValueOnce(1);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Confirmar organização" }));
+    await waitFor(() => expect(mocks.organize).toHaveBeenCalledOnce());
+    expect(mocks.organize.mock.calls[0].slice(1)).toEqual([[], true]);
+  });
+  it("salva as opções de notificações, atualizações e iniciar com o Windows", async () => {
+    await start(); navigate("Configurações");
+    fireEvent.click(screen.getByRole("switch", { name: "Mostrar notificações" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Iniciar com o Windows" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Atualizar automaticamente" }));
+    fireEvent.click(screen.getByRole("button", { name: "Salvar preferências" }));
+    await waitFor(() => expect(mocks.save).toHaveBeenCalledOnce());
+    expect(mocks.save.mock.calls[0][0]).toMatchObject({ notifications: false, updates: false, autostart: true });
+  });
+  it("oferece instalar uma nova versão e espera o rascunho ser resolvido", async () => {
+    await start();
+    expect(screen.queryByRole("button", { name: "Instalar agora" })).toBeNull();
+    snapshot.update_version = "9.9.9"; await updateSnapshot();
+    screen.getByText(/9\.9\.9/);
+    navigate("Configurações"); fireEvent.click(screen.getByRole("switch", { name: "Mostrar notificações" }));
+    const install = screen.getByRole("button", { name: "Instalar agora" }) as HTMLButtonElement;
+    expect(install.disabled).toBe(true);
+    fireEvent.click(screen.getByRole("switch", { name: "Mostrar notificações" }));
+    expect(install.disabled).toBe(false);
+    fireEvent.click(install);
+    await waitFor(() => expect(mocks.installUpdate).toHaveBeenCalledOnce());
+  });
+  it("fechar com a automação ligada esconde a janela na bandeja, sem encerrar", async () => {
+    snapshot.preferences.automatic = true; await start();
+    const preventDefault = vi.fn(); act(() => mocks.closeHandler?.({ preventDefault }));
+    expect(preventDefault).toHaveBeenCalledOnce(); expect(mocks.hide).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("button", { name: "Continuar no aplicativo" })).toBeNull();
+  });
+  it("esconder na bandeja fecha a visualização, para a mídia não continuar tocando", async () => {
+    snapshot.preferences.automatic = true; await start(); navigate("Arquivos");
+    fireEvent.click(screen.getByRole("button", { name: "Visualizar a.txt" }));
+    await screen.findByRole("dialog", { name: "Visualizar arquivo" });
+    act(() => mocks.closeHandler?.({ preventDefault: vi.fn() }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Visualizar arquivo" })).toBeNull());
+    expect(mocks.hide).toHaveBeenCalledOnce();
+  });
+  it("fechar com a automação desligada encerra normalmente", async () => {
+    await start();
+    const preventDefault = vi.fn(); act(() => mocks.closeHandler?.({ preventDefault }));
+    expect(preventDefault).not.toHaveBeenCalled(); expect(mocks.hide).not.toHaveBeenCalled();
+  });
+  it("rascunho não salvo impede esconder na bandeja e sair pela bandeja", async () => {
+    snapshot.preferences.automatic = true; await start(); navigate("Configurações"); volume(65);
+    act(() => mocks.closeHandler?.({ preventDefault: vi.fn() }));
+    expect(mocks.hide).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Continuar no aplicativo" }));
+    act(() => mocks.events.get("tray-quit")?.({ payload: null }));
+    screen.getByRole("button", { name: "Continuar no aplicativo" }); expect(mocks.close).not.toHaveBeenCalled();
+  });
+  it("sair pela bandeja encerra quando não há nada pendente", async () => {
+    snapshot.preferences.automatic = true; await start();
+    await act(async () => { mocks.events.get("tray-quit")?.({ payload: null }); });
+    expect(mocks.close).toHaveBeenCalledOnce(); expect(mocks.hide).not.toHaveBeenCalled();
+  });
   it.each(["Salvar e sair", "Descartar e sair"])("%s reconhece alterações apenas de áudio", async name => {
     await start(); navigate("Configurações"); volume(65);
     const preventDefault = vi.fn(); act(() => mocks.closeHandler?.({ preventDefault }));
@@ -467,7 +545,7 @@ describe("rascunho de áudio no fluxo global", () => {
     expect(localStorage.getItem(audioStorageKey)).toBeNull(); mocks.sound.mockClear();
     fireEvent.click(screen.getByRole("switch", { name: "Efeitos sonoros" })); navigate("Visão geral");
     mocks.organize.mockImplementationOnce(async () => { snapshot.history = [structuredClone(operation)]; return 42; });
-    const dialog = await openPreview(); fireEvent.click(within(dialog).getByRole("checkbox"));
+    const dialog = await openPreview(); fireEvent.click(within(dialog).getByRole("checkbox", { name: "Conferi os arquivos e destinos desta prévia" }));
     fireEvent.click(within(dialog).getByRole("button", { name: "Confirmar organização" }));
     await waitFor(() => expect(mocks.sound).toHaveBeenCalledExactlyOnceWith(sounds.organize));
     expect(localStorage.getItem(audioStorageKey)).toBeNull();
@@ -742,7 +820,7 @@ describe("prévia e operações", () => {
   it("estabiliza os textos e conclui um lote manual curto sem esperar o intervalo visual", async () => {
     await start(); const dialog = await openPreview();
     const pending = deferred<number>(); mocks.organize.mockReturnValueOnce(pending.promise);
-    fireEvent.click(within(dialog).getByRole("checkbox"));
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "Conferi os arquivos e destinos desta prévia" }));
     fireEvent.click(within(dialog).getByRole("button", { name: "Confirmar organização" }));
     vi.useFakeTimers();
     progress({ kind: "manual", phase: "organizing", operation_id: 42, completed: 0, total: 5000, name: "first.txt" });
@@ -787,9 +865,9 @@ describe("prévia e operações", () => {
     expect(dialog.querySelectorAll("tr[data-file-path]").length).toBeLessThan(25);
     const pending = deferred<number>(); mocks.organize.mockReturnValueOnce(pending.promise);
     const id = snapshot.preview_id;
-    fireEvent.click(within(dialog).getByRole("checkbox"));
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "Conferi os arquivos e destinos desta prévia" }));
     fireEvent.click(within(dialog).getByRole("button", { name: "Confirmar organização" }));
-    expect(mocks.organize).toHaveBeenCalledExactlyOnceWith(id);
+    expect(mocks.organize).toHaveBeenCalledExactlyOnceWith(id, [], false);
     expect(snapshot.files).toHaveLength(5000);
     snapshot.history = [structuredClone(operation)]; snapshot.preview_id = null;
     await act(async () => pending.resolve(42));
@@ -797,7 +875,7 @@ describe("prévia e operações", () => {
   it("mostra o registro parcial do lote se a execução for interrompida", async () => {
     await start(); const dialog = await openPreview();
     const pending = deferred<number>(); mocks.organize.mockReturnValueOnce(pending.promise);
-    fireEvent.click(within(dialog).getByRole("checkbox"));
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "Conferi os arquivos e destinos desta prévia" }));
     fireEvent.click(within(dialog).getByRole("button", { name: "Confirmar organização" }));
     progress({ kind: "manual", phase: "organizing", operation_id: 42, completed: 1, total: 2, name: "a.txt" });
     snapshot.history = [structuredClone(operation)]; snapshot.preview_id = null;
@@ -810,16 +888,16 @@ describe("prévia e operações", () => {
   });
   it("bloqueia a prévia anterior quando a atualização falha", async () => {
     await start(); const dialog = await openPreview();
-    fireEvent.click(within(dialog).getByRole("checkbox"));
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "Conferi os arquivos e destinos desta prévia" }));
     mocks.preview.mockRejectedValueOnce("Origem indisponível");
     fireEvent.click(within(dialog).getByRole("button", { name: "Atualizar prévia" }));
     await within(dialog).findByText("Origem indisponível");
     expect((within(dialog).getByRole("button", { name: "Confirmar organização" }) as HTMLButtonElement).disabled).toBe(true);
-    expect((within(dialog).getByRole("checkbox") as HTMLInputElement).disabled).toBe(true);
+    expect((within(dialog).getByRole("checkbox", { name: "Conferi os arquivos e destinos desta prévia" }) as HTMLInputElement).disabled).toBe(true);
     expect(mocks.organize).not.toHaveBeenCalled();
     fireEvent.click(within(dialog).getByRole("button", { name: "Atualizar prévia" }));
-    await waitFor(() => expect((within(dialog).getByRole("checkbox") as HTMLInputElement).disabled).toBe(false));
-    expect((within(dialog).getByRole("checkbox") as HTMLInputElement).checked).toBe(false);
+    await waitFor(() => expect((within(dialog).getByRole("checkbox", { name: "Conferi os arquivos e destinos desta prévia" }) as HTMLInputElement).disabled).toBe(false));
+    expect((within(dialog).getByRole("checkbox", { name: "Conferi os arquivos e destinos desta prévia" }) as HTMLInputElement).checked).toBe(false);
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancelar" }));
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("heading", { level: 1 })));
   });
@@ -845,15 +923,15 @@ describe("prévia e operações", () => {
     expect(confirm.disabled).toBe(true);
     fireEvent.click(within(dialog).getByRole("button", { name: "Atualizar prévia" }));
     await waitFor(() => expect(within(dialog).queryByText(/Esta prévia expirou/)).toBeNull());
-    expect((within(dialog).getByRole("checkbox") as HTMLInputElement).checked).toBe(false);
+    expect((within(dialog).getByRole("checkbox", { name: "Conferi os arquivos e destinos desta prévia" }) as HTMLInputElement).checked).toBe(false);
     expect(confirm.disabled).toBe(true);
     expect(mocks.organize).not.toHaveBeenCalled();
-    fireEvent.click(within(dialog).getByRole("checkbox"));
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "Conferi os arquivos e destinos desta prévia" }));
     expect(confirm.disabled).toBe(false);
   });
   it("detecta invalidação pelo backend e não reutiliza confirmação", async () => {
     await start(); const dialog = await openPreview();
-    fireEvent.click(within(dialog).getByRole("checkbox"));
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "Conferi os arquivos e destinos desta prévia" }));
     snapshot.preview_id = null; await updateSnapshot();
     expect(within(dialog).getByText(/invalidada por outra operação/)).toBeTruthy();
     fireEvent.click(within(dialog).getByRole("button", { name: "Confirmar organização" }));
@@ -862,7 +940,7 @@ describe("prévia e operações", () => {
   it("mostra progresso no modal, impede confirmação dupla e aguarda antes de fechar", async () => {
     await start(); const dialog = await openPreview();
     const pending = deferred<number>(); mocks.organize.mockReturnValueOnce(pending.promise);
-    fireEvent.click(within(dialog).getByRole("checkbox"));
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "Conferi os arquivos e destinos desta prévia" }));
     const confirm = within(dialog).getByRole("button", { name: "Confirmar organização" });
     fireEvent.click(confirm); fireEvent.click(confirm);
     expect(mocks.organize).toHaveBeenCalledOnce();
@@ -885,14 +963,14 @@ describe("prévia e operações", () => {
   it("permite atualizar após erro de confirmação sem repetir o identificador antigo", async () => {
     await start(); const dialog = await openPreview();
     mocks.organize.mockRejectedValueOnce("PREVIEW_INVALID: A prévia foi invalidada");
-    fireEvent.click(within(dialog).getByRole("checkbox"));
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "Conferi os arquivos e destinos desta prévia" }));
     fireEvent.click(within(dialog).getByRole("button", { name: "Confirmar organização" }));
     await within(dialog).findByText("A prévia foi invalidada");
     expect((within(dialog).getByRole("button", { name: "Confirmar organização" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(within(dialog).getByRole("button", { name: "Atualizar prévia" }));
     await waitFor(() => expect(mocks.preview).toHaveBeenCalledTimes(2));
     await waitFor(() => expect((within(dialog).getByRole("button", { name: "Atualizar prévia" }) as HTMLButtonElement).disabled).toBe(false));
-    expect((within(dialog).getByRole("checkbox") as HTMLInputElement).checked).toBe(false);
+    expect((within(dialog).getByRole("checkbox", { name: "Conferi os arquivos e destinos desta prévia" }) as HTMLInputElement).checked).toBe(false);
     expect(mocks.organize).toHaveBeenCalledOnce();
   });
   it("confirma 10.000 arquivos uma única vez usando o ID original e mantém bloqueios durante a restauração", async () => {
@@ -1039,7 +1117,7 @@ describe("avisos e clareza", () => {
     expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Visão geral", level: 1 }));
     expect(mocks.organize).not.toHaveBeenCalled();
     await openPreview();
-    expect((screen.getByRole("checkbox") as HTMLInputElement).checked).toBe(false);
+    expect((screen.getByRole("checkbox", { name: "Conferi os arquivos e destinos desta prévia" }) as HTMLInputElement).checked).toBe(false);
   });
   it("diferencia filtro sem resultados e expõe motivos sem depender de hover", async () => {
     snapshot.files[0].status = "ignored"; snapshot.files[0].reason = "Categoria desativada";

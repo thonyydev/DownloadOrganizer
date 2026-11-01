@@ -70,6 +70,8 @@ function OrganizerApp() {
   const busyRef = useRef(false);
   const autoBusyRef = useRef(false);
   const dirtyRef = useRef(false);
+  const automaticRef = useRef(false);
+  const organizeCount = useRef(0);
   const closeBypass = useRef(false);
   const actionKind = useRef<Action["kind"] | null>(null);
   const manualProgress = useMemo(() => createProgressPresenter(progress => {
@@ -86,6 +88,7 @@ function OrganizerApp() {
   const mainDirty = !!draft && !samePreferences(draft.base, draft.value);
   const dirty = mainDirty || audio.dirty;
   dirtyRef.current = dirty;
+  automaticRef.current = !!data?.preferences.automatic;
   const external = draft && data && !samePreferences(draft.base, data.preferences) ? data.preferences : null;
 
   const refresh = useCallback(async (propagate = false) => {
@@ -153,15 +156,26 @@ function OrganizerApp() {
     };
     window.addEventListener("beforeunload", beforeUnload);
     let disposed = false;
-    let unlisten: UnlistenFn | undefined;
+    let unlisteners: UnlistenFn[] = [];
     if (native) {
-      getCurrentWindow().onCloseRequested(event => {
-        if (!closeBypass.current && (dirtyRef.current || busyRef.current || autoBusyRef.current)) {
-          event.preventDefault(); setCloseRequested(true);
-        }
-      }).then(fn => { if (disposed) fn(); else unlisten = fn; }).catch(e => setError(errorMessage(e)));
+      const appWindow = getCurrentWindow();
+      Promise.all([
+        appWindow.onCloseRequested(event => {
+          if (closeBypass.current) return;
+          // A running automatic batch keeps going in the tray; it only blocks a real exit.
+          if (dirtyRef.current || busyRef.current || (autoBusyRef.current && !automaticRef.current)) {
+            event.preventDefault(); setCloseRequested(true);
+          } else if (automaticRef.current) {
+            event.preventDefault(); setViewedFile(null); appWindow.hide().catch(e => setError(errorMessage(e)));
+          }
+        }),
+        listen("tray-quit", () => {
+          if (dirtyRef.current || busyRef.current || autoBusyRef.current) setCloseRequested(true);
+          else void closeApplication();
+        }),
+      ]).then(items => { if (disposed) items.forEach(fn => fn()); else unlisteners = items; }).catch(e => setError(errorMessage(e)));
     }
-    return () => { disposed = true; unlisten?.(); window.removeEventListener("beforeunload", beforeUnload); };
+    return () => { disposed = true; unlisteners.forEach(fn => fn()); window.removeEventListener("beforeunload", beforeUnload); };
   }, []);
 
   async function run(job: () => Promise<number | void>, kind: Action["kind"] = "refresh") {
@@ -174,7 +188,7 @@ function OrganizerApp() {
     const refreshAfter = kind !== "save" || mainDirty;
     if (audible) audio.prepare();
     if (kind === "save" && audio.dirty) audio.prepare(true);
-    const expectedCount = kind === "organize" ? preview?.files.reduce((count, file) => count + Number(file.status === "ready"), 0) : undefined;
+    const expectedCount = kind === "organize" ? organizeCount.current : undefined;
     manualProgress.reset();
     const delayed = kind === "preview";
     const pendingAction: Action = { kind, phase: "preparing", showLoading: !delayed };
@@ -290,6 +304,7 @@ function OrganizerApp() {
       <main className="content"><div className="page-heading"><div><h1 ref={mainHeading} tabIndex={-1}>{current.name()}</h1><p>{page === "dashboard" ? t("O que chegou, para onde vai e o que já foi movido", "What arrived, where it goes and what has moved") : page === "files" ? t("Arquivos da pasta de origem e o destino de cada um", "Files in the source folder and where each one goes") : page === "history" ? t("Cada movimentação registrada, com opção de desfazer", "Every recorded move, with the option to undo") : t("Pastas, regras e preferências de organização", "Folders, rules and organization preferences")}</p></div><div className="heading-actions"><Button variant="outline" size="sm" aria-label={t("Atualizar arquivos", "Refresh files")} disabled={!native || working || loading} onClick={() => void run(async () => { await refresh(true); })}><RefreshCw aria-hidden="true" className={loading || (busy && action?.kind === "refresh") ? "spin" : ""} />{t("Atualizar", "Refresh")}</Button>{page !== "settings" && <Button disabled={!data || working || loading || !files.length || !!data?.scan_error} onClick={() => void updatePreview()}><FolderDown aria-hidden="true" />{busy && action?.kind === "preview" ? t("Preparando prévia…", "Preparing preview…") : t("Organizar arquivos", "Organize files")}</Button>}</div></div>
         {!native && <div className="banner" role="status"><FolderDown size={16} aria-hidden="true" /><div><strong>{t("Abra o aplicativo desktop para acessar seus arquivos", "Open the desktop app to access your files")}</strong><p>{t("Execute", "Run")} <code>npm run tauri dev</code>. {t("As operações reais ficam no aplicativo Tauri.", "Real operations only run in the Tauri app.")}</p></div></div>}
         {dirty && page !== "settings" && <div className="banner" role="status"><div><strong>{t("Há configurações não salvas", "You have unsaved settings")}</strong><p>{t("Seu rascunho foi preservado. As operações usam as configurações salvas.", "Your draft was kept. Operations use the saved settings.")}</p><div className="notice-actions"><Button variant="outline" size="sm" onClick={() => setPage("settings")}>{t("Revisar alterações", "Review changes")}</Button><Button variant="ghost" size="sm" disabled={working} onClick={discardDraft}>{t("Descartar alterações", "Discard changes")}</Button></div></div></div>}
+        {data?.update_version && <div className="banner" role="status"><div><strong>{t("Nova versão pronta para instalar", "New version ready to install")}: {data.update_version}</strong><p>{dirty ? t("Salve ou descarte suas alterações antes de instalar.", "Save or discard your changes before installing.") : t("O aplicativo fecha, instala a nova versão e abre de novo.", "The app closes, installs the new version and opens again.")}</p><div className="notice-actions"><Button size="sm" disabled={working || dirty} onClick={() => void run(() => api.installUpdate())}>{t("Instalar agora", "Install now")}</Button></div></div></div>}
         {error && !preview && !undoTarget && <ProblemNotice title={t("A ação não foi concluída", "The action didn't finish")} message={error} busy={working} action={t("Verificar novamente", "Check again")} onRecover={() => void run(async () => { await refresh(true); })} onDismiss={() => setError("")} />}
         {data?.scan_error && <ProblemNotice title={t("A pasta precisa de atenção", "The folder needs attention")} message={data.scan_error} persistent busy={working} action={t("Revisar diretórios", "Review folders")} onRecover={() => setPage("settings")} />}
         {data?.watch_error && <ProblemNotice title={t("Há um problema no monitoramento", "There's a problem with monitoring")} message={data.watch_error} persistent busy={working} action={data.preferences.automatic ? t("Verificar e reativar monitor", "Check and restart monitor") : t("Revisar automação", "Review automation")} onRecover={() => data.preferences.automatic ? void run(async () => { await api.retryMonitoring(); }, "monitor") : setPage("settings")} />}
@@ -308,7 +323,7 @@ function OrganizerApp() {
     <FilePreviewDialog file={viewedFile} categories={categories} onClose={() => setViewedFile(null)} onRestoreFocus={() => { const trigger = filePreviewFocus.current; if (trigger?.isConnected) trigger.focus({ preventScroll: true }); else (document.querySelector<HTMLElement>(".files-view .table-scroll") ?? mainHeading.current)?.focus({ preventScroll: true }); }} />
     <OperationDialogs preview={preview} undoTarget={undoTarget} categories={categories} action={action} busy={busy} working={working} issue={issue} reviewed={reviewed} operation={resultOperation}
       onReviewed={setReviewed} onUpdate={() => void updatePreview()} onClose={closeDialogs} onRestoreFocus={() => mainHeading.current?.focus()}
-      onOrganize={() => { if (!preview || issue || !reviewed) return; const id = preview.id; void run(() => api.organize(id), "organize"); }}
+      onOrganize={(excluded, renameConflicts, count) => { if (!preview || issue || !reviewed) return; const id = preview.id; organizeCount.current = count; void run(() => api.organize(id, excluded, renameConflicts), "organize"); }}
       onUndo={() => { if (!undoTarget) return; const id = undoTarget.id; void run(async () => { await api.undo(id); return id; }, "undo"); }}
       onViewResult={() => { const id = action?.operationId; const operation = resultOperation ?? data?.history.find(op => op.id === id); if (operation) upsertHistory(summarizeOperation(operation)); closeDialogs(); setPage("history"); if (id !== undefined) setExpanded(id); }} />
     <Dialog open={closeRequested} onOpenChange={setCloseRequested}><DialogContent><DialogHeader><DialogTitle>{working ? t("Uma operação está em andamento", "An operation is in progress") : dirty ? t("Há alterações não salvas", "You have unsaved changes") : t("Fechar aplicativo?", "Close the app?")}</DialogTitle><DialogDescription>{working ? t("Aguarde a conclusão antes de fechar o aplicativo.", "Wait for it to finish before closing the app.") : dirty ? t("Você pode salvar ou descartar o rascunho antes de sair.", "You can save or discard the draft before leaving.") : t("A operação terminou. Consulte o histórico para conferir os resultados.", "The operation finished. See the history to check the results.")}</DialogDescription></DialogHeader>

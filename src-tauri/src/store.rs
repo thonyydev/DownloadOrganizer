@@ -97,6 +97,10 @@ impl Store {
             enabled_categories: engine::categories().iter().map(|c| c.id.clone()).collect(),
             theme: "dark".into(),
             language: crate::i18n::SYSTEM.into(),
+            notifications: true,
+
+            updates: true,
+            autostart: false,
         };
         // Defaults belong only to a new database, never to an incomplete existing one.
         if new_database {
@@ -533,6 +537,12 @@ impl Store {
                 }
                 let at_source = source.is_ok();
                 let at_target = target.is_ok();
+                if at_source {
+                    engine::remove_partial(Path::new(&item.destination), &item.digest);
+                }
+                if at_target {
+                    engine::remove_partial(Path::new(&item.source), &item.digest);
+                }
                 let source_absent = fs::symlink_metadata(&item.source)
                     .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound);
                 let target_absent = fs::symlink_metadata(&item.destination)
