@@ -21,6 +21,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # Later steps run third-party code; only the release step gets the token.
+          persist-credentials: false
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -53,13 +56,25 @@ jobs:
       - name: Build installer
         run: npm run tauri build -- --bundles nsis
 
+      # A separate step, so no dependency's build code can read the key that every install trusts.
+      - name: Sign installer for updates
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        run: npx tauri signer sign src-tauri/target/release/bundle/nsis/*-setup.exe
+
       - name: Create draft release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           cd src-tauri/target/release/bundle/nsis
           installer="$(ls *-setup.exe)"
-          sha256sum "$installer" > "$installer.sha256"
-          gh release create "$GITHUB_REF_NAME" "$installer" "$installer.sha256" \
-            --repo "$GITHUB_REPOSITORY" --draft --prerelease --title "Download Organizer $GITHUB_REF_NAME" \
+          # GitHub replaces spaces in asset names with dots; the hash file must name the asset.
+          printf '%s  %s\n' "$(sha256sum "$installer" | cut -d' ' -f1)" "${installer// /.}" > "$installer.sha256"
+          # Installed apps read this from the latest published release, so a draft never reaches them.
+          printf '{"version":"%s","pub_date":"%s","platforms":{"windows-x86_64":{"signature":"%s","url":"%s"}}}\n' \
+            "${GITHUB_REF_NAME#v}" "$(date -u +%FT%TZ)" "$(cat "$installer.sig")" \
+            "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/${installer// /.}" > latest.json
+          gh release create "$GITHUB_REF_NAME" "$installer" "$installer.sha256" latest.json \
+            --repo "$GITHUB_REPOSITORY" --draft --title "Download Organizer $GITHUB_REF_NAME" \
             --notes "See [CHANGELOG.md](https://github.com/$GITHUB_REPOSITORY/blob/$GITHUB_REF_NAME/CHANGELOG.md)."

@@ -2,7 +2,6 @@ use crate::engine::{self, Result};
 use crate::i18n::t;
 use std::{fs, path::Path};
 
-#[cfg(windows)]
 mod windows {
     use super::*;
     use std::{
@@ -193,36 +192,6 @@ mod windows {
     }
 }
 
-#[cfg(all(windows, test))]
+#[cfg(test)]
 pub use windows::remove_with;
-#[cfg(windows)]
 pub use windows::{create, remove};
-
-// shortcut: automatic directory deletion is Windows-only until other platforms have handle-safe removal.
-#[cfg(not(windows))]
-pub fn create(path: &Path) -> Result<Option<UntrackedDirectory>> {
-    match fs::create_dir(path) {
-        Ok(()) => Ok(None),
-        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-            engine::validate_directory(path)?;
-            Ok(None)
-        }
-        Err(error) => Err(error.to_string()),
-    }
-}
-#[cfg(not(windows))]
-pub struct UntrackedDirectory;
-#[cfg(not(windows))]
-impl UntrackedDirectory {
-    pub fn identity(&self) -> Result<String> {
-        Err(t("Identidade indisponível", "Identity unavailable").into())
-    }
-}
-#[cfg(not(windows))]
-pub fn remove(_path: &Path, _identity: &str) -> Result<bool> {
-    Err(t(
-        "Limpeza segura de pastas disponível apenas no Windows",
-        "Safe folder cleanup is only available on Windows",
-    )
-    .into())
-}

@@ -2,14 +2,14 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import { locale, t, type Language } from "./i18n";
 
 export interface Category { id: string; name: string; extensions: string[] }
-export interface Preferences { source: string; destination: string; automatic: boolean; enabled_categories: string[]; theme: "dark" | "light"; language: "system" | Language }
-export interface FileEntry { name: string; path: string; extension: string; category: string; size: number; modified: number; destination: string; status: "ready" | "ignored" | "conflict"; reason: string | null }
+export interface Preferences { source: string; destination: string; automatic: boolean; enabled_categories: string[]; theme: "dark" | "light"; language: "system" | Language; notifications: boolean; updates: boolean; autostart: boolean }
+export interface FileEntry { name: string; path: string; extension: string; category: string; size: number; modified: number; destination: string; status: "ready" | "ignored" | "conflict"; reason: string | null; rename_to?: string | null }
 export interface Movement { id: number; source: string; destination: string; status: string; error: string | null; size: number }
 export interface Operation { id: number; created: number; kind: string; movements: Movement[] }
 export interface OperationSummary { id: number; created: number; kind: string; total: number; moved: number; undone: number; errors: number }
 export interface HistoryPage { operations: OperationSummary[]; next_cursor: number | null }
 export interface DestinationSummary { folders: [string, number][]; other_folders: number; other_files: number }
-export interface Snapshot { preferences: Preferences; categories: Category[]; files: FileEntry[]; history: OperationSummary[]; history_cursor: number | null; monitoring: boolean; watch_error: string | null; scan_error: string | null; preview_id: number | null; language: Language }
+export interface Snapshot { preferences: Preferences; categories: Category[]; files: FileEntry[]; history: OperationSummary[]; history_cursor: number | null; monitoring: boolean; watch_error: string | null; scan_error: string | null; preview_id: number | null; language: Language; update_version: string | null }
 export interface Preview { id: number; created: number; files: FileEntry[] }
 export interface FilePreview { data_url: string | null; width: number | null; height: number | null }
 export interface MediaPreview { token: string; kind: "audio" | "video"; mime: string }
@@ -26,10 +26,11 @@ export const api = {
   filePreview: (file: FileEntry) => invoke<FilePreview>("file_preview", { path: file.path, size: file.size, modified: file.modified }),
   openMediaPreview: (file: FileEntry) => invoke<MediaPreview>("open_media_preview", { path: file.path, size: file.size, modified: file.modified }),
   closeMediaPreview: (token: string) => invoke<void>("close_media_preview", { token }),
-  organize: (previewId: number) => invoke<number>("organize", { previewId }),
+  organize: (previewId: number, excluded: string[], renameConflicts: boolean) => invoke<number>("organize", { previewId, excluded, renameConflicts }),
   undo: (operationId: number) => invoke<void>("undo_operation", { operationId }),
   save: (preferences: Preferences, expected: Preferences) => invoke<Preferences>("save_preferences", { preferences, expected }),
   retryMonitoring: () => invoke<void>("retry_monitoring"),
+  installUpdate: () => invoke<void>("install_update"),
 };
 
 export function summarizeOperation(operation: Operation | OperationSummary): OperationSummary {

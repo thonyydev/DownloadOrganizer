@@ -16,7 +16,8 @@
         "width": 1240,
         "height": 840,
         "minWidth": 760,
-        "minHeight": 580
+        "minHeight": 580,
+        "visible": false
       }
     ],
     "security": {
@@ -35,7 +36,8 @@
     "windows": {
       "nsis": {
         "languages": ["English", "PortugueseBR", "Spanish", "French", "Italian"],
-        "displayLanguageSelector": false
+        "displayLanguageSelector": false,
+        "installerHooks": "./nsis-hooks.nsh"
       }
     },
     "icon": [
@@ -45,5 +47,11 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDEyQzIxRUVGNTQ5NEUzREUKUldUZTQ1UlU3eDdDRWowNkU1VFpxNGJ1VkJwdWZJQnJiVFcvOFBhUlB5UVFIR0hyRzM1VWdWVkMK",
+      "endpoints": ["https://github.com/thonyydev/DownloadOrganizer/releases/latest/download/latest.json"]
+    }
   }
 }

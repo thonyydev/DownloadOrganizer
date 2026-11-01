@@ -324,6 +324,9 @@ tbody tr:has(.file-disclosure[aria-expanded=true]) { background: var(--surface-s
 .preview-files .table-scroll { max-height: max(200px,calc(100dvh - 400px)); border: 0; }
 .preview-dialog:has(.progress-panel) .preview-files .table-scroll { max-height: max(160px,calc(100dvh - 480px)); }
 .preview-files th { background: var(--card); }
+.preview-check { width: 16px; height: 16px; margin: 2px var(--space-2) 0 0; accent-color: var(--brand); flex-shrink: 0; vertical-align: text-bottom; }
+.preview-check:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
+.preview-selection { color: var(--muted); font-size: var(--text-control); }
 .review-confirmation { display: flex; align-items: flex-start; gap: var(--space-2); font-size: var(--text-control); padding: var(--space-2) 0; }
 .review-confirmation input { width: 16px; height: 16px; margin-top: 2px; accent-color: var(--brand); flex-shrink: 0; }
 .review-confirmation input:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }

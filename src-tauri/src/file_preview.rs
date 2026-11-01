@@ -14,7 +14,7 @@ const MAX_INPUT: u64 = 16 * 1024 * 1024;
 const MAX_PIXELS: u64 = 16_000_000;
 const MAX_DECODED: u64 = 64 * 1024 * 1024;
 const MAX_OUTPUT: usize = 2 * 1024 * 1024;
-fn changed() -> &'static str {
+pub(crate) fn changed() -> &'static str {
     t(
         "O arquivo mudou ou não está mais disponível. Atualize a lista e tente novamente.",
         "The file changed or is no longer available. Refresh the list and try again.",
@@ -73,42 +73,32 @@ pub struct FilePreview {
 pub(super) struct Identity(u64, u128);
 
 pub(super) fn identity(file: &File) -> Result<Identity> {
-    #[cfg(windows)]
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_ID_INFO, FileIdInfo, GetFileInformationByHandleEx,
+    };
+    let mut id: FILE_ID_INFO = unsafe { std::mem::zeroed() };
+    if unsafe {
+        GetFileInformationByHandleEx(
+            file.as_raw_handle(),
+            FileIdInfo,
+            (&mut id as *mut FILE_ID_INFO).cast(),
+            std::mem::size_of::<FILE_ID_INFO>() as u32,
+        )
+    } == 0
     {
-        use std::os::windows::io::AsRawHandle;
-        use windows_sys::Win32::Storage::FileSystem::{
-            FILE_ID_INFO, FileIdInfo, GetFileInformationByHandleEx,
-        };
-        let mut id: FILE_ID_INFO = unsafe { std::mem::zeroed() };
-        if unsafe {
-            GetFileInformationByHandleEx(
-                file.as_raw_handle(),
-                FileIdInfo,
-                (&mut id as *mut FILE_ID_INFO).cast(),
-                std::mem::size_of::<FILE_ID_INFO>() as u32,
-            )
-        } == 0
-        {
-            return Err(t(
-                "Não foi possível verificar a identidade do arquivo.",
-                "Could not verify the file's identity.",
-            )
-            .into());
-        }
-        Ok(Identity(
-            id.VolumeSerialNumber,
-            u128::from_le_bytes(id.FileId.Identifier),
-        ))
+        return Err(t(
+            "Não foi possível verificar a identidade do arquivo.",
+            "Could not verify the file's identity.",
+        )
+        .into());
     }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        let meta = file.metadata().map_err(|_| changed())?;
-        Ok(Identity(meta.dev(), meta.ino().into()))
-    }
+    Ok(Identity(
+        id.VolumeSerialNumber,
+        u128::from_le_bytes(id.FileId.Identifier),
+    ))
 }
 
-#[cfg(windows)]
 fn verify_physical_path(file: &File, expected: &Path) -> Result<()> {
     use std::os::windows::io::AsRawHandle;
     use windows_sys::Win32::Storage::FileSystem::GetFinalPathNameByHandleW;
@@ -151,7 +141,6 @@ pub(super) fn open_source(path: &Path, expected: &Stamp) -> Result<(File, Vec<Fi
             "The folder changed, is inaccessible or contains a link. Refresh the list.",
         )
     })?;
-    #[cfg(windows)]
     let file = {
         use std::os::windows::fs::OpenOptionsExt;
         use windows_sys::Win32::Storage::FileSystem::{
@@ -163,52 +152,7 @@ pub(super) fn open_source(path: &Path, expected: &Stamp) -> Result<(File, Vec<Fi
             .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
             .open(path)
     };
-    #[cfg(unix)]
-    let mut directories = directories;
-    #[cfg(unix)]
-    let file: std::io::Result<File> = {
-        use std::{
-            ffi::CString,
-            os::unix::{
-                ffi::OsStrExt,
-                io::{AsRawFd, FromRawFd},
-            },
-        };
-        // Resolve each component relative to its held parent, never following links.
-        directories.push(File::open("/").map_err(|_| changed())?);
-        for component in parent
-            .components()
-            .filter(|part| matches!(part, std::path::Component::Normal(_)))
-        {
-            let name = CString::new(component.as_os_str().as_bytes()).map_err(|_| changed())?;
-            let fd = unsafe {
-                libc::openat(
-                    directories.last().ok_or(changed())?.as_raw_fd(),
-                    name.as_ptr(),
-                    libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
-                )
-            };
-            if fd < 0 {
-                return Err(changed().into());
-            }
-            directories.push(unsafe { File::from_raw_fd(fd) });
-        }
-        let name =
-            CString::new(path.file_name().ok_or(changed())?.as_bytes()).map_err(|_| changed())?;
-        let fd = unsafe {
-            libc::openat(
-                directories.last().ok_or(changed())?.as_raw_fd(),
-                name.as_ptr(),
-                libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC,
-            )
-        };
-        if fd < 0 {
-            return Err(changed().into());
-        }
-        Ok(unsafe { File::from_raw_fd(fd) })
-    };
     let file = file.map_err(|_| t("Não foi possível ler o arquivo. Ele pode ter sido removido, estar em uso ou sem permissão de leitura.", "Could not read the file. It may have been removed, be in use or lack read permission."))?;
-    #[cfg(windows)]
     verify_physical_path(&file, path)?;
     let meta = file.metadata().map_err(|_| changed())?;
     if !meta.is_file() || engine::linked(&meta) || engine::stamp(&meta)? != *expected {

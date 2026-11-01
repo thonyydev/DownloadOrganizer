@@ -17,7 +17,7 @@ Sort files into categories, preview changes before applying them, and undo previ
 
 - **Automatic Organization** — Automatically sort new downloads into folders based on file type.
 - **Smart Categories** — Keep images, videos, documents, archives, and other files organized.
-- **Preview Before Organizing** — See exactly where your files will go before making changes.
+- **Preview Before Organizing** — See exactly where your files will go, and choose which ones to move.
 - **Undo Actions** — Restore previously moved files when supported and safe.
 - **Activity History** — Keep track of organized files and previous operations.
 - **Custom Folders** — Choose which folders to organize and where files should go.
@@ -40,22 +40,23 @@ Get the installer from the [Releases page](https://github.com/thonyydev/Download
 
 The installer isn't code-signed yet, so Windows SmartScreen may warn you when you run it. Each release lists a SHA-256 hash you can check before installing.
 
-**To update,** install the new version over the old one. Your history and settings are kept.
+**Updates** arrive on their own from this project's GitHub Releases and are checked against a signature before installing. With the window open, the app asks first. In the system tray, it installs them and opens again. Your history and settings are kept. You can turn this off in Settings, then install new versions by hand.
 
 **To uninstall,** use Windows Settings. Your organized files are never touched. Settings and history stay in `%APPDATA%\com.thonyy.download-organizer` unless you remove them.
 
 ## Good to Know
 
 - Only files at the top level of the source folder are organized, not subfolders.
-- The destination must be on the same volume as the source.
-- Files with a name that already exists at the destination are skipped, never overwritten.
-- Automatic organization is off by default. It only runs while the app is open, handles new files, and waits until a file has gone 10 seconds without writes.
+- A destination on another drive works, but takes longer: each file is copied, checked and only then removed from the source.
+- Files with a name that already exists at the destination are never overwritten. In the preview you can choose to rename them, like `file (2).pdf`. Automatic organization leaves them in place.
+- Automatic organization is off by default. When it's on, closing the window keeps the app running in the system tray; choose Quit from the tray icon to stop it. It handles new files and waits until a file has gone 10 seconds without writes.
+- Settings can start the app with Windows (off by default) and turn off its notifications (on by default). Notifications cover automatic organization and monitoring problems.
 - Temporary files and downloads still being written are skipped, but no check can catch every case. Use the preview if you're unsure.
 - Undo restores a file only if it hasn't changed since it was moved.
 
 ## Privacy
 
-Download Organizer has no account, telemetry or cloud service. Its local database stores file paths, sizes, dates and content hashes so that it can show your history and undo safely. When reporting a problem, remove personal file names and paths, and don't attach the database.
+Download Organizer has no account, telemetry or cloud service. Its only network use is checking GitHub for updates at startup and every 6 hours, which shares your IP address with GitHub and sends no file data. Turning off automatic updates in Settings stops it. Its local database stores file paths, sizes, dates and content hashes so that it can show your history and undo safely. When reporting a problem, remove personal file names and paths, and don't attach the database.
 
 ## Feedback & Suggestions
 

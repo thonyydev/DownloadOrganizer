@@ -243,6 +243,12 @@ fn media_access_requires_the_current_authorized_snapshot() {
         enabled_categories: vec!["audio".into()],
         theme: "dark".into(),
         language: "system".into(),
+
+        notifications: true,
+
+        updates: true,
+
+        autostart: false,
     };
     let files = engine::scan(&prefs).unwrap();
     let entry = files
@@ -280,7 +286,6 @@ fn media_access_requires_the_current_authorized_snapshot() {
     );
 }
 
-#[cfg(windows)]
 #[test]
 fn windows_session_guards_against_writes_replacement_and_junctions_until_closed() {
     let (temp, path, stamp) = sample("mp3", b"ID3sample");
@@ -311,26 +316,4 @@ fn windows_session_guards_against_writes_replacement_and_junctions_until_closed(
     assert!(Session::open(&junction.join("sample.mp3"), stamp).is_err());
     fs::remove_dir(junction).unwrap();
     assert_eq!(fs::read(path).unwrap(), b"ID3sample");
-}
-
-#[cfg(unix)]
-#[test]
-fn unix_replacement_modification_and_symlinks_are_rejected_between_ranges() {
-    let (temp, path, stamp) = sample("mp3", b"ID3sample");
-    let mut sessions = Sessions::default();
-    let token = sessions
-        .insert(Session::open(&path, stamp.clone()).unwrap())
-        .unwrap()
-        .token;
-    let link = temp.path().join("link.mp3");
-    std::os::unix::fs::symlink(&path, &link).unwrap();
-    assert!(Session::open(&link, stamp).is_err());
-    fs::rename(&path, path.with_extension("old")).unwrap();
-    fs::write(&path, b"ID3changed").unwrap();
-    assert_eq!(
-        sessions
-            .respond(&request(&token, None), |_, _| Ok(()))
-            .status(),
-        StatusCode::GONE
-    );
 }

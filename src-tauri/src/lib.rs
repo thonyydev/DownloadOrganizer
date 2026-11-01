@@ -1,4 +1,5 @@
 use i18n::t;
+mod autostart;
 mod directories;
 mod engine;
 mod file_preview;
@@ -10,7 +11,9 @@ mod startup;
 mod store;
 #[cfg(test)]
 mod tests;
-mod volume;
+
+#[cfg(not(windows))]
+compile_error!("Download Organizer only supports Windows");
 
 use engine::{Preferences, Preview, Result, Stamp};
 use notify::RecommendedWatcher;
@@ -19,9 +22,14 @@ use std::{
     collections::HashMap,
     path::Path,
     sync::{Arc, Mutex, atomic::AtomicU64, mpsc},
+    time::Duration,
 };
 use store::{DestinationSummary, HistoryPage, Operation, OperationSummary, Store};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{
+    AppHandle, Emitter, Manager,
+    menu::{Menu, MenuItem},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+};
 use tauri_plugin_window_state::StateFlags;
 
 struct Runtime {
@@ -39,6 +47,7 @@ struct AppState {
     file_previews: Mutex<file_preview::Access>,
     file_preview_job: Mutex<()>,
     media_previews: Mutex<media_preview::Sessions>,
+    update: Mutex<Option<(tauri_plugin_updater::Update, Vec<u8>)>>,
 }
 
 #[derive(Clone, Serialize)]
@@ -62,6 +71,7 @@ struct Snapshot {
     watch_error: Option<String>,
     scan_error: Option<String>,
     preview_id: Option<u64>,
+    update_version: Option<String>,
 }
 
 fn progress(
@@ -88,14 +98,148 @@ fn progress(
     }
 }
 
-fn lock(state: &AppState) -> Result<std::sync::MutexGuard<'_, Runtime>> {
-    state.runtime.lock().map_err(|_| {
-        t(
-            "Estado interno indisponível; reinicie o aplicativo",
-            "Internal state unavailable; restart the app",
+fn show_main_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let result = window.show().and_then(|()| {
+            if window.is_minimized()? {
+                window.unminimize()?;
+            }
+            window.set_focus()
+        });
+        if let Err(error) = result {
+            eprintln!("Could not activate the existing window: {error}");
+        }
+    }
+}
+
+fn tray_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
+    let open = MenuItem::with_id(app, "open", t("Abrir", "Open"), true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", t("Sair", "Quit"), true, None::<&str>)?;
+    Menu::with_items(app, &[&open, &quit])
+}
+
+fn sync_tray_status(app: &AppHandle, runtime: &Runtime) {
+    if let Some(tray) = app.tray_by_id("main") {
+        let status = if runtime.watcher.is_some() {
+            t("Monitor ativo", "Monitor on")
+        } else {
+            t("Monitor pausado", "Monitor paused")
+        };
+        let _ = tray.set_tooltip(Some(format!("Download Organizer: {status}")));
+    }
+}
+
+// The window already shows this feedback while it has focus.
+fn notify(app: &AppHandle, runtime: &Runtime, title: &str, body: &str) {
+    use tauri_plugin_notification::NotificationExt;
+    let enabled = runtime.store.preferences().is_ok_and(|p| p.notifications);
+    let focused = app
+        .get_webview_window("main")
+        .is_some_and(|window| window.is_focused().unwrap_or(false));
+    if enabled && !focused {
+        // On Windows the plugin sends it in the background and never reports a failure.
+        let _ = app.notification().builder().title(title).body(body).show();
+    }
+}
+
+// A monitoring problem at login needs the window, not a silent tray icon.
+fn starts_hidden(automatic: bool, monitoring_failed: bool, launched_at_login: bool) -> bool {
+    automatic && !monitoring_failed && launched_at_login
+}
+
+fn organized_message(summary: &OperationSummary) -> String {
+    let moved = format!(
+        "{}: {}",
+        t("Arquivos organizados", "Files organized"),
+        summary.moved
+    );
+    if summary.errors == 0 {
+        moved
+    } else {
+        format!(
+            "{moved} · {}: {}",
+            t("Precisam de atenção", "Need attention"),
+            summary.errors
         )
-        .into()
-    })
+    }
+}
+
+// Called right after the batch, under the same lock, so the newest operation is that batch.
+fn notify_organized(app: &AppHandle, runtime: &Runtime) {
+    if let Ok(page) = runtime.store.history_page(None)
+        && let Some(summary) = page.operations.first()
+    {
+        let title = t("Organização automática", "Automatic organization");
+        notify(app, runtime, title, &organized_message(summary));
+    }
+}
+
+fn internal_state_error() -> String {
+    t(
+        "Estado interno indisponível; reinicie o aplicativo",
+        "Internal state unavailable; restart the app",
+    )
+    .into()
+}
+
+fn lock(state: &AppState) -> Result<std::sync::MutexGuard<'_, Runtime>> {
+    state.runtime.lock().map_err(|_| internal_state_error())
+}
+
+fn install_pending_update(app: &AppHandle) -> Result<()> {
+    let state = app.state::<AppState>();
+    // On success the app exits here, and this lock means no move or undo is running at that point.
+    let _runtime = lock(&state)?;
+    let pending = state
+        .update
+        .lock()
+        .map_err(|_| internal_state_error())?
+        .take();
+    if let Some((update, bytes)) = pending {
+        update.install(bytes).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+// Downloads and verifies a newer signed version. A visible window asks first; the tray has no draft to lose.
+fn update_cycle(app: &AppHandle) -> Result<()> {
+    use tauri_plugin_updater::UpdaterExt;
+    let state = app.state::<AppState>();
+    // Turned off, the app makes no network request at all.
+    if !lock(&state)?.store.preferences()?.updates {
+        return Ok(());
+    }
+    let pending = state
+        .update
+        .lock()
+        .map_err(|_| internal_state_error())?
+        .is_some();
+    if !pending {
+        let found = tauri::async_runtime::block_on(async {
+            let updater = app
+                .updater_builder()
+                .timeout(Duration::from_secs(300))
+                .build()?;
+            let Some(update) = updater.check().await? else {
+                return Ok(None);
+            };
+            let bytes = update.download(|_, _| {}, || {}).await?;
+            Ok::<_, tauri_plugin_updater::Error>(Some((update, bytes)))
+        })
+        .map_err(|e| e.to_string())?;
+        if found.is_none() {
+            return Ok(());
+        }
+        *state.update.lock().map_err(|_| internal_state_error())? = found;
+        let _ = app.emit("organizer-changed", ());
+    }
+    let hidden = app
+        .get_webview_window("main")
+        .is_some_and(|window| !window.is_visible().unwrap_or(true));
+    if hidden {
+        install_pending_update(app)?;
+    }
+    Ok(())
 }
 
 fn execute(
@@ -164,6 +308,7 @@ fn execute(
                         &mut file,
                         Path::new(&entry.path),
                         Path::new(&entry.destination),
+                        &digest,
                     );
                     match result {
                         Ok(()) => {
@@ -282,13 +427,21 @@ fn undo(runtime: &mut Runtime, operation: i64, app: Option<&AppHandle>) -> Resul
                         &mut file,
                         Path::new(&item.destination),
                         Path::new(&item.source),
+                        &item.digest,
                     ) {
                         Err(error) => runtime.store.status(item.id, "moved", Some(&error))?,
                         Ok(()) => {
                             if let Some(session) = runtime.session.as_mut() {
                                 let path = std::path::PathBuf::from(&item.source);
                                 session.baseline.insert(path.clone());
-                                session.restored.insert(path, captured.clone());
+                                // Another drive may round the date, and an unchanged file must still match.
+                                let restored = file
+                                    .file
+                                    .metadata()
+                                    .map_err(|e| e.to_string())
+                                    .and_then(|meta| engine::stamp(&meta))
+                                    .unwrap_or_else(|_| captured.clone());
+                                session.restored.insert(path, restored);
                             }
                             match engine::verify_open(&mut file, &captured, &item.digest) {
                                 Ok(()) => runtime.store.status(item.id, "undone", None)?,
@@ -327,6 +480,26 @@ fn undo(runtime: &mut Runtime, operation: i64, app: Option<&AppHandle>) -> Resul
     result
 }
 
+// Selection can only narrow what the preview authorized. What won't move can't invalidate it.
+fn narrow_preview(preview: &mut Preview, excluded: &[String], rename_conflicts: bool) {
+    let excluded: std::collections::HashSet<&String> = excluded.iter().collect();
+    preview.files.retain(|file| {
+        !excluded.contains(&file.path) && (rename_conflicts || file.status != "conflict")
+    });
+}
+
+// Runs after validation, which compares against the conflicts a fresh scan still reports.
+fn apply_renames(preview: &mut Preview) {
+    for file in &mut preview.files {
+        if file.status == "conflict"
+            && let Some(renamed) = &file.rename_to
+        {
+            file.destination = renamed.clone();
+            file.status = "ready".into();
+        }
+    }
+}
+
 fn take_preview(runtime: &mut Runtime, id: u64, now: i64) -> Result<Preview> {
     let invalid = || {
         t("PREVIEW_INVALID: A prévia expirou ou os arquivos mudaram. Atualize e confira os novos destinos antes de confirmar.", "PREVIEW_INVALID: The preview expired or the files changed. Refresh it and review the new destinations before confirming.").to_owned()
@@ -343,11 +516,12 @@ fn take_preview(runtime: &mut Runtime, id: u64, now: i64) -> Result<Preview> {
     if preview
         .files
         .iter()
-        .filter(|f| f.status == "ready")
+        .filter(|f| f.status == "ready" || f.status == "conflict")
         .any(|old| {
             !current.get(&old.path).is_some_and(|new| {
                 new.destination == old.destination
-                    && new.status == "ready"
+                    && new.status == old.status
+                    && new.rename_to == old.rename_to
                     && new.stamp == old.stamp
             })
         })
@@ -401,6 +575,12 @@ async fn snapshot(app: AppHandle) -> Result<Snapshot> {
                 .as_ref()
                 .filter(|p| (0..300).contains(&engine::now().saturating_sub(p.created)))
                 .map(|p| p.id),
+            update_version: state
+                .update
+                .lock()
+                .map_err(|_| internal_state_error())?
+                .as_ref()
+                .map(|(update, _)| update.version.clone()),
         })
     })
     .await
@@ -437,7 +617,7 @@ async fn file_preview(
         let expected = authorize()?;
         let result = file_preview::load(Path::new(&path), &expected)?;
         if authorize()? != expected {
-            return Err("O arquivo mudou. Atualize a lista e tente novamente.".into());
+            return Err(file_preview::changed().into());
         }
         Ok(result)
     })
@@ -465,7 +645,7 @@ async fn open_media_preview(
         let stamp = authorize_media(&state, &path, size, modified)?;
         let session = media_preview::Session::open(Path::new(&path), stamp.clone())?;
         if authorize_media(&state, &path, size, modified)? != stamp {
-            return Err("O arquivo mudou. Atualize a lista.".into());
+            return Err(file_preview::changed().into());
         }
         state
             .media_previews
@@ -544,11 +724,20 @@ async fn preview(app: AppHandle) -> Result<Preview> {
 }
 
 #[tauri::command]
-async fn organize(app: AppHandle, preview_id: u64) -> Result<i64> {
+async fn organize(
+    app: AppHandle,
+    preview_id: u64,
+    excluded: Vec<String>,
+    rename_conflicts: bool,
+) -> Result<i64> {
     blocking(move || {
         let state = app.state::<AppState>();
         let mut runtime = lock(&state)?;
-        let preview = take_preview(&mut runtime, preview_id, engine::now())?;
+        if let Some(preview) = runtime.preview.as_mut().filter(|p| p.id == preview_id) {
+            narrow_preview(preview, &excluded, rename_conflicts);
+        }
+        let mut preview = take_preview(&mut runtime, preview_id, engine::now())?;
+        apply_renames(&mut preview);
         execute(&mut runtime, preview, "manual", Some(&app))
     })
     .await
@@ -564,6 +753,23 @@ async fn undo_operation(app: AppHandle, operation_id: i64) -> Result<()> {
     .await
 }
 
+// The Windows setting is applied here so that a refusal also undoes the saved preference.
+fn save_with_autostart(
+    store: &mut Store,
+    preferences: &Preferences,
+    expected: &Preferences,
+    apply: impl FnOnce(bool) -> Result<()>,
+) -> Result<()> {
+    store.save_if_unchanged(preferences, Some(expected))?;
+    if preferences.autostart != expected.autostart
+        && let Err(error) = apply(preferences.autostart)
+    {
+        store.save_if_unchanged(expected, None)?;
+        return Err(error);
+    }
+    Ok(())
+}
+
 #[tauri::command]
 async fn save_preferences(
     app: AppHandle,
@@ -573,18 +779,33 @@ async fn save_preferences(
     blocking(move || {
         let state = app.state::<AppState>();
         let mut runtime = lock(&state)?;
-        runtime
-            .store
-            .save_if_unchanged(&preferences, Some(&expected))?;
+        save_with_autostart(
+            &mut runtime.store,
+            &preferences,
+            &expected,
+            autostart::apply,
+        )?;
+        if !preferences.updates {
+            *state.update.lock().map_err(|_| internal_state_error())? = None;
+        }
         i18n::set_language(&preferences.language);
         runtime.preview = None;
         if let Err(error) = monitor::configure(&mut runtime, &state.events) {
             runtime.watch_error = Some(error.clone());
         }
+        if let Some(tray) = app.tray_by_id("main") {
+            let _ = tray.set_menu(tray_menu(&app).ok());
+        }
+        sync_tray_status(&app, &runtime);
         let _ = app.emit("organizer-changed", ());
         runtime.store.preferences()
     })
     .await
+}
+
+#[tauri::command]
+async fn install_update(app: AppHandle) -> Result<()> {
+    blocking(move || install_pending_update(&app)).await
 }
 
 #[tauri::command]
@@ -597,6 +818,7 @@ async fn retry_monitoring(app: AppHandle) -> Result<()> {
             monitor::configure(&mut runtime, &state.events)
         })();
         runtime.watch_error = result.as_ref().err().cloned();
+        sync_tray_status(&app, &runtime);
         let _ = app.emit("organizer-changed", ());
         result
     })
@@ -614,19 +836,11 @@ pub fn run() {
 fn run_application() -> std::result::Result<(), startup::StartupError> {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            if let Some(window) = app.get_webview_window("main") {
-                let result = window.show().and_then(|()| {
-                    if window.is_minimized()? {
-                        window.unminimize()?;
-                    }
-                    window.set_focus()
-                });
-                if let Err(error) = result {
-                    eprintln!("Could not activate the existing window: {error}");
-                }
-            }
+            show_main_window(app);
         }))
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
             tauri_plugin_window_state::Builder::default()
                 .with_state_flags(StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED)
@@ -704,6 +918,7 @@ fn run_application() -> std::result::Result<(), startup::StartupError> {
             organize,
             undo_operation,
             save_preferences,
+            install_update,
             retry_monitoring
         ])
         .build(tauri::generate_context!())
@@ -721,24 +936,90 @@ fn run_application() -> std::result::Result<(), startup::StartupError> {
         .map(|path| path.to_string_lossy().into_owned())
         .unwrap_or_default();
     let mut runtime = startup::initialize(&data, &default_source)?;
+    let mut automatic = false;
     if let Ok(preferences) = runtime.store.preferences() {
         i18n::set_language(&preferences.language);
+        automatic = preferences.automatic;
+        // Keeps the entry pointing at this executable after an update.
+        if let Err(error) = autostart::apply(preferences.autostart) {
+            eprintln!("{error}");
+        }
     }
-    let (events, receiver) = mpsc::sync_channel(1024);
+    // The worker can't drain this during a batch, and the batch's own moves fill it.
+    let (events, receiver) = mpsc::sync_channel(65536);
     if let Err(error) = monitor::configure(&mut runtime, &events) {
         runtime.watch_error = Some(error);
     }
+    let start_hidden = starts_hidden(
+        automatic,
+        runtime.watch_error.is_some(),
+        std::env::args().any(|argument| argument == autostart::LAUNCH_ARGUMENT),
+    );
     app.manage(AppState {
         runtime: Mutex::new(runtime),
         events,
         file_previews: Mutex::new(file_preview::Access::default()),
         file_preview_job: Mutex::new(()),
         media_previews: Mutex::new(media_preview::Sessions::default()),
+        update: Mutex::new(None),
     });
     let handle = app.handle().clone();
     std::thread::Builder::new()
         .spawn(move || monitor::worker(handle, receiver))
         .map_err(|_| startup::StartupError::Runtime)?;
-    app.run(|_, _| {});
+    // Dev builds must never replace themselves with a release.
+    if !cfg!(debug_assertions) {
+        let handle = app.handle().clone();
+        std::thread::Builder::new()
+            .spawn(move || {
+                let mut delay = Duration::from_secs(60);
+                loop {
+                    std::thread::sleep(delay);
+                    delay = Duration::from_secs(6 * 60 * 60);
+                    // Being offline is normal; the next cycle tries again.
+                    if let Err(error) = update_cycle(&handle) {
+                        eprintln!("{error}");
+                    }
+                }
+            })
+            .map_err(|_| startup::StartupError::Runtime)?;
+    }
+    // Built after the preferences load, so the menu uses the saved language.
+    let menu = tray_menu(app.handle()).map_err(|_| startup::StartupError::Runtime)?;
+    let icon = app
+        .default_window_icon()
+        .ok_or(startup::StartupError::Runtime)?
+        .clone();
+    TrayIconBuilder::with_id("main")
+        .icon(icon)
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| {
+            show_main_window(app);
+            // Quitting goes through the window, which protects drafts and running operations.
+            if event.id() == "quit" {
+                let _ = app.emit("tray-quit", ());
+            }
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                show_main_window(tray.app_handle());
+            }
+        })
+        .build(&app)
+        .map_err(|_| startup::StartupError::Runtime)?;
+    if let Ok(runtime) = lock(&app.state::<AppState>()) {
+        sync_tray_status(app.handle(), &runtime);
+    }
+    app.run(move |app, event| {
+        if matches!(event, tauri::RunEvent::Ready) && !start_hidden {
+            show_main_window(app);
+        }
+    });
     Ok(())
 }

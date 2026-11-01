@@ -46,6 +46,14 @@ jobs:
       - name: Build frontend
         run: npm run build
 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Check third-party notices
+        run: |
+          node scripts/third-party-notices.mjs
+          git diff --exit-code -- public/third-party-notices.txt
+
   rust:
     name: Rust (Format, Clippy, Tests)
     runs-on: windows-2022
@@ -73,3 +81,9 @@ jobs:
 
       - name: Rust tests
         run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+
+      - name: Rust test between real drives
+        run: |
+          New-Item -ItemType Directory -Force D:\organizer-test | Out-Null
+          $env:ORGANIZER_TEST_OTHER_DRIVE = 'D:\organizer-test'
+          cargo test --manifest-path src-tauri/Cargo.toml --locked moves_and_undoes_between_real_drives -- --ignored

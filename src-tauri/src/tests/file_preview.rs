@@ -202,6 +202,12 @@ fn only_the_latest_authorized_snapshot_and_configuration_can_grant_access() {
         enabled_categories: vec!["images".into()],
         theme: "dark".into(),
         language: "system".into(),
+
+        notifications: true,
+
+        updates: true,
+
+        autostart: false,
     };
     let files = engine::scan(&prefs).unwrap();
     let entry = &files[0];
@@ -318,7 +324,6 @@ fn changed_content_with_original_identity_size_and_time_is_rejected() {
     assert!(verify_source(&path, &stamp, &original, &digest).is_err());
 }
 
-#[cfg(windows)]
 #[test]
 fn windows_preview_denies_writes_and_replacement_only_during_reading() {
     let (_temp, path, stamp) = sample(ImageFormat::Png);
@@ -330,7 +335,6 @@ fn windows_preview_denies_writes_and_replacement_only_during_reading() {
     assert!(File::options().write(true).open(&path).is_ok());
 }
 
-#[cfg(windows)]
 #[test]
 fn read_only_images_do_not_require_delete_or_write_permission() {
     let (_temp, path, stamp) = sample(ImageFormat::Png);
@@ -342,7 +346,6 @@ fn read_only_images_do_not_require_delete_or_write_permission() {
     fs::set_permissions(path, original_permissions).unwrap();
 }
 
-#[cfg(windows)]
 #[test]
 fn windows_junction_ancestors_never_authorize_reading_their_targets() {
     let (temp, path, stamp) = sample(ImageFormat::Png);
@@ -369,7 +372,6 @@ fn windows_junction_ancestors_never_authorize_reading_their_targets() {
     assert!(target_file.is_file());
 }
 
-#[cfg(windows)]
 #[test]
 fn physical_path_checks_preserve_unicode_names_and_verbatim_paths() {
     let temp = temp_directory();
@@ -390,7 +392,6 @@ fn physical_path_checks_preserve_unicode_names_and_verbatim_paths() {
     assert!(load(Path::new(&ordinary), &stamp).is_ok());
 }
 
-#[cfg(windows)]
 #[test]
 fn scan_authorizes_canonical_previews_for_case_and_short_path_aliases() {
     use std::os::windows::ffi::{OsStrExt, OsStringExt};
@@ -420,6 +421,12 @@ fn scan_authorizes_canonical_previews_for_case_and_short_path_aliases() {
             enabled_categories: vec!["images".into()],
             theme: "dark".into(),
             language: "system".into(),
+
+            notifications: true,
+
+            updates: true,
+
+            autostart: false,
         };
         let files = engine::scan(&prefs).unwrap();
         let entry = files
@@ -451,14 +458,4 @@ fn scan_authorizes_canonical_previews_for_case_and_short_path_aliases() {
         assert_eq!((response.width, response.height), (Some(4), Some(3)));
     }
     assert_eq!(fs::read(path).unwrap(), original);
-}
-
-#[cfg(unix)]
-#[test]
-fn symlink_files_are_never_followed() {
-    let (temp, path, stamp) = sample(ImageFormat::Png);
-    let link = temp.path().join("link.png");
-    std::os::unix::fs::symlink(&path, &link).unwrap();
-    assert!(load(&link, &stamp).is_err());
-    assert!(path.is_file());
 }

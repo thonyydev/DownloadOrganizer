@@ -106,6 +106,7 @@ pub(crate) fn configure_with(
 
 pub fn worker(app: AppHandle, receiver: mpsc::Receiver<Message>) {
     let mut queue = Queue::default();
+    let mut last_organized_notice: Option<Instant> = None;
     loop {
         let received = if queue.idle() {
             receiver
@@ -118,6 +119,7 @@ pub fn worker(app: AppHandle, receiver: mpsc::Receiver<Message>) {
         let Ok(mut runtime) = lock(&state) else {
             break;
         };
+        let previous_error = runtime.watch_error.clone();
         let mut changed = false;
         match received {
             Ok(event) => changed = queue.event(&mut runtime, event),
@@ -128,6 +130,13 @@ pub fn worker(app: AppHandle, receiver: mpsc::Receiver<Message>) {
             Ok(processed) => {
                 if processed {
                     runtime.watch_error = None;
+                    // shortcut: later batches in the minute aren't counted, add a summary if users ask.
+                    if last_organized_notice
+                        .is_none_or(|last| last.elapsed() >= Duration::from_secs(60))
+                    {
+                        crate::notify_organized(&app, &runtime);
+                        last_organized_notice = Some(Instant::now());
+                    }
                 }
                 changed |= processed;
             }
@@ -137,6 +146,16 @@ pub fn worker(app: AppHandle, receiver: mpsc::Receiver<Message>) {
             }
         }
         if changed {
+            crate::sync_tray_status(&app, &runtime);
+            if runtime.watch_error != previous_error
+                && let Some(error) = runtime.watch_error.clone()
+            {
+                let title = t(
+                    "Há um problema no monitoramento",
+                    "There's a problem with monitoring",
+                );
+                crate::notify(&app, &runtime, title, &error);
+            }
             let _ = app.emit("organizer-changed", ());
         }
     }

@@ -1,6 +1,6 @@
 [package]
 name = "download-organizer"
-version = "0.1.0"
+version = "0.1.1"
 description = "Organize your downloads safely, with a preview and undo"
 authors = ["Thonyy"]
 license = "MIT"
@@ -20,8 +20,9 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-dialog = "2"
+tauri-plugin-notification = "2"
 rusqlite = { version = "0.38", features = ["bundled"] }
 notify = "8"
 blake3 = "1"
@@ -32,12 +33,10 @@ tauri-plugin-single-instance = "2"
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "webp", "bmp", "gif"] }
 base64 = "0.22"
 getrandom = "0.4"
+tauri-plugin-updater = "2"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem", "Win32_Foundation", "Wdk_Foundation", "Wdk_Storage_FileSystem", "Win32_Security", "Win32_System_IO", "Win32_UI_WindowsAndMessaging", "Win32_Globalization"] }
-
-[target.'cfg(unix)'.dependencies]
-libc = "0.2"
+windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem", "Win32_Foundation", "Wdk_Foundation", "Wdk_Storage_FileSystem", "Win32_Security", "Win32_System_IO", "Win32_System_Registry", "Win32_UI_WindowsAndMessaging", "Win32_Globalization"] }
 
 [dev-dependencies]
 tempfile = "3"

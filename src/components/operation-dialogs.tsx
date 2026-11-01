@@ -1,5 +1,5 @@
 import { FolderDown, Loader2, Undo2 } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { FileTable } from "@/components/file-table";
@@ -11,18 +11,34 @@ import { t } from "@/lib/i18n";
 import type { Category, Operation, OperationSummary, Preview } from "@/lib/api";
 import type { Action } from "@/lib/experience";
 
+interface Selection { id: number | null; excluded: Set<string>; rename: boolean }
+const noneExcluded = new Set<string>();
+
 export function OperationDialogs({ preview, undoTarget, categories, action, busy, working, issue, reviewed, operation, onReviewed, onUpdate, onOrganize, onUndo, onClose, onViewResult, onRestoreFocus }: {
   preview: Preview | null; undoTarget: Operation | null; categories: Category[]; action: Action | null; busy: boolean; working: boolean;
   issue: string; reviewed: boolean; operation?: Operation | OperationSummary;
-  onReviewed: (value: boolean) => void; onUpdate: () => void; onOrganize: () => void; onUndo: () => void; onClose: () => void; onViewResult: () => void;
+  onReviewed: (value: boolean) => void; onUpdate: () => void; onOrganize: (excluded: string[], renameConflicts: boolean, count: number) => void; onUndo: () => void; onClose: () => void; onViewResult: () => void;
   onRestoreFocus: () => void;
 }) {
+  // Tied to the preview's id, so a refreshed preview starts with everything selected again.
+  const [choice, setChoice] = useState<Selection>(() => ({ id: null, excluded: new Set(), rename: false }));
+  const selection = choice.id === (preview?.id ?? null) ? choice : { id: preview?.id ?? null, excluded: noneExcluded, rename: false };
+  const files = useMemo(() => (preview?.files ?? []).map(file => selection.rename && file.status === "conflict" && file.rename_to ? { ...file, destination: file.rename_to, status: "ready" as const, reason: t("Será renomeado; o arquivo existente será preservado", "Will be renamed; the existing file will be kept") } : file), [preview?.files, selection.rename]);
   const counts = useMemo(() => {
     const result = { ready: 0, conflict: 0, ignored: 0 };
-    for (const file of preview?.files ?? []) result[file.status]++;
+    for (const file of files) result[file.status]++;
     return result;
-  }, [preview?.files]);
-  const ready = counts.ready;
+  }, [files]);
+  const selected = useMemo(() => files.reduce((count, file) => count + Number(file.status === "ready" && !selection.excluded.has(file.path)), 0), [files, selection.excluded]);
+  const hasConflicts = (preview?.files ?? []).some(file => file.status === "conflict" && file.rename_to);
+  function toggleFile(path: string) {
+    const excluded = new Set(selection.excluded);
+    if (!excluded.delete(path)) excluded.add(path);
+    setChoice({ ...selection, excluded });
+  }
+  function toggleAll(all: boolean) {
+    setChoice({ ...selection, excluded: all ? noneExcluded : new Set(files.filter(file => file.status === "ready").map(file => file.path)) });
+  }
   const previewAction = action?.kind === "organize" || action?.kind === "preview" ? action : null;
   const undoAction = action?.kind === "undo" ? action : null;
   const undoable = operation && "movements" in operation ? operation : undoTarget;
@@ -38,14 +54,16 @@ export function OperationDialogs({ preview, undoTarget, categories, action, busy
         {!done(previewAction) && <>
           {issue && <p className="inline-error" role="alert">{issue}</p>}
           <TriageLegend counts={counts} />
-          <div className="preview-files"><FileTable files={preview?.files ?? []} categories={categories} preview /></div>
+          <div className="preview-files"><FileTable files={files} categories={categories} preview selection={{ excluded: selection.excluded, selected, ready: counts.ready, disabled: working, onToggle: toggleFile, onToggleAll: toggleAll }} /></div>
+          <p className="preview-selection" role="status">{selected} {t("de", "of")} {counts.ready} {t("selecionados", "selected")}</p>
+          {hasConflicts && <label className="review-confirmation"><input type="checkbox" checked={selection.rename} disabled={working || !!issue} onChange={event => setChoice({ ...selection, rename: event.target.checked })} />{t("Renomear arquivos em conflito", "Rename conflicting files")}</label>}
           <label className="review-confirmation"><input type="checkbox" checked={reviewed} disabled={working || !!issue} onChange={e => onReviewed(e.target.checked)} />{t("Conferi os arquivos e destinos desta prévia", "I reviewed the files and destinations in this preview")}</label>
         </>}
         <DialogFooter>{done(previewAction) ? footer : <>
           <Button variant="outline" disabled={busy} onClick={onClose}>{t("Cancelar", "Cancel")}</Button>
           {previewAction?.phase === "error" && operation && <Button variant="outline" onClick={onViewResult}>{t("Ver resultado no histórico", "View result in history")}</Button>}
           <Button variant="outline" disabled={working} onClick={onUpdate}>{t("Atualizar prévia", "Refresh preview")}</Button>
-          <Button disabled={working || !ready || !reviewed || !!issue} onClick={onOrganize}>{busy ? <Loader2 className="spin" aria-hidden="true" /> : <FolderDown aria-hidden="true" />}{busy ? t("Aguarde a operação…", "Wait for the operation…") : t("Confirmar organização", "Confirm organization")}</Button>
+          <Button disabled={working || !selected || !reviewed || !!issue} onClick={() => onOrganize([...selection.excluded], selection.rename, selected)}>{busy ? <Loader2 className="spin" aria-hidden="true" /> : <FolderDown aria-hidden="true" />}{busy ? t("Aguarde a operação…", "Wait for the operation…") : t("Confirmar organização", "Confirm organization")}</Button>
         </>}</DialogFooter>
       </DialogContent>
     </Dialog>

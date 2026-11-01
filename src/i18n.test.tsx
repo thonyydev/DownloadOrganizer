@@ -59,13 +59,13 @@ describe("tabela de traduções", () => {
   });
 });
 
-const preferences = { source: "/isolated/source", destination: "/isolated/destination", theme: "dark", language: "en", automatic: false, enabled_categories: ["documents"] } as const;
+const preferences = { source: "/isolated/source", destination: "/isolated/destination", theme: "dark", language: "en", automatic: false, enabled_categories: ["documents"], notifications: true, updates: true, autostart: false } as const;
 const categories = [{ id: "documents", name: "Documents", extensions: ["pdf"] }, { id: "other", name: "Other", extensions: [] }];
 const files: FileEntry[] = [
   { name: "a.pdf", path: "/isolated/source/a.pdf", extension: "pdf", category: "documents", size: 1536, modified: Date.UTC(2026, 0, 31, 12), destination: "/isolated/destination/Documents/a.pdf", status: "ready", reason: null },
   { name: "b", path: "/isolated/source/b", extension: "", category: "other", size: 2, modified: Date.UTC(2026, 0, 31, 12), destination: "/isolated/destination/Other/b", status: "conflict", reason: "A file with this name already exists; it will be preserved" },
 ];
-const snapshot = { preferences: { ...preferences, enabled_categories: [...preferences.enabled_categories] }, categories, files, history: [{ id: 1, created: 1767225600, kind: "manual", total: 3, moved: 2, undone: 1, errors: 1 }], history_cursor: null, monitoring: true, watch_error: null, scan_error: null, preview_id: null, language: "en" as const };
+const snapshot = { preferences: { ...preferences, enabled_categories: [...preferences.enabled_categories] }, categories, files, history: [{ id: 1, created: 1767225600, kind: "manual", total: 3, moved: 2, undone: 1, errors: 1 }], history_cursor: null, monitoring: true, watch_error: null, scan_error: null, preview_id: null, language: "en" as const, update_version: null };
 
 // Words that only appear in the Portuguese interface. Fixture names are English on purpose.
 const portuguese = /[ãõçáéíóúâê]|\b(arquivos?|pasta|destino|origem|prévia|organizar|organizados?|configurações|histórico|categorias?|conflitos?|prontos?|ignorados?|desfazer|atualizar|não|você|com|para|de)\b|\(s\)/i;

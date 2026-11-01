@@ -11,7 +11,6 @@ use std::{
     time::{Duration, SystemTime},
 };
 use tempfile::TempDir;
-#[cfg(windows)]
 mod directory_cleanup;
 mod history_pagination;
 mod language;
@@ -43,7 +42,6 @@ mod monitor_activation {
             .map_err(|error| error.to_string())
     }
 
-    #[cfg(windows)]
     #[test]
     fn native_windows_arrival_during_enumeration_is_processed() {
         use notify::{RecursiveMode, Watcher};
@@ -645,7 +643,6 @@ fn only_one_store_can_recover_and_write_the_same_database() {
     assert!(Store::open(&temp.path().join("test.sqlite3"), &prefs.source).is_ok());
 }
 
-#[cfg(windows)]
 #[test]
 fn recovery_waits_for_a_busy_file_instead_of_losing_undo() {
     let (_temp, runtime, prefs) = fixture();
@@ -668,6 +665,7 @@ fn recovery_waits_for_a_busy_file_instead_of_losing_undo() {
         &mut file,
         Path::new(&entry.path),
         Path::new(&entry.destination),
+        &digest,
     )
     .unwrap();
     runtime.store.recover().unwrap();
@@ -724,7 +722,6 @@ fn event_overflow_pauses_automation_before_any_more_moves() {
     assert!(runtime.store.history().unwrap().is_empty());
 }
 
-#[cfg(windows)]
 #[test]
 fn checked_directory_cannot_be_replaced_before_the_move() {
     let (temp, _runtime, prefs) = fixture();
@@ -863,7 +860,6 @@ fn undo_stops_when_the_journal_cannot_record_intent() {
     assert!(Path::new(&item.destination).exists());
 }
 
-#[cfg(windows)]
 #[test]
 fn occupied_undo_can_be_retried_after_the_file_is_released() {
     use std::os::windows::fs::OpenOptionsExt;
@@ -883,7 +879,6 @@ fn occupied_undo_can_be_retried_after_the_file_is_released() {
     assert_eq!(fs::read(&item.source).unwrap(), b"a");
 }
 
-#[cfg(windows)]
 #[test]
 fn checked_source_cannot_be_replaced_before_the_move() {
     let (_temp, _runtime, prefs) = fixture();
@@ -1111,7 +1106,6 @@ fn automation_discards_pending_files_when_disabled() {
     assert!(runtime.store.history().unwrap().is_empty());
 }
 
-#[cfg(windows)]
 #[test]
 fn automation_retries_after_writer_closes_without_repeated_history() {
     use std::os::windows::fs::OpenOptionsExt;
@@ -1226,6 +1220,14 @@ fn old_file(path: &Path, data: &[u8]) {
         .unwrap()
         .set_times(FileTimes::new().set_modified(SystemTime::now() - Duration::from_secs(60)))
         .unwrap();
+}
+fn select_files(mut preview: Preview, excluded: &[String], rename_conflicts: bool) -> Preview {
+    narrow_preview(&mut preview, excluded, rename_conflicts);
+    apply_renames(&mut preview);
+    preview
+}
+fn keep_original(_: &File) -> std::io::Result<()> {
+    Err(std::io::Error::other("refused"))
 }
 fn plan(prefs: &Preferences) -> Preview {
     Preview {
@@ -1454,6 +1456,7 @@ fn journal_recovers_completed_and_unexecuted_intents() {
                 &mut file,
                 Path::new(&entry.path),
                 Path::new(&entry.destination),
+                &digest,
             )
             .unwrap();
         }
@@ -1490,7 +1493,6 @@ fn monitoring_starts_disabled_and_does_not_process_existing_files() {
     assert!(runtime.watcher.is_none());
 }
 
-#[cfg(windows)]
 #[test]
 fn locked_writer_is_not_moved() {
     use std::os::windows::fs::OpenOptionsExt;
@@ -1508,7 +1510,6 @@ fn locked_writer_is_not_moved() {
     assert!(source.exists());
 }
 
-#[cfg(windows)]
 #[test]
 fn junction_destination_is_rejected() {
     let (temp, _runtime, prefs) = fixture();
@@ -1531,12 +1532,275 @@ fn junction_destination_is_rejected() {
     fs::remove_dir(junction).unwrap();
 }
 
-#[cfg(unix)]
 #[test]
-fn symlinks_are_ignored() {
-    let (temp, _runtime, prefs) = fixture();
-    let external = temp.path().join("external.txt");
-    old_file(&external, b"outside");
-    std::os::unix::fs::symlink(&external, Path::new(&prefs.source).join("link.txt")).unwrap();
-    assert_eq!(plan(&prefs).files[0].status, "ignored");
+fn partial_downloads_from_other_clients_are_temporary() {
+    for name in [
+        "movie.mkv.!qB",
+        "movie.mkv.!ut",
+        "movie.mkv.bc!",
+        "movie.mkv.aria2",
+        "movie.mkv.dtapart",
+    ] {
+        assert!(engine::temporary(Path::new(name)), "{name}");
+    }
+    assert!(!engine::temporary(Path::new("movie.mkv")));
+}
+
+#[test]
+fn future_dated_file_is_ignored_with_its_own_reason() {
+    let (_temp, _runtime, prefs) = fixture();
+    let path = Path::new(&prefs.source).join("future.txt");
+    fs::write(&path, b"data").unwrap();
+    File::options()
+        .write(true)
+        .open(&path)
+        .unwrap()
+        .set_times(FileTimes::new().set_modified(SystemTime::now() + Duration::from_secs(3600)))
+        .unwrap();
+    let entry = plan(&prefs).files.remove(0);
+    assert_eq!(entry.status, "ignored");
+    assert!(entry.reason.unwrap().contains("futuro"));
+    assert!(path.exists());
+}
+
+#[test]
+fn conflicts_get_a_free_name_that_no_other_file_in_the_batch_takes() {
+    let (_temp, mut runtime, prefs) = fixture();
+    let source = Path::new(&prefs.source);
+    let folder = Path::new(&prefs.destination).join("Documentos");
+    fs::create_dir_all(&folder).unwrap();
+    old_file(&folder.join("a.pdf"), b"existing");
+    old_file(&source.join("a.pdf"), b"new");
+    old_file(&source.join("a (2).pdf"), b"other");
+    let preview = plan(&prefs);
+    let conflict = preview.files.iter().find(|f| f.name == "a.pdf").unwrap();
+    assert_eq!(conflict.status, "conflict");
+    let renamed = folder.join("a (3).pdf");
+    assert_eq!(conflict.rename_to.as_deref(), renamed.to_str());
+
+    let id = execute(
+        &mut runtime,
+        select_files(preview, &[], true),
+        "manual",
+        None,
+    )
+    .unwrap();
+    assert_eq!(fs::read(&renamed).unwrap(), b"new");
+    assert_eq!(fs::read(folder.join("a.pdf")).unwrap(), b"existing");
+    assert_eq!(fs::read(folder.join("a (2).pdf")).unwrap(), b"other");
+
+    undo(&mut runtime, id, None).unwrap();
+    assert_eq!(fs::read(source.join("a.pdf")).unwrap(), b"new");
+    assert_eq!(fs::read(folder.join("a.pdf")).unwrap(), b"existing");
+    assert!(!renamed.exists());
+}
+
+#[test]
+fn conflicts_stay_put_unless_renaming_was_chosen() {
+    let (_temp, mut runtime, prefs) = fixture();
+    let source = Path::new(&prefs.source);
+    let folder = Path::new(&prefs.destination).join("Documentos");
+    fs::create_dir_all(&folder).unwrap();
+    old_file(&folder.join("a.pdf"), b"existing");
+    old_file(&source.join("a.pdf"), b"new");
+    old_file(&source.join("b.pdf"), b"ready");
+    execute(
+        &mut runtime,
+        select_files(plan(&prefs), &[], false),
+        "manual",
+        None,
+    )
+    .unwrap();
+    assert_eq!(fs::read(source.join("a.pdf")).unwrap(), b"new");
+    assert_eq!(fs::read(folder.join("a.pdf")).unwrap(), b"existing");
+    assert!(folder.join("b.pdf").exists());
+}
+
+#[test]
+fn excluded_files_are_not_moved_and_a_tampered_rename_is_refused() {
+    let (_temp, mut runtime, prefs) = fixture();
+    let source = Path::new(&prefs.source);
+    old_file(&source.join("keep.pdf"), b"keep");
+    old_file(&source.join("move.pdf"), b"move");
+    let keep = source.join("keep.pdf").to_string_lossy().into_owned();
+    execute(
+        &mut runtime,
+        select_files(plan(&prefs), &[keep], false),
+        "manual",
+        None,
+    )
+    .unwrap();
+    assert!(source.join("keep.pdf").exists());
+    assert!(!source.join("move.pdf").exists());
+
+    // A destination outside the category folder is refused even if it claims to be a rename.
+    let mut preview = plan(&prefs);
+    let outside = Path::new(&prefs.destination).join("outside.pdf");
+    preview.files[0].destination = outside.to_string_lossy().into_owned();
+    preview.files[0].rename_to = Some(preview.files[0].destination.clone());
+    assert!(prepare_move(&preview.files[0], &prefs).is_err());
+    assert!(source.join("keep.pdf").exists() && !outside.exists());
+}
+
+#[test]
+fn copy_between_drives_keeps_content_date_and_download_mark() {
+    let temp = tempfile::tempdir().unwrap();
+    let source = std::fs::canonicalize(temp.path()).unwrap().join("a.exe");
+    let destination = source.with_file_name("b.exe");
+    old_file(&source, b"content");
+    let mut zone = source.as_os_str().to_owned();
+    zone.push(":Zone.Identifier");
+    fs::write(&zone, b"[ZoneTransfer]").unwrap();
+    let modified = fs::metadata(&source).unwrap().modified().unwrap();
+
+    copy_by_digest(&source, &destination).unwrap();
+
+    assert!(!source.exists());
+    assert_eq!(fs::read(&destination).unwrap(), b"content");
+    assert_eq!(
+        fs::metadata(&destination).unwrap().modified().unwrap(),
+        modified
+    );
+    let mut copied = destination.as_os_str().to_owned();
+    copied.push(":Zone.Identifier");
+    assert_eq!(fs::read(copied).unwrap(), b"[ZoneTransfer]");
+    assert_eq!(
+        fs::read_dir(destination.parent().unwrap()).unwrap().count(),
+        1
+    );
+}
+
+#[test]
+fn copy_between_drives_never_replaces_and_leaves_no_partial_file() {
+    let temp = tempfile::tempdir().unwrap();
+    let source = std::fs::canonicalize(temp.path()).unwrap().join("a.txt");
+    let destination = source.with_file_name("b.txt");
+    old_file(&source, b"new");
+    old_file(&destination, b"existing");
+    assert!(copy_by_digest(&source, &destination).is_err());
+    assert_eq!(fs::read(&source).unwrap(), b"new");
+    assert_eq!(fs::read(&destination).unwrap(), b"existing");
+    assert_eq!(fs::read_dir(source.parent().unwrap()).unwrap().count(), 2);
+}
+
+fn copy_by_digest(source: &Path, destination: &Path) -> Result<()> {
+    let mut file = engine::locked_file(source).unwrap();
+    let digest = engine::fingerprint(&mut file.file).unwrap();
+    engine::copy_then_remove(&mut file, source, destination, &digest, engine::delete_open)
+}
+
+#[test]
+fn copy_is_undone_when_the_original_cannot_be_removed() {
+    let temp = tempfile::tempdir().unwrap();
+    let source = std::fs::canonicalize(temp.path()).unwrap().join("a.txt");
+    let destination = source.with_file_name("b.txt");
+    old_file(&source, b"content");
+    let mut file = engine::locked_file(&source).unwrap();
+    let digest = engine::fingerprint(&mut file.file).unwrap();
+    let result = engine::copy_then_remove(&mut file, &source, &destination, &digest, keep_original);
+    drop(file);
+    assert!(result.is_err());
+    assert_eq!(fs::read(&source).unwrap(), b"content");
+    assert!(!destination.exists());
+    assert_eq!(fs::read_dir(source.parent().unwrap()).unwrap().count(), 1);
+}
+
+#[test]
+fn read_only_file_moves_to_another_drive_like_on_the_same_one() {
+    let temp = tempfile::tempdir().unwrap();
+    let source = std::fs::canonicalize(temp.path()).unwrap().join("a.txt");
+    let destination = source.with_file_name("b.txt");
+    old_file(&source, b"read only");
+    let mut permissions = fs::metadata(&source).unwrap().permissions();
+    permissions.set_readonly(true);
+    fs::set_permissions(&source, permissions).unwrap();
+    copy_by_digest(&source, &destination).unwrap();
+    assert!(!source.exists());
+    assert_eq!(fs::read(&destination).unwrap(), b"read only");
+}
+
+#[test]
+fn what_was_left_out_of_the_selection_cannot_invalidate_the_preview() {
+    let (_temp, mut runtime, prefs) = fixture();
+    let source = Path::new(&prefs.source);
+    let folder = Path::new(&prefs.destination).join("Documentos");
+    fs::create_dir_all(&folder).unwrap();
+    old_file(&folder.join("conflict.pdf"), b"existing");
+    old_file(&source.join("conflict.pdf"), b"new");
+    old_file(&source.join("left-out.pdf"), b"before");
+    old_file(&source.join("chosen.pdf"), b"chosen");
+    let mut preview = plan(&prefs);
+    let (id, created) = (preview.id, preview.created);
+    let left_out = source.join("left-out.pdf").to_string_lossy().into_owned();
+    narrow_preview(&mut preview, &[left_out], false);
+    runtime.preview = Some(preview);
+    old_file(&source.join("left-out.pdf"), b"it changed");
+    old_file(&source.join("conflict.pdf"), b"it changed too");
+    let preview = take_preview(&mut runtime, id, created).unwrap();
+    execute(&mut runtime, preview, "manual", None).unwrap();
+    assert!(folder.join("chosen.pdf").exists());
+    assert_eq!(
+        fs::read(source.join("left-out.pdf")).unwrap(),
+        b"it changed"
+    );
+    assert_eq!(fs::read(folder.join("conflict.pdf")).unwrap(), b"existing");
+}
+
+#[test]
+fn recovery_removes_an_interrupted_copy_and_keeps_the_original() {
+    let (_temp, runtime, prefs) = fixture();
+    let source = Path::new(&prefs.source).join("a.txt");
+    old_file(&source, b"content");
+    let target = Path::new(&prefs.destination).join("a-copy.txt");
+    let mut file = engine::locked_file(&source).unwrap();
+    let digest = engine::fingerprint(&mut file.file).unwrap();
+    let captured = engine::stamp(&file.file.metadata().unwrap()).unwrap();
+    drop(file);
+    let operation = runtime.store.begin("manual").unwrap();
+    runtime
+        .store
+        .record(
+            operation,
+            source.to_str().unwrap(),
+            target.to_str().unwrap(),
+            "pending",
+            &captured,
+            &digest,
+        )
+        .unwrap();
+    let partial = target.with_file_name(format!("~do-{}.partial", &digest[..16]));
+    fs::write(&partial, b"half").unwrap();
+    runtime.store.recover().unwrap();
+    assert!(!partial.exists());
+    assert_eq!(fs::read(&source).unwrap(), b"content");
+    assert_eq!(
+        runtime.store.movements(operation).unwrap()[0].status,
+        "failed"
+    );
+}
+
+// Needs a second drive: set ORGANIZER_TEST_OTHER_DRIVE to an empty test folder on it, then run with --ignored.
+#[test]
+#[ignore]
+fn moves_and_undoes_between_real_drives() {
+    let other = std::path::PathBuf::from(std::env::var("ORGANIZER_TEST_OTHER_DRIVE").unwrap());
+    let (_temp, mut runtime, mut prefs) = fixture();
+    prefs.destination = std::fs::canonicalize(&other)
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    runtime.store.save(&prefs).unwrap();
+    // Passing on one drive would prove nothing.
+    assert_ne!(
+        Path::new(&prefs.source).components().next(),
+        Path::new(&prefs.destination).components().next()
+    );
+    let source = Path::new(&prefs.source).join("a.pdf");
+    old_file(&source, b"between drives");
+    let id = execute(&mut runtime, plan(&prefs), "manual", None).unwrap();
+    assert!(!source.exists());
+    assert_eq!(runtime.store.movements(id).unwrap()[0].status, "moved");
+    undo(&mut runtime, id, None).unwrap();
+    assert_eq!(fs::read(&source).unwrap(), b"between drives");
+    assert_eq!(runtime.store.movements(id).unwrap()[0].status, "undone");
 }
