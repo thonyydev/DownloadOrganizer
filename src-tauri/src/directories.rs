@@ -35,18 +35,15 @@ mod windows {
     }
 
     fn open(path: &Path, create: bool) -> Result<Directory> {
-        let parents = engine::guard_directory(
-            path.parent()
-                .ok_or(t("Pasta sem ancestral", "Folder has no parent"))?,
-        )?;
+        let parents = engine::guard_directory(path.parent().ok_or(t("Folder has no parent"))?)?;
         let mut name: Vec<u16> = path
             .file_name()
-            .ok_or(t("Nome de pasta inválido", "Invalid folder name"))?
+            .ok_or(t("Invalid folder name"))?
             .encode_wide()
             .collect();
         let length = (name.len() * 2)
             .try_into()
-            .map_err(|_| t("Nome de pasta longo demais", "Folder name is too long"))?;
+            .map_err(|_| t("Folder name is too long"))?;
         let mut name = UNICODE_STRING {
             Length: length,
             MaximumLength: length,
@@ -56,7 +53,7 @@ mod windows {
             Length: size_of::<OBJECT_ATTRIBUTES>() as u32,
             RootDirectory: parents
                 .last()
-                .ok_or(t("Ancestral indisponível", "Parent folder unavailable"))?
+                .ok_or(t("Parent folder unavailable"))?
                 .as_raw_handle(),
             ObjectName: &mut name,
             Attributes: 0x40, // OBJ_CASE_INSENSITIVE, matching ordinary Windows path resolution.
@@ -89,11 +86,7 @@ mod windows {
         let file = unsafe { File::from_raw_handle(handle) };
         let meta = file.metadata().map_err(|e| e.to_string())?;
         if !meta.is_dir() || engine::linked(&meta) {
-            return Err(t(
-                "Pasta inválida ou link; preservada",
-                "Invalid folder or link; preserved",
-            )
-            .into());
+            return Err(t("Invalid folder or link; preserved").into());
         }
         Ok(Directory {
             file,
@@ -104,18 +97,7 @@ mod windows {
     impl Directory {
         pub fn identity(&self) -> Result<String> {
             use std::os::windows::fs::MetadataExt;
-            let mut id: FILE_ID_INFO = unsafe { std::mem::zeroed() };
-            if unsafe {
-                GetFileInformationByHandleEx(
-                    self.file.as_raw_handle(),
-                    FileIdInfo,
-                    (&mut id as *mut FILE_ID_INFO).cast(),
-                    size_of::<FILE_ID_INFO>() as u32,
-                )
-            } == 0
-            {
-                return Err(io::Error::last_os_error().to_string());
-            }
+            let id = engine::file_id(&self.file).map_err(|e| e.to_string())?;
             let born = self
                 .file
                 .metadata()
@@ -150,11 +132,7 @@ mod windows {
     pub fn remove_with(path: &Path, identity: &str, before_remove: impl FnOnce()) -> Result<bool> {
         let directory = open(path, false)?;
         if directory.identity()? != identity {
-            return Err(t(
-                "A pasta foi substituída; preservada por segurança",
-                "The folder was replaced; preserved for safety",
-            )
-            .into());
+            return Err(t("The folder was replaced; preserved for safety").into());
         }
         let mut entries = fs::read_dir(path).map_err(|e| e.to_string())?;
         if let Some(entry) = entries.next() {
@@ -183,11 +161,7 @@ mod windows {
         drop(directory);
         match fs::symlink_metadata(path) {
             Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(true),
-            _ => Err(t(
-                "A remoção da pasta ainda não foi confirmada; nova verificação necessária",
-                "Folder removal not confirmed yet; another check is needed",
-            )
-            .into()),
+            _ => Err(t("Folder removal not confirmed yet; another check is needed").into()),
         }
     }
 }

@@ -60,14 +60,14 @@ export function displayPath(path: string): string {
 }
 export function statusLabel(status: string) {
   switch (status) {
-    case "ready": return t("Pronto", "Ready");
-    case "ignored": return t("Ignorado", "Ignored");
-    case "conflict": return t("Conflito", "Conflict");
-    case "moved": return t("Organizado", "Organized");
-    case "undone": return t("Desfeito", "Undone");
-    case "failed": return t("Falhou", "Failed");
-    case "uncertain": case "undo_pending": return t("Verificar", "Check");
-    case "pending": return t("Interrompido", "Interrupted");
+    case "ready": return t("Ready");
+    case "ignored": return t("Ignored");
+    case "conflict": return t("Conflict");
+    case "moved": return t("Organized");
+    case "undone": return t("Undone");
+    case "failed": return t("Failed");
+    case "uncertain": case "undo_pending": return t("Check");
+    case "pending": return t("Interrupted");
     default: return status;
   }
 }

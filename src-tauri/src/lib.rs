@@ -113,17 +113,17 @@ fn show_main_window(app: &AppHandle) {
 }
 
 fn tray_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
-    let open = MenuItem::with_id(app, "open", t("Abrir", "Open"), true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", t("Sair", "Quit"), true, None::<&str>)?;
+    let open = MenuItem::with_id(app, "open", t("Open"), true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", t("Quit"), true, None::<&str>)?;
     Menu::with_items(app, &[&open, &quit])
 }
 
 fn sync_tray_status(app: &AppHandle, runtime: &Runtime) {
     if let Some(tray) = app.tray_by_id("main") {
         let status = if runtime.watcher.is_some() {
-            t("Monitor ativo", "Monitor on")
+            t("Monitor on")
         } else {
-            t("Monitor pausado", "Monitor paused")
+            t("Monitor paused")
         };
         let _ = tray.set_tooltip(Some(format!("Download Organizer: {status}")));
     }
@@ -148,19 +148,11 @@ fn starts_hidden(automatic: bool, monitoring_failed: bool, launched_at_login: bo
 }
 
 fn organized_message(summary: &OperationSummary) -> String {
-    let moved = format!(
-        "{}: {}",
-        t("Arquivos organizados", "Files organized"),
-        summary.moved
-    );
+    let moved = format!("{}: {}", t("Files organized"), summary.moved);
     if summary.errors == 0 {
         moved
     } else {
-        format!(
-            "{moved} · {}: {}",
-            t("Precisam de atenção", "Need attention"),
-            summary.errors
-        )
+        format!("{moved} · {}: {}", t("Need attention"), summary.errors)
     }
 }
 
@@ -169,17 +161,13 @@ fn notify_organized(app: &AppHandle, runtime: &Runtime) {
     if let Ok(page) = runtime.store.history_page(None)
         && let Some(summary) = page.operations.first()
     {
-        let title = t("Organização automática", "Automatic organization");
+        let title = t("Automatic organization");
         notify(app, runtime, title, &organized_message(summary));
     }
 }
 
 fn internal_state_error() -> String {
-    t(
-        "Estado interno indisponível; reinicie o aplicativo",
-        "Internal state unavailable; restart the app",
-    )
-    .into()
+    t("Internal state unavailable; restart the app").into()
 }
 
 fn lock(state: &AppState) -> Result<std::sync::MutexGuard<'_, Runtime>> {
@@ -230,7 +218,13 @@ fn update_cycle(app: &AppHandle) -> Result<()> {
         if found.is_none() {
             return Ok(());
         }
+        // Saving holds this lock too, so turning updates off can't slip in between.
+        let runtime = lock(&state)?;
+        if !runtime.store.preferences()?.updates {
+            return Ok(());
+        }
         *state.update.lock().map_err(|_| internal_state_error())? = found;
+        drop(runtime);
         let _ = app.emit("organizer-changed", ());
     }
     let hidden = app
@@ -260,11 +254,7 @@ fn execute(
             .filter(|f| f.status == "ready")
             .collect();
         if ready.is_empty() {
-            return Err(t(
-                "Nenhum arquivo pronto para organizar",
-                "No files ready to organize",
-            )
-            .into());
+            return Err(t("No files ready to organize").into());
         }
         let operation = runtime.store.begin(kind)?;
         operation_id = Some(operation);
@@ -279,10 +269,7 @@ fn execute(
                 "preparing",
                 operation_id,
             );
-            let captured = entry
-                .stamp
-                .as_ref()
-                .ok_or(t("Metadados inválidos", "Invalid metadata"))?;
+            let captured = entry.stamp.as_ref().ok_or(t("Invalid metadata"))?;
             match engine::prepare_move(&entry, &prefs, |folder| {
                 runtime.store.create_directory(operation, folder)
             }) {
@@ -383,11 +370,7 @@ fn undo(runtime: &mut Runtime, operation: i64, app: Option<&AppHandle>) -> Resul
             .filter(|m| m.status == "moved")
             .collect();
         if movements.is_empty() {
-            return Err(t(
-                "Não há movimentações reversíveis nesta operação",
-                "This operation has no reversible moves",
-            )
-            .into());
+            return Err(t("This operation has no reversible moves").into());
         }
         let total = movements.len();
         runtime.preview = None;
@@ -502,7 +485,7 @@ fn apply_renames(preview: &mut Preview) {
 
 fn take_preview(runtime: &mut Runtime, id: u64, now: i64) -> Result<Preview> {
     let invalid = || {
-        t("PREVIEW_INVALID: A prévia expirou ou os arquivos mudaram. Atualize e confira os novos destinos antes de confirmar.", "PREVIEW_INVALID: The preview expired or the files changed. Refresh it and review the new destinations before confirming.").to_owned()
+        t("PREVIEW_INVALID: The preview expired or the files changed. Refresh it and review the new destinations before confirming.").to_owned()
     };
     let preview = runtime
         .preview
@@ -553,12 +536,7 @@ async fn snapshot(app: AppHandle) -> Result<Snapshot> {
         state
             .file_previews
             .lock()
-            .map_err(|_| {
-                t(
-                    "Visualização indisponível; reinicie o aplicativo",
-                    "Preview unavailable; restart the app",
-                )
-            })?
+            .map_err(|_| t("Preview unavailable; restart the app"))?
             .update(&prefs, &files);
         Ok(Snapshot {
             categories: engine::categories_for(i18n::resolve(&prefs.language)),
@@ -595,28 +573,13 @@ async fn file_preview(
 ) -> Result<file_preview::FilePreview> {
     blocking(move || {
         let state = app.state::<AppState>();
-        let _job = state.file_preview_job.try_lock().map_err(|_| {
-            t(
-                "Outra imagem está sendo preparada. Tente novamente em instantes.",
-                "Another image is being prepared. Try again in a moment.",
-            )
-        })?;
-        let authorize = || {
-            let prefs = lock(&state)?.store.preferences()?;
-            state
-                .file_previews
-                .lock()
-                .map_err(|_| {
-                    t(
-                        "Visualização indisponível; reinicie o aplicativo",
-                        "Preview unavailable; restart the app",
-                    )
-                })?
-                .authorize(&prefs, &path, size, modified)
-        };
-        let expected = authorize()?;
+        let _job = state
+            .file_preview_job
+            .try_lock()
+            .map_err(|_| t("Another image is being prepared. Try again in a moment."))?;
+        let expected = authorize_preview(&state, &path, size, modified)?;
         let result = file_preview::load(Path::new(&path), &expected)?;
-        if authorize()? != expected {
+        if authorize_preview(&state, &path, size, modified)? != expected {
             return Err(file_preview::changed().into());
         }
         Ok(result)
@@ -624,12 +587,12 @@ async fn file_preview(
     .await
 }
 
-fn authorize_media(state: &AppState, path: &str, size: u64, modified: i64) -> Result<Stamp> {
+fn authorize_preview(state: &AppState, path: &str, size: u64, modified: i64) -> Result<Stamp> {
     let prefs = lock(state)?.store.preferences()?;
     state
         .file_previews
         .lock()
-        .map_err(|_| t("Visualização indisponível", "Preview unavailable"))?
+        .map_err(|_| t("Preview unavailable; restart the app"))?
         .authorize(&prefs, path, size, modified)
 }
 
@@ -642,15 +605,15 @@ async fn open_media_preview(
 ) -> Result<media_preview::MediaPreview> {
     blocking(move || {
         let state = app.state::<AppState>();
-        let stamp = authorize_media(&state, &path, size, modified)?;
+        let stamp = authorize_preview(&state, &path, size, modified)?;
         let session = media_preview::Session::open(Path::new(&path), stamp.clone())?;
-        if authorize_media(&state, &path, size, modified)? != stamp {
+        if authorize_preview(&state, &path, size, modified)? != stamp {
             return Err(file_preview::changed().into());
         }
         state
             .media_previews
             .lock()
-            .map_err(|_| t("Visualização indisponível", "Preview unavailable"))?
+            .map_err(|_| t("Preview unavailable"))?
             .insert(session)
     })
     .await
@@ -662,7 +625,7 @@ async fn close_media_preview(app: AppHandle, token: String) -> Result<()> {
         app.state::<AppState>()
             .media_previews
             .lock()
-            .map_err(|_| t("Visualização indisponível", "Preview unavailable"))?
+            .map_err(|_| t("Preview unavailable"))?
             .close(&token);
         Ok(())
     })
@@ -825,7 +788,6 @@ async fn retry_monitoring(app: AppHandle) -> Result<()> {
     .await
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     if let Err(error) = run_application() {
         startup::show_error(error);
@@ -874,14 +836,14 @@ fn run_application() -> std::result::Result<(), startup::StartupError> {
                     } else if let Some(state) = app.try_state::<AppState>() {
                         match state.media_previews.lock() {
                             Ok(mut sessions) => sessions.respond(&request, |path, stamp| {
-                                let current = authorize_media(
+                                let current = authorize_preview(
                                     &state,
-                                    path.to_str().ok_or(t("Caminho inválido", "Invalid path"))?,
+                                    path.to_str().ok_or(t("Invalid path"))?,
                                     stamp.size as u64,
                                     stamp.modified / 1_000_000,
                                 )?;
                                 if current != *stamp {
-                                    return Err(t("A mídia mudou", "The media changed").into());
+                                    return Err(t("The media changed").into());
                                 }
                                 Ok(())
                             }),

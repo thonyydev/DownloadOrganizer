@@ -24,8 +24,8 @@ export function reconcileDraft(current: PreferencesDraft | null, remote: Prefere
 }
 
 export function previewIssue(preview: Preview, activeId: number | null, now: number) {
-  if (now < preview.created * 1000 || now >= (preview.created + 300) * 1000) return t("Esta prévia expirou. Atualize e confira os arquivos novamente.", "This preview expired. Refresh it and review the files again.");
-  if (activeId !== preview.id) return t("Esta prévia foi invalidada por outra operação. Atualize antes de confirmar.", "Another operation invalidated this preview. Refresh it before confirming.");
+  if (now < preview.created * 1000 || now >= (preview.created + 300) * 1000) return t("This preview expired. Refresh it and review the files again.");
+  if (activeId !== preview.id) return t("Another operation invalidated this preview. Refresh it before confirming.");
   return "";
 }
 

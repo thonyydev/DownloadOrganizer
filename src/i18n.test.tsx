@@ -2,7 +2,6 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { bytes, date, statusLabel, type FileEntry } from "@/lib/api";
 import { language, setLanguage, t, useLanguage } from "@/lib/i18n";
-import translations from "@/lib/translations.json";
 import { FileTable } from "@/components/file-table";
 import { OperationFeedback } from "@/components/operation-feedback";
 import { TriageBar } from "@/components/triage";
@@ -13,49 +12,69 @@ import { samePreferences } from "@/lib/experience";
 import { HistoryView } from "@/components/history";
 import { UndoFileList } from "@/components/undo-file-list";
 import { Tooltip } from "radix-ui";
+import tauriConfig from "../src-tauri/tauri.conf.json";
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
 
 afterEach(cleanup);
 
-const catalog = translations as Record<string, string[]>;
+const catalogs = import.meta.glob<Record<string, string>>("/i18n/*.json", { eager: true, import: "default" });
+const keys = Object.keys(catalogs["/i18n/pt-BR.json"]);
 const sources = { ...import.meta.glob("/src/**/*.{ts,tsx}", { query: "?raw", import: "default", eager: true }), ...import.meta.glob("/src-tauri/src/*.rs", { query: "?raw", import: "default", eager: true }) } as Record<string, string>;
-const translatable = new Set(Object.entries(sources).filter(([path]) => !/\.test\.|i18n\.(ts|rs)$|tests\.rs$/.test(path)).flatMap(([, source]) => [...source.split(/#\[cfg\(test\)\]\r?\nmod tests \{/)[0].matchAll(/\bt\(\s*"((?:[^"\\]|\\.)*)"\s*,/g)].map(match => match[1])));
+const translatable = new Set(Object.entries(sources).filter(([path]) => !/\.test\.|i18n\.(ts|rs)$|tests\.rs$/.test(path)).flatMap(([, source]) => [...source.split(/#\[cfg\(test\)\]\r?\nmod tests \{/)[0].matchAll(/\bt\(\s*"((?:[^"\\]|\\.)*)"\s*,?\s*\)/g)].map(match => match[1])));
 
 describe("tabela de traduções", () => {
-  it("cobre todos os textos do frontend e do Rust nos três idiomas", () => {
+  it("tem um arquivo por idioma, com as mesmas chaves e sem texto vazio", () => {
+    expect(Object.keys(catalogs).sort()).toEqual(["en", "es", "fr", "it", "pt-BR"].map(code => `/i18n/${code}.json`));
+    for (const catalog of Object.values(catalogs)) {
+      expect(Object.keys(catalog).sort()).toEqual([...keys].sort());
+      expect(Object.values(catalog).filter(value => !value.trim())).toEqual([]);
+    }
+  });
+
+  it("usa o sufixo das chaves só para distinguir plurais, sem mostrá-lo", () => {
+    for (const catalog of Object.values(catalogs)) expect(Object.values(catalog).filter(value => value.includes("(plural)"))).toEqual([]);
+    expect(catalogs["/i18n/en.json"]["Ready (plural)"]).toBe("Ready");
+    expect(catalogs["/i18n/pt-BR.json"]["Ready (plural)"]).toBe("Prontos");
+  });
+
+  it("oferece no instalador um idioma para cada arquivo", () => {
+    expect(tauriConfig.bundle.windows.nsis.languages).toHaveLength(Object.keys(catalogs).length);
+  });
+
+  it("cobre todos os textos do frontend e do Rust", () => {
     expect(translatable.size).toBeGreaterThan(400);
-    expect([...translatable].filter(text => catalog[text]?.length !== 3 || catalog[text].some(value => !value.trim()))).toEqual([]);
+    expect([...translatable].filter(text => !keys.includes(text))).toEqual([]);
   });
 
   it("não guarda textos que não existem mais no código", () => {
-    expect(Object.keys(catalog).filter(text => !translatable.has(text))).toEqual([]);
+    expect(keys.filter(text => !text.startsWith("folder.") && !translatable.has(text))).toEqual([]);
   });
 
   it("preserva os códigos de erro que o frontend remove", () => {
     for (const code of ["PREVIEW_INVALID", "PREFERENCES_CHANGED"]) {
-      const row = Object.entries(catalog).find(([text]) => text.startsWith(code + ":"))!;
-      for (const value of row[1]) expect(value.startsWith(code + ": ")).toBe(true);
+      const key = keys.find(text => text.startsWith(code + ":"))!;
+      for (const catalog of Object.values(catalogs)) expect(catalog[key].startsWith(code + ": ")).toBe(true);
     }
   });
 
   it("traduz textos, status e formatos nos novos idiomas", () => {
     setLanguage("es");
-    expect(t("Organizar arquivos", "Organize files")).toBe("Organizar archivos");
+    expect(t("Organize files")).toBe("Organizar archivos");
     expect(statusLabel("conflict")).toBe("Conflicto");
     expect(bytes(1536)).toBe("1,5 KB");
     setLanguage("fr");
-    expect(t("Organizar arquivos", "Organize files")).toBe("Organiser les fichiers");
+    expect(t("Organize files")).toBe("Organiser les fichiers");
     expect(date(Date.UTC(2026, 0, 31, 12))).toMatch(/31\/01\/2026/);
     setLanguage("it");
-    expect(t("Organizar arquivos", "Organize files")).toBe("Organizza i file");
+    expect(t("Organize files")).toBe("Organizza i file");
     expect(document.documentElement.lang).toBe("it");
   });
 
-  it("usa o inglês quando um texto não está na tabela", () => {
+  it("mostra a própria chave quando um texto não está na tabela", () => {
     setLanguage("es");
-    expect(t("Texto novo", "New text")).toBe("New text");
+    expect(t("New text")).toBe("New text");
   });
 });
 
@@ -73,10 +92,10 @@ const expectEnglish = () => expect(document.body.textContent).not.toMatch(portug
 
 describe("idioma", () => {
   it("escolhe o texto do idioma ativo e atualiza o atributo lang", () => {
-    expect(t("Olá", "Hello")).toBe("Olá");
+    expect(t("Organize files")).toBe("Organizar arquivos");
     setLanguage("en");
     expect(language()).toBe("en");
-    expect(t("Olá", "Hello")).toBe("Hello");
+    expect(t("Organize files")).toBe("Organize files");
     expect(document.documentElement.lang).toBe("en");
   });
 
@@ -95,11 +114,11 @@ describe("idioma", () => {
   });
 
   it("atualiza componentes inscritos quando o idioma muda", () => {
-    function Probe() { useLanguage(); return <p>{t("Olá", "Hello")}</p>; }
+    function Probe() { useLanguage(); return <p>{t("Organize files")}</p>; }
     render(<Probe />);
-    expect(screen.getByText("Olá")).toBeTruthy();
+    expect(screen.getByText("Organizar arquivos")).toBeTruthy();
     act(() => setLanguage("en"));
-    expect(screen.getByText("Hello")).toBeTruthy();
+    expect(screen.getByText("Organize files")).toBeTruthy();
   });
 
 });

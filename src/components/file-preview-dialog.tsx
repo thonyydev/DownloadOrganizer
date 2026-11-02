@@ -24,7 +24,7 @@ export function FilePreviewDialog({ file, categories, onClose, onRestoreFocus }:
     api.filePreview(file).then(result => {
       if (!active) return;
       if (result.data_url && !/^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(result.data_url)) {
-        setState({ key, error: t("Não foi possível exibir a miniatura com segurança.", "Could not display the thumbnail safely.") });
+        setState({ key, error: t("Could not display the thumbnail safely.") });
       } else setState({ key, result });
     }).catch(error => { if (active) setState({ key, error: errorMessage(error) }); });
     return () => { active = false; };
@@ -33,14 +33,14 @@ export function FilePreviewDialog({ file, categories, onClose, onRestoreFocus }:
   const result = current?.result;
   return <Dialog open={file !== null} onOpenChange={open => { if (!open) onClose(); }}>
     <DialogContent className="file-preview-dialog" onCloseAutoFocus={event => { event.preventDefault(); onRestoreFocus(); }}>
-      <DialogHeader><DialogTitle>{t("Visualizar arquivo", "View file")}</DialogTitle><DialogDescription>{t("Consulta somente leitura. A visualização não organiza nem modifica o arquivo.", "Read-only. Viewing doesn't organize or change the file.")}</DialogDescription></DialogHeader>
+      <DialogHeader><DialogTitle>{t("View file")}</DialogTitle><DialogDescription>{t("Read-only. Viewing doesn't organize or change the file.")}</DialogDescription></DialogHeader>
       <div className="file-preview-image">
-        {media && file ? <MediaPreviewPlayer key={key} file={file} ref={player} onMetadata={setMetadata} /> : current?.error ? <div className="file-preview-message" role="alert"><ImageOff aria-hidden="true" size={24} /><p>{current.error}</p><Button variant="outline" size="sm" onClick={() => setAttempt(value => value + 1)}>{t("Tentar novamente", "Try again")}</Button></div>
-          : result?.data_url ? <img src={result.data_url} alt={`${t("Prévia de", "Preview of")} ${file?.name}`} onError={() => setState(current => current?.key === key ? { key, error: t("Não foi possível exibir a miniatura. Tente novamente.", "Could not display the thumbnail. Try again.") } : current)} />
-            : result ? <div className="file-preview-message" role="status"><ImageOff aria-hidden="true" size={24} /><p>{t("Visualização não disponível para este formato.", "Preview isn't available for this format.")}</p><p>{t("Imagens: JPEG, PNG, WebP, BMP e GIF. Áudio e vídeo dependem dos codecs disponíveis no player.", "Images: JPEG, PNG, WebP, BMP and GIF. Audio and video depend on the codecs available to the player.")}</p></div>
-              : <div className="file-preview-message" role="status"><Loader2 className="spin" aria-hidden="true" size={24} /><p>{t("Preparando visualização…", "Preparing preview…")}</p></div>}
+        {media && file ? <MediaPreviewPlayer key={key} file={file} ref={player} onMetadata={setMetadata} /> : current?.error ? <div className="file-preview-message" role="alert"><ImageOff aria-hidden="true" size={24} /><p>{current.error}</p><Button variant="outline" size="sm" onClick={() => setAttempt(value => value + 1)}>{t("Try again")}</Button></div>
+          : result?.data_url ? <img src={result.data_url} alt={`${t("Preview of")} ${file?.name}`} onError={() => setState(current => current?.key === key ? { key, error: t("Could not display the thumbnail. Try again.") } : current)} />
+            : result ? <div className="file-preview-message" role="status"><ImageOff aria-hidden="true" size={24} /><p>{t("Preview isn't available for this format.")}</p><p>{t("Images: JPEG, PNG, WebP, BMP and GIF. Audio and video depend on the codecs available to the player.")}</p></div>
+              : <div className="file-preview-message" role="status"><Loader2 className="spin" aria-hidden="true" size={24} /><p>{t("Preparing file preview…")}</p></div>}
       </div>
-      {file && <dl className="file-preview-metadata"><dt>{t("Nome", "Name")}</dt><dd>{file.name}</dd><dt>{t("Extensão", "Extension")}</dt><dd>{file.extension ? `.${file.extension}` : t("Sem extensão", "No extension")}</dd><dt>{t("Categoria", "Category")}</dt><dd>{categories.find(category => category.id === file.category)?.name ?? file.category}</dd><dt>{t("Tamanho", "Size")}</dt><dd>{bytes(file.size)}</dd><dt>{t("Modificado", "Modified")}</dt><dd>{file.modified > 0 ? date(file.modified) : t("Indisponível", "Unavailable")}</dd><dt>{t("Resolução", "Resolution")}</dt><dd>{metadata?.width && metadata.height ? `${metadata.width} × ${metadata.height} px` : result?.width && result.height ? `${result.width} × ${result.height} px` : t("Indisponível", "Unavailable")}</dd>{media && <><dt>{t("Duração", "Duration")}</dt><dd>{metadata?.duration ? mediaTime(metadata.duration) : t("Indisponível", "Unavailable")}</dd></>}<dt>{t("Origem", "Source")}</dt><dd>{displayPath(file.path)}</dd><dt>{t("Destino previsto", "Planned destination")}</dt><dd>{displayPath(file.destination)}</dd></dl>}
+      {file && <dl className="file-preview-metadata"><dt>{t("Name")}</dt><dd>{file.name}</dd><dt>{t("Extension")}</dt><dd>{file.extension ? `.${file.extension}` : t("No extension")}</dd><dt>{t("Category")}</dt><dd>{categories.find(category => category.id === file.category)?.name ?? file.category}</dd><dt>{t("Size")}</dt><dd>{bytes(file.size)}</dd><dt>{t("Modified")}</dt><dd>{file.modified > 0 ? date(file.modified) : t("Unavailable")}</dd><dt>{t("Resolution")}</dt><dd>{metadata?.width && metadata.height ? `${metadata.width} × ${metadata.height} px` : result?.width && result.height ? `${result.width} × ${result.height} px` : t("Unavailable")}</dd>{media && <><dt>{t("Duration")}</dt><dd>{metadata?.duration ? mediaTime(metadata.duration) : t("Unavailable")}</dd></>}<dt>{t("Source")}</dt><dd>{displayPath(file.path)}</dd><dt>{t("Planned destination")}</dt><dd>{displayPath(file.destination)}</dd></dl>}
     </DialogContent>
   </Dialog>;
 }

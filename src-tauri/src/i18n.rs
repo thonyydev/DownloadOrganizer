@@ -8,13 +8,34 @@ pub const ENGLISH: &str = "en";
 pub const SPANISH: &str = "es";
 pub const FRENCH: &str = "fr";
 pub const ITALIAN: &str = "it";
-pub const LANGUAGES: [&str; 5] = [PORTUGUESE, ENGLISH, SPANISH, FRENCH, ITALIAN];
 
-// Shared with the frontend: Portuguese text -> [Spanish, French, Italian].
-static CATALOG: LazyLock<HashMap<&'static str, [&'static str; 3]>> = LazyLock::new(|| {
-    serde_json::from_str(include_str!("../../src/lib/translations.json"))
-        .expect("translations.json is checked by the frontend tests")
-});
+// Shared with the frontend: English key -> text in that language.
+// Each code sits next to its file, so a language can't get another one's text or folder names.
+const FILES: [(&str, &str); 5] = [
+    (PORTUGUESE, include_str!("../../i18n/pt-BR.json")),
+    (ENGLISH, include_str!("../../i18n/en.json")),
+    (SPANISH, include_str!("../../i18n/es.json")),
+    (FRENCH, include_str!("../../i18n/fr.json")),
+    (ITALIAN, include_str!("../../i18n/it.json")),
+];
+
+pub const LANGUAGES: [&str; FILES.len()] = {
+    let mut codes = [""; FILES.len()];
+    let mut index = 0;
+    while index < FILES.len() {
+        codes[index] = FILES[index].0;
+        index += 1;
+    }
+    codes
+};
+
+// shortcut: borrowed strings can't hold JSON escapes such as \", use String if a translation needs one.
+static CATALOGS: LazyLock<[HashMap<&'static str, &'static str>; FILES.len()]> =
+    LazyLock::new(|| {
+        FILES.map(|(_, json)| {
+            serde_json::from_str(json).expect("checked by the catalogs_parse test")
+        })
+    });
 
 // Only selects message text. Folder names always come from the saved preference.
 static CURRENT: AtomicUsize = AtomicUsize::new(0);
@@ -25,10 +46,6 @@ pub fn index_of(language: &str) -> usize {
         .iter()
         .position(|item| *item == resolved)
         .unwrap_or(0)
-}
-
-pub fn current_index() -> usize {
-    CURRENT.load(Ordering::Relaxed)
 }
 
 pub fn set_language(language: &str) {
@@ -42,15 +59,17 @@ pub fn resolve(language: &str) -> &'static str {
         .unwrap_or_else(system_language)
 }
 
-pub fn t(portuguese: &'static str, english: &'static str) -> &'static str {
-    match CURRENT.load(Ordering::Relaxed) {
-        0 => portuguese,
-        1 => english,
-        // A missing entry falls back to English; the frontend tests fail on it first.
-        index => CATALOG
-            .get(portuguese)
-            .map_or(english, |row| row[index - 2]),
-    }
+pub fn t(key: &'static str) -> &'static str {
+    text_in(CURRENT.load(Ordering::Relaxed), key)
+}
+
+// A missing entry shows the key itself; the frontend tests fail on it first.
+pub fn text_in(language: usize, key: &'static str) -> &'static str {
+    CATALOGS[language].get(key).copied().unwrap_or(key)
+}
+
+pub fn translations_of(key: &'static str) -> impl Iterator<Item = &'static str> {
+    (0..LANGUAGES.len()).map(move |language| text_in(language, key))
 }
 
 fn language_for_ui(language_id: u16) -> &'static str {
@@ -93,10 +112,95 @@ mod tests {
     }
 
     #[test]
-    fn catalog_parses() {
+    fn catalogs_parse() {
         assert_eq!(
-            CATALOG["Pasta inválida ou link"][0],
+            text_in(index_of(SPANISH), "Invalid folder or link"),
             "Carpeta no válida o enlace"
         );
+    }
+
+    // These names are real destination folders, so changing one splits a user's files in two.
+    #[test]
+    fn folder_names_stay_the_same() {
+        for (key, names) in [
+            (
+                "folder.images",
+                ["Imagens", "Images", "Imágenes", "Images", "Immagini"],
+            ),
+            (
+                "folder.videos",
+                ["Vídeos", "Videos", "Vídeos", "Vidéos", "Video"],
+            ),
+            (
+                "folder.audio",
+                ["Áudios", "Audio", "Audio", "Audio", "Audio"],
+            ),
+            (
+                "folder.documents",
+                [
+                    "Documentos",
+                    "Documents",
+                    "Documentos",
+                    "Documents",
+                    "Documenti",
+                ],
+            ),
+            (
+                "folder.archives",
+                [
+                    "Compactados",
+                    "Archives",
+                    "Comprimidos",
+                    "Archives",
+                    "Archivi",
+                ],
+            ),
+            (
+                "folder.installers",
+                [
+                    "Instaladores",
+                    "Installers",
+                    "Instaladores",
+                    "Installateurs",
+                    "Installer",
+                ],
+            ),
+            (
+                "folder.code",
+                ["Código", "Code", "Código", "Code", "Codice"],
+            ),
+            (
+                "folder.other",
+                ["Outros", "Other", "Otros", "Autres", "Altro"],
+            ),
+        ] {
+            assert_eq!(translations_of(key).collect::<Vec<_>>(), names);
+        }
+    }
+
+    // A key with no text would otherwise become a folder literally named "folder.something".
+    #[test]
+    fn every_category_has_a_folder_name_in_every_language() {
+        for language in LANGUAGES {
+            for category in crate::engine::categories_for(language) {
+                assert!(!category.name.starts_with("folder."), "{}", category.name);
+            }
+        }
+    }
+
+    #[test]
+    fn busy_message_is_recognized_in_every_language() {
+        let busy = translations_of("File is busy").collect::<Vec<_>>();
+        assert_eq!(
+            busy,
+            [
+                "Arquivo ocupado",
+                "File is busy",
+                "Archivo ocupado",
+                "Fichier occupé",
+                "File occupato"
+            ]
+        );
+        assert!(busy.iter().all(|text| crate::engine::is_busy(text)));
     }
 }

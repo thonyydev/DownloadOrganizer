@@ -27,63 +27,45 @@ fn build_categories(language: usize) -> Vec<Category> {
     [
         (
             "images",
-            ["Imagens", "Images", "Imágenes", "Images", "Immagini"],
+            "folder.images",
             "jpg jpeg png gif webp svg bmp ico heic avif tiff tif raw",
         ),
         (
             "videos",
-            ["Vídeos", "Videos", "Vídeos", "Vidéos", "Video"],
+            "folder.videos",
             "mp4 mkv mov avi webm m4v mpg mpeg wmv",
         ),
         (
             "audio",
-            ["Áudios", "Audio", "Audio", "Audio", "Audio"],
+            "folder.audio",
             "mp3 wav flac aac ogg m4a opus aiff",
         ),
         (
             "documents",
-            [
-                "Documentos",
-                "Documents",
-                "Documentos",
-                "Documents",
-                "Documenti",
-            ],
+            "folder.documents",
             "pdf doc docx xls xlsx ppt pptx txt csv odt ods rtf epub md",
         ),
         (
             "archives",
-            [
-                "Compactados",
-                "Archives",
-                "Comprimidos",
-                "Archives",
-                "Archivi",
-            ],
+            "folder.archives",
             "zip rar 7z tar gz bz2 xz tgz",
         ),
         (
             "installers",
-            [
-                "Instaladores",
-                "Installers",
-                "Instaladores",
-                "Installateurs",
-                "Installer",
-            ],
+            "folder.installers",
             "exe msi msix appx dmg pkg deb rpm appimage",
         ),
         (
             "code",
-            ["Código", "Code", "Código", "Code", "Codice"],
+            "folder.code",
             "rs ts tsx js jsx py java c cpp h cs go html css json yaml yml toml sql sh ps1 ipynb",
         ),
-        ("other", ["Outros", "Other", "Otros", "Autres", "Altro"], ""),
+        ("other", "folder.other", ""),
     ]
     .into_iter()
-    .map(|(id, names, ext)| Category {
+    .map(|(id, key, ext)| Category {
         id: id.into(),
-        name: names[language].into(),
+        name: i18n::text_in(language, key).into(),
         extensions: ext.split_whitespace().map(str::to_owned).collect(),
     })
     .collect()
@@ -112,21 +94,13 @@ fn default_language() -> String {
     i18n::PORTUGUESE.into()
 }
 
-const BUSY: [&str; 5] = [
-    "Arquivo ocupado",
-    "File is busy",
-    "Archivo ocupado",
-    "Fichier occupé",
-    "File occupato",
-];
-
 fn busy_message() -> &'static str {
-    BUSY[i18n::current_index()]
+    t("File is busy")
 }
 
 /// Busy files are retried, not failed, so this must not depend on the active language.
 pub fn is_busy(error: &str) -> bool {
-    BUSY.contains(&error)
+    i18n::translations_of("File is busy").any(|text| text == error)
 }
 
 pub fn classify(path: &Path) -> &'static Category {
@@ -167,10 +141,7 @@ pub struct Stamp {
 
 pub fn stamp(meta: &Metadata) -> Result<Stamp> {
     Ok(Stamp {
-        size: meta
-            .len()
-            .try_into()
-            .map_err(|_| t("Arquivo grande demais", "File is too large"))?,
+        size: meta.len().try_into().map_err(|_| t("File is too large"))?,
         modified: meta
             .modified()
             .map_err(|e| e.to_string())?
@@ -178,7 +149,7 @@ pub fn stamp(meta: &Metadata) -> Result<Stamp> {
             .map_err(|e| e.to_string())?
             .as_nanos()
             .try_into()
-            .map_err(|_| t("Data de modificação inválida", "Invalid modification date"))?,
+            .map_err(|_| t("Invalid modification date"))?,
     })
 }
 
@@ -203,11 +174,7 @@ pub fn validate_directory(path: &Path) -> Result<PathBuf> {
             .components()
             .any(|c| matches!(c, Component::ParentDir | Component::CurDir))
     {
-        return Err(t(
-            "Selecione um caminho absoluto, sem . ou ..",
-            "Select an absolute path, without . or ..",
-        )
-        .into());
+        return Err(t("Select an absolute path, without . or ..").into());
     }
     let mut current = PathBuf::new();
     for component in path.components() {
@@ -220,7 +187,7 @@ pub fn validate_directory(path: &Path) -> Result<PathBuf> {
         if linked(&meta) || !meta.is_dir() {
             return Err(format!(
                 "{}: {}",
-                t("Pasta inválida ou link", "Invalid folder or link"),
+                t("Invalid folder or link"),
                 current.display()
             ));
         }
@@ -232,17 +199,17 @@ pub fn validate_preferences(prefs: &Preferences) -> Result<()> {
     validate_directory(Path::new(&prefs.source))?;
     validate_directory(Path::new(&prefs.destination))?;
     if !["dark", "light"].contains(&prefs.theme.as_str()) {
-        return Err(t("Tema inválido", "Invalid theme").into());
+        return Err(t("Invalid theme").into());
     }
     if prefs.language != i18n::SYSTEM && !i18n::LANGUAGES.contains(&prefs.language.as_str()) {
-        return Err(t("Idioma inválido", "Invalid language").into());
+        return Err(t("Invalid language").into());
     }
     if prefs
         .enabled_categories
         .iter()
         .any(|id| !categories().iter().any(|c| &c.id == id))
     {
-        return Err(t("Categoria inválida", "Invalid category").into());
+        return Err(t("Invalid category").into());
     }
     Ok(())
 }
@@ -328,9 +295,7 @@ pub fn scan_paths(
         if path.parent() != Some(source.as_path()) {
             continue;
         }
-        let name = path
-            .file_name()
-            .ok_or(t("Nome de arquivo inválido", "Invalid file name"))?;
+        let name = path.file_name().ok_or(t("Invalid file name"))?;
         let meta = match fs::symlink_metadata(&path) {
             Ok(meta) => meta,
             Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
@@ -346,40 +311,21 @@ pub fn scan_paths(
         let mut status = "ready";
         let captured = stamp(&meta).ok();
         if linked(&meta) || !meta.is_file() {
-            reason = Some(
-                t(
-                    "Link ou arquivo especial ignorado",
-                    "Link or special file ignored",
-                )
-                .into(),
-            );
+            reason = Some(t("Link or special file ignored").into());
         } else if path.to_str().is_none() {
-            reason = Some(
-                t(
-                    "Nome não representável em UTF-8",
-                    "Name cannot be represented in UTF-8",
-                )
-                .into(),
-            );
+            reason = Some(t("Name cannot be represented in UTF-8").into());
         } else if temporary(&path) {
-            reason = Some(
-                t(
-                    "Arquivo temporário ou download incompleto",
-                    "Temporary file or incomplete download",
-                )
-                .into(),
-            );
+            reason = Some(t("Temporary file or incomplete download").into());
         } else if !prefs.enabled_categories.contains(&category.id) {
-            reason = Some(t("Categoria desativada", "Category turned off").into());
+            reason = Some(t("Category turned off").into());
         } else if captured.is_none() {
-            reason = Some(t("Metadados indisponíveis", "Metadata unavailable").into());
+            reason = Some(t("Metadata unavailable").into());
+        } else if meta.len() == 0 {
+            // Firefox reserves the name with an empty file while it writes to name.part.
+            reason = Some(t("Empty file; it may be a download that is starting").into());
         } else if meta.modified().is_ok_and(|t| t.elapsed().is_err()) {
             reason = Some(
-                t(
-                    "Data de modificação no futuro; ajuste a data do arquivo para organizá-lo",
-                    "Modification date is in the future; fix the file's date to organize it",
-                )
-                .into(),
+                t("Modification date is in the future; fix the file's date to organize it").into(),
             );
         } else if meta
             .modified()
@@ -387,32 +333,16 @@ pub fn scan_paths(
             .and_then(|t| t.elapsed().ok())
             .is_none_or(|d| d < Duration::from_secs(QUIET_SECONDS))
         {
-            reason = Some(
-                t(
-                    "Aguardando 10 segundos sem gravações",
-                    "Waiting for 10 seconds without writes",
-                )
-                .into(),
-            );
+            reason = Some(t("Waiting for 10 seconds without writes").into());
         } else if fs::symlink_metadata(&target_folder).is_ok()
             && validate_directory(&target_folder).is_err()
         {
-            reason = Some(
-                t(
-                    "Pasta de destino inválida ou link",
-                    "Invalid destination folder or link",
-                )
-                .into(),
-            );
+            reason = Some(t("Invalid destination folder or link").into());
+        } else if target.to_string_lossy().to_lowercase() == path.to_string_lossy().to_lowercase() {
+            reason = Some(t("Already in the right folder").into());
         } else if fs::symlink_metadata(&target).is_ok() {
             status = "conflict";
-            reason = Some(
-                t(
-                    "Já existe um arquivo com esse nome; será preservado",
-                    "A file with this name already exists; it will be preserved",
-                )
-                .into(),
-            );
+            reason = Some(t("A file with this name already exists; it will be preserved").into());
         }
         if reason.is_some() && status != "conflict" {
             status = "ignored";
@@ -498,11 +428,7 @@ pub(crate) fn guard_directory(path: &Path) -> Result<Vec<File>> {
             .map_err(|e| e.to_string())?;
         let meta = handle.metadata().map_err(|e| e.to_string())?;
         if linked(&meta) || !meta.is_dir() {
-            return Err(t(
-                "Ancestral inválido ou link",
-                "Invalid parent folder or link",
-            )
-            .into());
+            return Err(t("Invalid parent folder or link").into());
         }
         handles.push(handle);
     }
@@ -510,13 +436,10 @@ pub(crate) fn guard_directory(path: &Path) -> Result<Vec<File>> {
 }
 
 pub fn locked_file(path: &Path) -> Result<LockedFile> {
-    let directories = guard_directory(
-        path.parent()
-            .ok_or(t("Caminho sem pasta", "Path has no folder"))?,
-    )?;
+    let directories = guard_directory(path.parent().ok_or(t("Path has no folder"))?)?;
     let meta = fs::symlink_metadata(path).map_err(|e| e.to_string())?;
     if linked(&meta) || !meta.is_file() {
-        return Err(t("Arquivo inválido ou link", "Invalid file or link").into());
+        return Err(t("Invalid file or link").into());
     }
     let mut options = OpenOptions::new();
     options.read(true);
@@ -530,23 +453,39 @@ pub fn locked_file(path: &Path) -> Result<LockedFile> {
         if matches!(e.raw_os_error(), Some(32 | 33)) {
             busy_message().into()
         } else {
-            format!(
-                "{}: {e}",
-                t(
-                    "Arquivo sem permissão ou indisponível",
-                    "File has no permission or is unavailable"
-                )
-            )
+            format!("{}: {e}", t("File has no permission or is unavailable"))
         }
     })?;
     let meta = file.metadata().map_err(|e| e.to_string())?;
     if linked(&meta) || !meta.is_file() {
-        return Err(t("Arquivo inválido ou link", "Invalid file or link").into());
+        return Err(t("Invalid file or link").into());
     }
     Ok(LockedFile {
         file,
         _directories: directories,
     })
+}
+
+pub(crate) fn file_id(
+    file: &File,
+) -> io::Result<windows_sys::Win32::Storage::FileSystem::FILE_ID_INFO> {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_ID_INFO, FileIdInfo, GetFileInformationByHandleEx,
+    };
+    let mut id: FILE_ID_INFO = unsafe { std::mem::zeroed() };
+    if unsafe {
+        GetFileInformationByHandleEx(
+            file.as_raw_handle(),
+            FileIdInfo,
+            (&mut id as *mut FILE_ID_INFO).cast(),
+            std::mem::size_of::<FILE_ID_INFO>() as u32,
+        )
+    } == 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(id)
 }
 
 pub fn fingerprint(file: &mut File) -> Result<String> {
@@ -580,11 +519,7 @@ pub fn verify_open(file: &mut LockedFile, expected: &Stamp, digest: &str) -> Res
         || fingerprint(&mut file.file)? != digest
         || !same_stamp(&current(&file.file)?, expected)
     {
-        return Err(t(
-            "O arquivo mudou desde a movimentação; preservado",
-            "The file changed after it was moved; preserved",
-        )
-        .into());
+        return Err(t("The file changed after it was moved; preserved").into());
     }
     Ok(())
 }
@@ -597,46 +532,27 @@ pub fn prepare_move(
     let source = validate_directory(Path::new(&prefs.source))?;
     let path = Path::new(&entry.path);
     if path.parent() != Some(source.as_path()) || temporary(path) {
-        return Err(t(
-            "Arquivo fora da pasta autorizada",
-            "File is outside the authorized folder",
-        )
-        .into());
+        return Err(t("File is outside the authorized folder").into());
     }
     let category = classify(path);
     let base = validate_directory(Path::new(&prefs.destination))?;
     let folder = base.join(category_folder(&category.id, &prefs.language));
-    let target = folder.join(path.file_name().ok_or(t("Nome inválido", "Invalid name"))?);
+    let target = folder.join(path.file_name().ok_or(t("Invalid name"))?);
     let destination = Path::new(&entry.destination);
     let renamed = entry.rename_to.as_deref() == Some(entry.destination.as_str())
         && destination.parent() == Some(folder.as_path());
     if (target != destination && !renamed) || !prefs.enabled_categories.contains(&category.id) {
-        return Err(t(
-            "Destino ou categoria mudou; refaça a prévia",
-            "Destination or category changed; generate the preview again",
-        )
-        .into());
+        return Err(t("Destination or category changed; generate the preview again").into());
     }
     let mut file = locked_file(path)?;
     file._directories.extend(guard_directory(&base)?);
-    let expected = entry
-        .stamp
-        .as_ref()
-        .ok_or(t("Metadados indisponíveis", "Metadata unavailable"))?;
+    let expected = entry.stamp.as_ref().ok_or(t("Metadata unavailable"))?;
     if stamp(&file.file.metadata().map_err(|e| e.to_string())?)? != *expected {
-        return Err(t(
-            "Arquivo mudou desde a prévia; refaça a prévia",
-            "File changed since the preview; generate the preview again",
-        )
-        .into());
+        return Err(t("File changed since the preview; generate the preview again").into());
     }
     let digest = fingerprint(&mut file.file)?;
     if stamp(&file.file.metadata().map_err(|e| e.to_string())?)? != *expected {
-        return Err(t(
-            "Arquivo ainda está sendo gravado",
-            "File is still being written",
-        )
-        .into());
+        return Err(t("File is still being written").into());
     }
     create_directory(&folder)?;
     validate_directory(&folder)?;
@@ -657,19 +573,13 @@ pub fn move_locked(
     destination: &Path,
     digest: &str,
 ) -> Result<()> {
-    validate_directory(
-        source
-            .parent()
-            .ok_or(t("Origem inválida", "Invalid source"))?,
-    )?;
+    validate_directory(source.parent().ok_or(t("Invalid source"))?)?;
     file._directories.extend(guard_directory(
-        destination
-            .parent()
-            .ok_or(t("Destino inválido", "Invalid destination"))?,
+        destination.parent().ok_or(t("Invalid destination"))?,
     )?);
     let meta = file.file.metadata().map_err(|e| e.to_string())?;
     if linked(&meta) || !meta.is_file() {
-        return Err(t("Origem inválida ou link", "Invalid source or link").into());
+        return Err(t("Invalid source or link").into());
     }
     const ERROR_NOT_SAME_DEVICE: i32 = 17;
     match rename_no_replace(&file.file, destination) {
@@ -679,10 +589,7 @@ pub fn move_locked(
         }
         Err(error) => Err(format!(
             "{}: {error}",
-            t(
-                "Movimentação recusada (conflito ou permissão)",
-                "Move refused (conflict or permission)"
-            )
+            t("Move refused (conflict or permission)")
         )),
     }
 }
@@ -696,11 +603,10 @@ fn rename_no_replace(file: &File, destination: &Path) -> io::Result<()> {
     use windows_sys::Win32::Storage::FileSystem::{
         FILE_RENAME_INFO, FileRenameInfo, SetFileInformationByHandle,
     };
-    let too_long = || io::Error::other(t("Destino longo demais", "Destination is too long"));
+    let too_long = || io::Error::other(t("Destination is too long"));
     let mut name: Vec<u16> = destination.as_os_str().encode_wide().collect();
     if name.contains(&0) {
         return Err(io::Error::other(t(
-            "Destino contém caractere inválido",
             "Destination contains an invalid character",
         )));
     }
@@ -801,10 +707,7 @@ pub(crate) fn copy_then_remove(
     let failed = |error: String| {
         format!(
             "{}: {error}",
-            t(
-                "Não foi possível copiar para a outra unidade; o original foi preservado",
-                "Could not copy to the other drive; the original was kept"
-            )
+            t("Could not copy to the other drive; the original was kept")
         )
     };
     let modified = file
@@ -812,8 +715,7 @@ pub(crate) fn copy_then_remove(
         .metadata()
         .and_then(|meta| meta.modified())
         .map_err(|e| e.to_string())?;
-    let partial =
-        partial_path(destination, digest).ok_or(t("Destino inválido", "Invalid destination"))?;
+    let partial = partial_path(destination, digest).ok_or(t("Invalid destination"))?;
     let mut copy = OpenOptions::new()
         .read(true)
         .write(true)
@@ -827,11 +729,7 @@ pub(crate) fn copy_then_remove(
         io::copy(&mut file.file, &mut copy).map_err(|e| e.to_string())?;
         copy.sync_all().map_err(|e| e.to_string())?;
         if fingerprint(&mut copy)? != digest {
-            return Err(t(
-                "A cópia ficou diferente do original",
-                "The copy differs from the original",
-            )
-            .into());
+            return Err(t("The copy differs from the original").into());
         }
         // The "downloaded from the internet" mark must survive, or Windows stops warning about the file.
         if let Ok(zone) = fs::read(with_zone_stream(source)) {
@@ -849,15 +747,9 @@ pub(crate) fn copy_then_remove(
     }
     if let Err(error) = remove_original(&file.file) {
         let outcome = if delete_open(&copy).is_ok() {
-            t(
-                "Não foi possível remover o original depois da cópia; a cópia foi desfeita",
-                "Could not remove the original after copying; the copy was undone",
-            )
+            t("Could not remove the original after copying; the copy was undone")
         } else {
-            t(
-                "Não foi possível remover o original depois da cópia; a cópia continua no destino",
-                "Could not remove the original after copying; the copy is still at the destination",
-            )
+            t("Could not remove the original after copying; the copy is still at the destination")
         };
         return Err(format!("{outcome}: {error}"));
     }

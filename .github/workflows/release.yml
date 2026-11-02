@@ -7,35 +7,38 @@ on:
     tags: ["v*"]
 
 permissions:
-  contents: write
+  contents: read
+
+defaults:
+  run:
+    shell: bash
 
 jobs:
-  draft:
+  build:
     name: Windows installer
     runs-on: windows-2022
     timeout-minutes: 45
-    defaults:
-      run:
-        shell: bash
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          # Later steps run third-party code; only the release step gets the token.
+          # Later steps run third-party code.
           persist-credentials: false
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
           cache: npm
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
 
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: src-tauri
 
@@ -56,18 +59,46 @@ jobs:
       - name: Build installer
         run: npm run tauri build -- --bundles nsis
 
-      # A separate step, so no dependency's build code can read the key that every install trusts.
+      - name: Keep installer for signing
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: installer
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+          retention-days: 1
+
+  draft:
+    name: Sign and create draft
+    needs: build
+    # A clean machine with no checkout, so no dependency's code can touch the key that every install trusts.
+    runs-on: windows-2022
+    timeout-minutes: 15
+    permissions:
+      contents: write
+
+    steps:
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+
+      - name: Get installer
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: installer
+          path: installer
+
       - name: Sign installer for updates
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
-        run: npx tauri signer sign src-tauri/target/release/bundle/nsis/*-setup.exe
+        run: npx --yes @tauri-apps/cli@2.12.1 signer sign installer/*-setup.exe
 
       - name: Create draft release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cd src-tauri/target/release/bundle/nsis
+          cd installer
           installer="$(ls *-setup.exe)"
           # GitHub replaces spaces in asset names with dots; the hash file must name the asset.
           printf '%s  %s\n' "$(sha256sum "$installer" | cut -d' ' -f1)" "${installer// /.}" > "$installer.sha256"
