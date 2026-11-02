@@ -154,7 +154,7 @@ describe("preferências e reprodução de áudio", () => {
     vi.stubGlobal("matchMedia", () => ({ matches: reduced, addEventListener: (_: string, fn: () => void) => listeners.add(fn), removeEventListener: (_: string, fn: () => void) => listeners.delete(fn) }));
     start(); const button = screen.getByRole("button", { name: "Testar som de organização" }); button.focus(); expect(document.activeElement).toBe(button);
     act(() => { reduced = true; listeners.forEach(fn => fn()); });
-    expect(screen.getByText(/Efeitos silenciados enquanto/)).toBeTruthy();
+    expect(screen.getByText(/Os efeitos ficam silenciados enquanto/)).toBeTruthy();
     expect(screen.getByRole("switch").getAttribute("aria-checked")).toBe("true");
     fireEvent.click(screen.getByRole("button", { name: "Concluir ação" })); expect(mocks.played).not.toHaveBeenCalled();
     act(() => { reduced = false; listeners.forEach(fn => fn()); });

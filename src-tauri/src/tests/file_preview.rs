@@ -208,6 +208,7 @@ fn only_the_latest_authorized_snapshot_and_configuration_can_grant_access() {
         updates: true,
 
         autostart: false,
+        rules: Vec::new(),
     };
     let files = engine::scan(&prefs).unwrap();
     let entry = &files[0];
@@ -427,6 +428,7 @@ fn scan_authorizes_canonical_previews_for_case_and_short_path_aliases() {
             updates: true,
 
             autostart: false,
+            rules: Vec::new(),
         };
         let files = engine::scan(&prefs).unwrap();
         let entry = files

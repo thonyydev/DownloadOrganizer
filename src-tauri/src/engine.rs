@@ -116,6 +116,12 @@ pub fn classify(path: &Path) -> &'static Category {
 }
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Eq, Debug)]
+pub struct Rule {
+    pub pattern: String,
+    pub folder: String,
+}
+
+#[derive(Clone, Deserialize, Serialize, PartialEq, Eq, Debug)]
 pub struct Preferences {
     pub source: String,
     pub destination: String,
@@ -131,6 +137,86 @@ pub struct Preferences {
     pub updates: bool,
     #[serde(default)]
     pub autostart: bool,
+    #[serde(default)]
+    pub rules: Vec<Rule>,
+}
+
+// Case-insensitive like Windows file names. * is any text and ? is one character.
+pub(crate) fn matches_pattern(pattern: &str, name: &str) -> bool {
+    let pattern: Vec<char> = pattern.to_lowercase().chars().collect();
+    let name: Vec<char> = name.to_lowercase().chars().collect();
+    let (mut p, mut n) = (0, 0);
+    // Where to retry when the text after the last * stops matching.
+    let mut retry = None;
+    while n < name.len() {
+        if pattern.get(p) == Some(&'*') {
+            retry = Some((p + 1, n));
+            p += 1;
+        } else if pattern.get(p).is_some_and(|c| *c == '?' || *c == name[n]) {
+            p += 1;
+            n += 1;
+        } else if let Some((after_star, start)) = retry {
+            p = after_star;
+            n = start + 1;
+            retry = Some((after_star, n));
+        } else {
+            return false;
+        }
+    }
+    pattern[p..].iter().all(|c| *c == '*')
+}
+
+fn rule_folder<'a>(prefs: &'a Preferences, path: &Path) -> Option<&'a str> {
+    let name = path.file_name()?.to_str()?;
+    prefs
+        .rules
+        .iter()
+        .find(|rule| matches_pattern(&rule.pattern, name))
+        .map(|rule| rule.folder.as_str())
+}
+
+// A rule names its folder and so applies even when the file's category is turned off.
+fn target_folder<'a>(prefs: &'a Preferences, path: &Path, category: &Category) -> (&'a str, bool) {
+    match rule_folder(prefs, path) {
+        Some(folder) => (folder, true),
+        None => (
+            category_folder(&category.id, &prefs.language),
+            prefs.enabled_categories.contains(&category.id),
+        ),
+    }
+}
+
+// One plain folder inside the destination: nothing that Windows reads as a path, stream or device.
+fn valid_folder_name(name: &str) -> bool {
+    let device = name
+        .split('.')
+        .next()
+        .unwrap_or("")
+        .trim_end()
+        .to_ascii_uppercase();
+    let numbered = ["COM", "LPT"].iter().any(|prefix| {
+        device.strip_prefix(prefix).is_some_and(|rest| {
+            rest.chars().count() == 1
+                && rest
+                    .chars()
+                    .all(|c| c.is_ascii_digit() || "¹²³".contains(c))
+        })
+    });
+    name == name.trim()
+        && !name.ends_with('.')
+        && !name
+            .chars()
+            .any(|c| c.is_control() || "<>:\"/\\|?*".contains(c))
+        && !numbered
+        && !["CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"].contains(&device.as_str())
+}
+
+fn valid_pattern(pattern: &str) -> bool {
+    // Windows names can't end in a space, so a stray one would make the rule never match.
+    pattern == pattern.trim()
+        && !pattern
+            .chars()
+            .any(|c| c.is_control() || "<>:\"/\\|".contains(c))
 }
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Eq, Debug)]
@@ -210,6 +296,17 @@ pub fn validate_preferences(prefs: &Preferences) -> Result<()> {
         .any(|id| !categories().iter().any(|c| &c.id == id))
     {
         return Err(t("Invalid category").into());
+    }
+    for rule in &prefs.rules {
+        if rule.pattern.trim().is_empty() || rule.folder.trim().is_empty() {
+            return Err(t("Fill in or remove the incomplete rule").into());
+        }
+        if !valid_pattern(&rule.pattern) {
+            return Err(format!("{}: {}", t("Invalid file pattern"), rule.pattern));
+        }
+        if !valid_folder_name(&rule.folder) {
+            return Err(format!("{}: {}", t("Invalid folder name"), rule.folder));
+        }
     }
     Ok(())
 }
@@ -305,7 +402,8 @@ pub fn scan_paths(
             continue;
         }
         let category = classify(&path);
-        let target_folder = destination.join(category_folder(&category.id, &prefs.language));
+        let (folder, enabled) = target_folder(prefs, &path, category);
+        let target_folder = destination.join(folder);
         let target = target_folder.join(name);
         let mut reason = None;
         let mut status = "ready";
@@ -316,7 +414,7 @@ pub fn scan_paths(
             reason = Some(t("Name cannot be represented in UTF-8").into());
         } else if temporary(&path) {
             reason = Some(t("Temporary file or incomplete download").into());
-        } else if !prefs.enabled_categories.contains(&category.id) {
+        } else if !enabled {
             reason = Some(t("Category turned off").into());
         } else if captured.is_none() {
             reason = Some(t("Metadata unavailable").into());
@@ -536,12 +634,13 @@ pub fn prepare_move(
     }
     let category = classify(path);
     let base = validate_directory(Path::new(&prefs.destination))?;
-    let folder = base.join(category_folder(&category.id, &prefs.language));
+    let (folder, enabled) = target_folder(prefs, path, category);
+    let folder = base.join(folder);
     let target = folder.join(path.file_name().ok_or(t("Invalid name"))?);
     let destination = Path::new(&entry.destination);
     let renamed = entry.rename_to.as_deref() == Some(entry.destination.as_str())
         && destination.parent() == Some(folder.as_path());
-    if (target != destination && !renamed) || !prefs.enabled_categories.contains(&category.id) {
+    if (target != destination && !renamed) || !enabled {
         return Err(t("Destination or category changed; generate the preview again").into());
     }
     let mut file = locked_file(path)?;

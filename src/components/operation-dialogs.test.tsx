@@ -132,9 +132,35 @@ it.each([false, true])("preserva a prévia durante a saída, inclusive vazia=%s,
   expect((within(panel()).getByRole("button", { name: "Confirmar organização" }) as HTMLButtonElement).disabled).toBe(true);
 });
 
+it("mostra primeiro os conflitos, agrupa por pasta e mostra a raiz uma vez", () => {
+  const file = preview.files[0];
+  const entry = (name: string, folder: string, status: "ready" | "conflict" | "ignored", rename_to?: string) => ({ ...file, name, path: "C:\\source\\" + name, destination: "E:\\Organized\\" + folder + "\\" + name, status, reason: null, rename_to });
+  const files = [entry("a.png", "Images", "ready"), entry("b.tmp", "Other", "ignored"), entry("c.pdf", "Documents", "ready"), entry("d.pdf", "Documents", "conflict", "E:\\Organized\\Documents\\d (2).pdf")];
+  render(<OperationDialogs {...props} preview={{ ...preview, files }} reviewed={false} />);
+  const dialog = panel();
+  const names = () => [...dialog.querySelectorAll("tbody tr strong")].map(cell => cell.textContent);
+  expect(names()).toEqual(["d.pdf", "c.pdf", "a.png", "b.tmp"]);
+  expect(within(dialog).getByRole("columnheader", { name: /Destino previsto/ }).textContent).toContain("E:\\Organized\\");
+  const destination = dialog.querySelector('tr[data-file-path="C:\\\\source\\\\d.pdf"] .destination')!;
+  expect(destination.querySelector('[aria-hidden="true"]:not(svg)')!.textContent).toBe("Documents");
+  expect(destination.getAttribute("title")).toBe("E:\\Organized\\Documents\\d.pdf");
+  const showPaths = within(dialog).getByRole("checkbox", { name: "Mostrar caminhos completos" });
+  fireEvent.click(showPaths);
+  expect(destination.textContent).toBe("E:\\Organized\\Documents\\d.pdf");
+  expect(dialog.querySelector(".preview-root")).toBeNull();
+  fireEvent.click(showPaths);
+  expect(destination.querySelector('[aria-hidden="true"]:not(svg)')!.textContent).toBe("Documents");
+  // Renaming shows the new name, and the row stays where the user was deciding about it.
+  fireEvent.click(within(dialog).getByRole("checkbox", { name: "Renomear arquivos em conflito" }));
+  expect(names()).toEqual(["d.pdf", "c.pdf", "a.png", "b.tmp"]);
+  expect(dialog.querySelector('tr[data-file-path="C:\\\\source\\\\d.pdf"] .destination [aria-hidden="true"]:not(svg)')!.textContent).toBe("Documents\\d (2).pdf");
+});
+
 it("mantém o resultado concluído e impede ações antigas enquanto fecha pelo X", () => {
   const view = render(<OperationDialogs {...props} preview={preview} action={{ kind: "organize", phase: "completed", operationId: 42 }} operation={operation} />);
   const old = panel(); const content = old.textContent;
+  expect(within(old).queryByText(/A prévia expira em cinco minutos/)).toBeNull();
+  expect(old.getAttribute("aria-describedby")).toBeNull();
   fireEvent.click(old.querySelector('[data-slot="dialog-close"]')!);
   view.rerender(<OperationDialogs {...props} />);
   expect(old.textContent).toBe(content); expect(within(old).getByText("Resultado da organização")).toBeTruthy();

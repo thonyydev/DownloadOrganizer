@@ -69,7 +69,7 @@ it("resume os estados reais e agrupa os caminhos de destino sem montar arquivos"
   op.movements[5].destination = "C:\\isolated\\Images\\file.png"; op.movements[5].error = "Falha na restauração";
   render(<HistoryView {...props} history={[op]} />);
   expect(total("Arquivos envolvidos")).toBe("6"); expect(total("Organizados no destino")).toBe("2");
-  expect(total("Restaurados")).toBe("1"); expect(total("Falhas ou verificação")).toBe("4");
+  expect(total("Restaurados")).toBe("1"); expect(total("Falhas ou itens a verificar")).toBe("4");
   expect(screen.getByText("/isolated/destination/Documents/")).toBeTruthy(); expect(screen.getByText("C:\\isolated\\Images\\")).toBeTruthy();
   expect(screen.getByText("5 arquivos")).toBeTruthy(); expect(screen.queryByText("Bloqueado")).toBeNull();
   expect(document.querySelectorAll("[data-movement-id]")).toHaveLength(0);
@@ -105,7 +105,7 @@ it("busca por nome, filtra status e problemas e apresenta os caminhos e erros", 
   const input = within(dialog).getByRole("textbox", { name: "Buscar arquivos da operação" });
   const filter = within(dialog).getByRole("combobox", { name: "Filtrar por status" });
   fireEvent.change(input, { target: { value: "FILE-4999" } });
-  expect(within(dialog).getByText("1 de 5000 arquivos · Ocorrências primeiro")).toBeTruthy();
+  expect(within(dialog).getByText("1 de 5000 arquivos · Problemas primeiro")).toBeTruthy();
   expect(within(dialog).getByText(op.movements[4999].destination)).toBeTruthy();
   fireEvent.change(filter, { target: { value: "failed" } }); expect(within(dialog).getByText("Nenhum arquivo corresponde aos filtros")).toBeTruthy();
   fireEvent.click(within(dialog).getByRole("button", { name: "Limpar filtros" }));

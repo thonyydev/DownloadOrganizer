@@ -21,6 +21,7 @@ Sort files into categories, preview changes before applying them, and undo previ
 - **Undo Actions** — Restore previously moved files when supported and safe.
 - **Activity History** — Keep track of organized files and previous operations.
 - **Custom Folders** — Choose which folders to organize and where files should go.
+- **Custom Rules** — Send files to your own folders by name, with patterns such as `*.stl` or `invoice*.pdf`.
 - **Safe File Handling** — Detect conflicts and avoid overwriting existing files.
 - **English, Portuguese, Spanish, French and Italian** — The app and new category folders follow your Windows language, or the one you choose in Settings. Existing files are not moved.
 - **Privacy First** — Everything runs locally, with no accounts or cloud uploads.

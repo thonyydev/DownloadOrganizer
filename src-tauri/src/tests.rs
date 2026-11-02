@@ -1388,6 +1388,218 @@ fn undo_refuses_modified_content_even_with_same_size_and_time() {
 }
 
 #[test]
+fn patterns_match_like_windows_file_names() {
+    for (pattern, name, expected) in [
+        ("*.stl", "Model.STL", true),
+        ("*.stl", "model.stl.txt", false),
+        ("invoice*.pdf", "invoice-2026.pdf", true),
+        ("invoice*.pdf", "my-invoice.pdf", false),
+        ("a?c.txt", "abc.txt", true),
+        ("a?c.txt", "ac.txt", false),
+        ("*a*b", "xaxbxab", true),
+        ("*a*b", "xaxbx", false),
+        ("report.pdf", "report.pdf", true),
+        ("*", "anything", true),
+        ("**", "", true),
+        ("?", "", false),
+    ] {
+        assert_eq!(
+            engine::matches_pattern(pattern, name),
+            expected,
+            "{pattern} {name}"
+        );
+    }
+}
+
+#[test]
+fn rules_choose_the_folder_and_undo_restores_the_file() {
+    let (_temp, mut runtime, mut prefs) = fixture();
+    let source = Path::new(&prefs.source).to_path_buf();
+    old_file(&source.join("invoice-1.pdf"), b"invoice");
+    old_file(&source.join("notes.pdf"), b"notes");
+    // A rule applies with its category turned off; the rest of that category stays.
+    prefs.enabled_categories.retain(|id| id != "documents");
+    prefs.rules = vec![engine::Rule {
+        pattern: "INVOICE*".into(),
+        folder: "Finance".into(),
+    }];
+    runtime.store.save(&prefs).unwrap();
+    let preview = plan(&prefs);
+    let invoice = preview
+        .files
+        .iter()
+        .find(|f| f.name == "invoice-1.pdf")
+        .unwrap();
+    let notes = preview
+        .files
+        .iter()
+        .find(|f| f.name == "notes.pdf")
+        .unwrap();
+    let target = Path::new(&invoice.destination).to_path_buf();
+    assert_eq!(invoice.status, "ready");
+    assert_eq!(target.parent().unwrap().file_name().unwrap(), "Finance");
+    assert_eq!(invoice.category, "documents");
+    assert_eq!(notes.status, "ignored");
+    let operation = execute(&mut runtime, preview, "manual", None).unwrap();
+    assert_eq!(fs::read(&target).unwrap(), b"invoice");
+    assert!(source.join("notes.pdf").exists());
+    undo(&mut runtime, operation, None).unwrap();
+    assert_eq!(fs::read(source.join("invoice-1.pdf")).unwrap(), b"invoice");
+    assert!(!target.exists());
+}
+
+#[test]
+fn the_first_matching_rule_wins_and_temporary_files_stay_ignored() {
+    let (_temp, _runtime, mut prefs) = fixture();
+    let source = Path::new(&prefs.source).to_path_buf();
+    old_file(&source.join("a.pdf"), b"a");
+    old_file(&source.join("a.pdf.part"), b"a");
+    prefs.rules = vec![
+        engine::Rule {
+            pattern: "a*".into(),
+            folder: "First".into(),
+        },
+        engine::Rule {
+            pattern: "*".into(),
+            folder: "Second".into(),
+        },
+    ];
+    let files = plan(&prefs).files;
+    let file = files.iter().find(|f| f.name == "a.pdf").unwrap();
+    assert_eq!(
+        Path::new(&file.destination)
+            .parent()
+            .unwrap()
+            .file_name()
+            .unwrap(),
+        "First"
+    );
+    assert_eq!(
+        files
+            .iter()
+            .find(|f| f.name == "a.pdf.part")
+            .unwrap()
+            .status,
+        "ignored"
+    );
+}
+
+#[test]
+fn rules_cannot_leave_the_destination_or_name_a_device() {
+    let (_temp, _runtime, mut prefs) = fixture();
+    for folder in [
+        "",
+        " ",
+        "..",
+        ".",
+        "a\\b",
+        "a/b",
+        "C:",
+        "a:stream",
+        "..\\up",
+        "name.",
+        " name",
+        "CON",
+        "nul.txt",
+        "COM1",
+        "lpt9.log",
+        "CONIN$",
+        "conout$.txt",
+        "COM¹",
+        "lpt²",
+        "a*",
+        "a\tb",
+    ] {
+        prefs.rules = vec![engine::Rule {
+            pattern: "*.pdf".into(),
+            folder: folder.into(),
+        }];
+        assert!(engine::validate_preferences(&prefs).is_err(), "{folder:?}");
+    }
+    for pattern in ["", "  ", "a\\b", "../a", "C:*", "a\nb", "*.pdf ", " *.pdf"] {
+        prefs.rules = vec![engine::Rule {
+            pattern: pattern.into(),
+            folder: "Finance".into(),
+        }];
+        assert!(engine::validate_preferences(&prefs).is_err(), "{pattern:?}");
+    }
+    for folder in ["Finance", "3D models", "Modèles.3D", "COM", "Console"] {
+        prefs.rules = vec![engine::Rule {
+            pattern: "*.pdf".into(),
+            folder: folder.into(),
+        }];
+        assert!(engine::validate_preferences(&prefs).is_ok(), "{folder:?}");
+    }
+}
+
+#[test]
+fn an_incomplete_rule_says_so() {
+    let (_temp, _runtime, mut prefs) = fixture();
+    for (pattern, folder) in [("", ""), ("*.pdf", ""), ("", "Finance")] {
+        prefs.rules = vec![engine::Rule {
+            pattern: pattern.into(),
+            folder: folder.into(),
+        }];
+        assert_eq!(
+            engine::validate_preferences(&prefs).unwrap_err(),
+            i18n::t("Fill in or remove the incomplete rule")
+        );
+    }
+}
+
+#[test]
+fn a_conflict_in_a_rule_folder_keeps_both_files_and_undoes() {
+    let (_temp, mut runtime, mut prefs) = fixture();
+    let source = Path::new(&prefs.source).to_path_buf();
+    let folder = Path::new(&prefs.destination).join("Finance");
+    fs::create_dir(&folder).unwrap();
+    old_file(&folder.join("a.pdf"), b"existing");
+    old_file(&source.join("a.pdf"), b"incoming");
+    prefs.rules = vec![engine::Rule {
+        pattern: "*.pdf".into(),
+        folder: "Finance".into(),
+    }];
+    runtime.store.save(&prefs).unwrap();
+    let mut preview = plan(&prefs);
+    assert_eq!(preview.files[0].status, "conflict");
+    narrow_preview(&mut preview, &[], true);
+    apply_renames(&mut preview);
+    let operation = execute(&mut runtime, preview, "manual", None).unwrap();
+    assert_eq!(fs::read(folder.join("a.pdf")).unwrap(), b"existing");
+    assert_eq!(fs::read(folder.join("a (2).pdf")).unwrap(), b"incoming");
+    assert!(!source.join("a.pdf").exists());
+    undo(&mut runtime, operation, None).unwrap();
+    assert_eq!(fs::read(folder.join("a.pdf")).unwrap(), b"existing");
+    assert_eq!(fs::read(source.join("a.pdf")).unwrap(), b"incoming");
+    assert!(!folder.join("a (2).pdf").exists());
+}
+
+#[test]
+fn saved_preferences_without_rules_still_load() {
+    let (_temp, runtime, _prefs) = fixture();
+    let mut json: serde_json::Value = serde_json::from_str(
+        &runtime
+            .store
+            .db
+            .query_row("SELECT value FROM preferences WHERE id=1", [], |r| {
+                r.get::<_, String>(0)
+            })
+            .unwrap(),
+    )
+    .unwrap();
+    json.as_object_mut().unwrap().remove("rules");
+    runtime
+        .store
+        .db
+        .execute(
+            "UPDATE preferences SET value=?1 WHERE id=1",
+            [json.to_string()],
+        )
+        .unwrap();
+    assert!(runtime.store.preferences().unwrap().rules.is_empty());
+}
+
+#[test]
 fn empty_files_wait_for_their_content() {
     let (_temp, _runtime, prefs) = fixture();
     let placeholder = Path::new(&prefs.source).join("report.pdf");

@@ -313,6 +313,7 @@ fn refused_windows_startup_change_undoes_the_save() {
     let (_temp, mut runtime, prefs) = fixture();
     let on = Preferences {
         autostart: true,
+        rules: Vec::new(),
         ..prefs.clone()
     };
     let error =
