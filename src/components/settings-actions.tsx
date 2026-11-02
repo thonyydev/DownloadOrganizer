@@ -5,8 +5,8 @@ import { t } from "@/lib/i18n";
 import { useContentMotion } from "@/components/motion/transitions";
 import { useMotionAllowed } from "@/components/motion/feedback";
 
-export function SettingsActions({ busy, dirty, external, onSave, onDiscard }: {
-  busy: boolean; dirty: boolean; external: boolean;
+export function SettingsActions({ busy, dirty, external, error, onSave, onDiscard }: {
+  busy: boolean; dirty: boolean; external: boolean; error?: string;
   onSave: () => void; onDiscard: () => void;
 }) {
   const railRef = useRef<HTMLDivElement>(null);
@@ -50,6 +50,8 @@ export function SettingsActions({ busy, dirty, external, onSave, onDiscard }: {
   }, [surfaceRef]);
   return <div className="settings-actions-rail" ref={railRef}>
     <div className="settings-actions" ref={surfaceRef} role="region" aria-label={t("Settings actions")}>
+      {/* The page banner announces it; this copy stays in view when the page is scrolled. */}
+      {error && <p className="inline-error">{error}</p>}
       <Button variant="outline" onClick={onDiscard} disabled={busy || !dirty}>{t("Discard changes")}</Button>
       <Button onClick={onSave} disabled={busy || !dirty || external}><Save aria-hidden="true" /><span className="settings-save-label"><span aria-hidden="true" className="settings-save-size">{t("Save preferences")}</span><span>{busy ? t("Saving…") : t("Save preferences")}</span></span></Button>
     </div>

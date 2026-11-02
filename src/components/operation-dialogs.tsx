@@ -2,7 +2,7 @@ import { FolderDown, Loader2, Undo2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { FileTable } from "@/components/file-table";
+import { FileTable, plannedFolder } from "@/components/file-table";
 import { OperationFeedback } from "@/components/operation-feedback";
 import { UndoFileList } from "@/components/undo-file-list";
 import { TriageLegend } from "@/components/triage";
@@ -13,6 +13,7 @@ import type { Action } from "@/lib/experience";
 
 interface Selection { id: number | null; excluded: Set<string>; rename: boolean }
 const noneExcluded = new Set<string>();
+const statusOrder = { conflict: 0, ready: 1, ignored: 2 };
 
 export function OperationDialogs({ preview, undoTarget, categories, action, busy, working, issue, reviewed, operation, onReviewed, onUpdate, onOrganize, onUndo, onClose, onViewResult, onRestoreFocus }: {
   preview: Preview | null; undoTarget: Operation | null; categories: Category[]; action: Action | null; busy: boolean; working: boolean;
@@ -21,9 +22,12 @@ export function OperationDialogs({ preview, undoTarget, categories, action, busy
   onRestoreFocus: () => void;
 }) {
   // Tied to the preview's id, so a refreshed preview starts with everything selected again.
+  const [fullPaths, setFullPaths] = useState(false);
   const [choice, setChoice] = useState<Selection>(() => ({ id: null, excluded: new Set(), rename: false }));
   const selection = choice.id === (preview?.id ?? null) ? choice : { id: preview?.id ?? null, excluded: noneExcluded, rename: false };
-  const files = useMemo(() => (preview?.files ?? []).map(file => selection.rename && file.status === "conflict" && file.rename_to ? { ...file, destination: file.rename_to, status: "ready" as const, reason: t("Will be renamed; the existing file will be kept") } : file), [preview?.files, selection.rename]);
+  // Conflicts need a decision, so they come first; the rest group by destination folder.
+  const ordered = useMemo(() => [...(preview?.files ?? [])].sort((a, b) => statusOrder[a.status] - statusOrder[b.status] || plannedFolder(a).localeCompare(plannedFolder(b))), [preview?.files]);
+  const files = useMemo(() => ordered.map(file => selection.rename && file.status === "conflict" && file.rename_to ? { ...file, destination: file.rename_to, status: "ready" as const, reason: t("Will be renamed; the existing file will be kept") } : file), [ordered, selection.rename]);
   const counts = useMemo(() => {
     const result = { ready: 0, conflict: 0, ignored: 0 };
     for (const file of files) result[file.status]++;
@@ -48,16 +52,14 @@ export function OperationDialogs({ preview, undoTarget, categories, action, busy
   const footer = <><Button variant="outline" onClick={onClose}>{t("Close")}</Button><Button onClick={onViewResult}>{t("View result in history")}</Button></>;
   return <>
     <Dialog open={!!preview} onOpenChange={close}>
-      <DialogContent className="preview-dialog" showCloseButton={!busy} onCloseAutoFocus={e => { e.preventDefault(); onRestoreFocus(); }} onEscapeKeyDown={e => { if (busy) e.preventDefault(); }} onPointerDownOutside={e => { if (busy) e.preventDefault(); }}>
-        <DialogHeader><DialogTitle>{done(previewAction) ? t("Organization result") : t("Review before organizing")}</DialogTitle><DialogDescription>{t("Only ready files will be moved. No conflict will be overwritten. The preview expires in five minutes.")}</DialogDescription></DialogHeader>
+      <DialogContent className={done(previewAction) ? "result-dialog" : "preview-dialog"} {...(done(previewAction) ? { "aria-describedby": undefined } : {})} showCloseButton={!busy} onCloseAutoFocus={e => { e.preventDefault(); onRestoreFocus(); }} onEscapeKeyDown={e => { if (busy) e.preventDefault(); }} onPointerDownOutside={e => { if (busy) e.preventDefault(); }}>
+        <DialogHeader><DialogTitle>{done(previewAction) ? t("Organization result") : t("Review before organizing")}</DialogTitle>{!done(previewAction) && <DialogDescription>{t("Only ready files will be moved. No conflicting file will be overwritten. The preview expires in five minutes.")}</DialogDescription>}</DialogHeader>
         <OperationFeedback action={previewAction} operation={done(previewAction) || previewAction?.phase === "error" ? operation : undefined} />
         {!done(previewAction) && <>
           {issue && <p className="inline-error" role="alert">{issue}</p>}
-          <TriageLegend counts={counts} />
-          <div className="preview-files"><FileTable files={files} categories={categories} preview selection={{ excluded: selection.excluded, selected, ready: counts.ready, disabled: working, onToggle: toggleFile, onToggleAll: toggleAll }} /></div>
-          <p className="preview-selection" role="status">{selected} {t("of")} {counts.ready} {t("selected")}</p>
-          {hasConflicts && <label className="review-confirmation"><input type="checkbox" checked={selection.rename} disabled={working || !!issue} onChange={event => setChoice({ ...selection, rename: event.target.checked })} />{t("Rename conflicting files")}</label>}
-          <label className="review-confirmation"><input type="checkbox" checked={reviewed} disabled={working || !!issue} onChange={e => onReviewed(e.target.checked)} />{t("I reviewed the files and destinations in this preview")}</label>
+          <div className="preview-toolbar"><TriageLegend counts={counts} /><div className="preview-options"><label className="review-confirmation"><input type="checkbox" checked={fullPaths} onChange={event => setFullPaths(event.target.checked)} />{t("Show full paths")}</label>{hasConflicts && <label className="review-confirmation"><input type="checkbox" checked={selection.rename} disabled={working || !!issue} onChange={event => setChoice({ ...selection, rename: event.target.checked })} />{t("Rename conflicting files")}</label>}</div></div>
+          <div className="preview-files"><FileTable files={files} categories={categories} preview fullPaths={fullPaths} selection={{ excluded: selection.excluded, selected, ready: counts.ready, disabled: working, onToggle: toggleFile, onToggleAll: toggleAll }} /></div>
+          <div className="preview-toolbar"><label className="review-confirmation"><input type="checkbox" checked={reviewed} disabled={working || !!issue} onChange={e => onReviewed(e.target.checked)} />{t("I reviewed the files and destinations in this preview")}</label><p className="preview-selection" role="status">{selected} {t("of")} {counts.ready} {t("selected")}</p></div>
         </>}
         <DialogFooter>{done(previewAction) ? footer : <>
           <Button variant="outline" disabled={busy} onClick={onClose}>{t("Cancel")}</Button>
@@ -68,8 +70,8 @@ export function OperationDialogs({ preview, undoTarget, categories, action, busy
       </DialogContent>
     </Dialog>
     <Dialog open={!!undoTarget} onOpenChange={close}>
-      <DialogContent className="undo-dialog" showCloseButton={!busy} onCloseAutoFocus={e => { e.preventDefault(); onRestoreFocus(); }} onEscapeKeyDown={e => { if (busy) e.preventDefault(); }} onPointerDownOutside={e => { if (busy) e.preventDefault(); }}>
-        <DialogHeader><DialogTitle>{done(undoAction) ? t("Restore result") : t("Restore the files to the source?")}</DialogTitle><DialogDescription>{t("Files that changed, are missing or have conflicts will be preserved. Each result will be in the history.")}</DialogDescription></DialogHeader>
+      <DialogContent className={done(undoAction) ? "result-dialog" : "undo-dialog"} {...(done(undoAction) ? { "aria-describedby": undefined } : {})} showCloseButton={!busy} onCloseAutoFocus={e => { e.preventDefault(); onRestoreFocus(); }} onEscapeKeyDown={e => { if (busy) e.preventDefault(); }} onPointerDownOutside={e => { if (busy) e.preventDefault(); }}>
+        <DialogHeader><DialogTitle>{done(undoAction) ? t("Restore result") : t("Restore the files to the source?")}</DialogTitle>{!done(undoAction) && <DialogDescription>{t("Files that changed, are missing or have conflicts will be preserved. Each result will be in the history.")}</DialogDescription>}</DialogHeader>
         <OperationFeedback action={undoAction} operation={done(undoAction) || undoAction?.phase === "error" ? operation : undefined} />
         {!done(undoAction) && <><p className="undo-summary">{t("Operation")} #{undoable?.id} · {reversible.length} {t("of")} {plural(undoable?.movements.length ?? 0, t("file"), t("files"))} {t("to restore")}</p><UndoFileList key={undoable?.id} movements={reversible} /></>}
         <DialogFooter>{done(undoAction) ? footer : <><Button variant="outline" disabled={busy} onClick={onClose}>{t("Cancel")}</Button>{undoAction?.phase === "error" && operation && <Button variant="outline" onClick={onViewResult}>{t("View result in history")}</Button>}<Button disabled={working || !reversible.length} onClick={onUndo}>{busy ? <Loader2 className="spin" aria-hidden="true" /> : <Undo2 aria-hidden="true" />}{busy ? t("Restoring…") : t("Confirm restore")}</Button></>}</DialogFooter>

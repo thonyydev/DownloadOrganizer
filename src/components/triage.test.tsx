@@ -41,7 +41,7 @@ describe("feedback da prévia", () => {
   it("não anuncia conclusão ao apenas gerar uma prévia, pois nada foi movido", () => {
     const { container } = render(<OperationFeedback action={{ kind: "preview", phase: "completed" }} />);
     expect(container.textContent).toBe("");
-    expect(screen.queryByText("Processamento concluído")).toBeNull();
+    expect(screen.queryByText("Concluído")).toBeNull();
   });
 
   it("mantém o erro da prévia visível", () => {
@@ -51,6 +51,6 @@ describe("feedback da prévia", () => {
 
   it("mantém a conclusão de uma organização real", () => {
     render(<OperationFeedback action={{ kind: "organize", phase: "completed" }} />);
-    expect(screen.getByText("Processamento concluído")).toBeTruthy();
+    expect(screen.getByText("Concluído")).toBeTruthy();
   });
 });

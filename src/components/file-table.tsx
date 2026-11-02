@@ -8,6 +8,10 @@ import { Collapse } from "@/components/motion/collapse";
 import { useContentMotion } from "@/components/motion/transitions";
 import { useMotionAllowed } from "@/components/motion/feedback";
 
+// Every destination is <root>\<folder>\<name>; the table header shows the root once.
+export function plannedFolder(file: FileEntry) { return file.destination.split(/[\\/]/).slice(-2)[0]; }
+function plannedName(file: FileEntry) { return file.destination.split(/[\\/]/).slice(-1)[0]; }
+
 function FileName({ file }: { file: FileEntry }) {
   return <><strong>{file.name}</strong>{!file.extension && <small className="file-extension">{t("No extension")}</small>}</>;
 }
@@ -24,8 +28,8 @@ function RowSpace({ height, columns }: { height: number; columns: number }) {
 
 export interface PreviewSelection { excluded: Set<string>; selected: number; ready: number; disabled: boolean; onToggle: (path: string) => void; onToggleAll: (all: boolean) => void }
 
-function FileRow({ file, index, preview, category, open, onToggle, onView, rowRef, selection }: {
-  file: FileEntry; index: number; preview: boolean; category?: string; open: boolean;
+function FileRow({ file, index, preview, fullPaths, category, open, onToggle, onView, rowRef, selection }: {
+  file: FileEntry; index: number; preview: boolean; fullPaths: boolean; category?: string; open: boolean;
   onToggle: (path: string) => void; rowRef?: Ref<HTMLTableRowElement>;
   onView?: (file: FileEntry, trigger: HTMLButtonElement) => void; selection?: PreviewSelection;
 }) {
@@ -35,12 +39,12 @@ function FileRow({ file, index, preview, category, open, onToggle, onView, rowRe
   return <tr data-index={index} data-file-path={file.path} aria-rowindex={index + 2} ref={rowRef}>
     <td>{preview ? <div className="file-name">{selection && file.status === "ready" ? <input type="checkbox" className="preview-check" aria-label={`${t("Organize")} ${file.name}`} checked={!selection.excluded.has(file.path)} disabled={selection.disabled} onChange={() => selection.onToggle(file.path)} /> : <span className="file-icon"><File size={16} aria-hidden="true" /></span>}<div className="file-copy"><FileName file={file} /></div></div> : <FileDetails file={file} open={open} onToggle={() => onToggle(file.path)} />}</td>
     {!preview && <td><span className={"category-label tone-" + file.category}><span className="tone-dot" aria-hidden="true" />{category}</span></td>}
-    <td className="tabular number-cell">{size}</td><td>{preview ? <span className="destination"><ArrowRight size={16} aria-hidden="true" /><span>{displayPath(file.destination)}</span></span> : <span className="tabular">{modified}</span>}</td>
+    <td className="tabular number-cell">{size}</td><td>{preview ? <span className="destination" title={displayPath(file.destination)}><ArrowRight size={16} aria-hidden="true" />{fullPaths ? <span>{displayPath(file.destination)}</span> : <><span aria-hidden="true">{plannedFolder(file)}{plannedName(file) !== file.name && <>\{plannedName(file)}</>}</span><span className="sr-only">{displayPath(file.destination)}</span></>}</span> : <span className="tabular">{modified}</span>}</td>
     <td><div className="status-cell"><div><span className={"status status-" + file.status}>{statusLabel(file.status)}</span>{file.reason && <small className="reason">{file.reason}</small>}</div>{!preview && onView && <Button variant="ghost" size="icon-xs" className="file-view-button" aria-haspopup="dialog" aria-label={`${t("View")} ${file.name}`} onClick={event => onView(file, event.currentTarget)}><Eye className="size-4" aria-hidden="true" /></Button>}</div></td>
   </tr>;
 }
 
-export function FileTable({ files, categories, preview = false, filtered = false, onClearFilters, filterKey = "all", onView, selection }: { files: FileEntry[]; categories: Category[]; preview?: boolean; filtered?: boolean; onClearFilters?: () => void; filterKey?: string; onView?: (file: FileEntry, trigger: HTMLButtonElement) => void; selection?: PreviewSelection }) {
+export function FileTable({ files, categories, preview = false, fullPaths = false, filtered = false, onClearFilters, filterKey = "all", onView, selection }: { files: FileEntry[]; categories: Category[]; preview?: boolean; fullPaths?: boolean; filtered?: boolean; onClearFilters?: () => void; filterKey?: string; onView?: (file: FileEntry, trigger: HTMLButtonElement) => void; selection?: PreviewSelection }) {
   const motionRef = useContentMotion(filterKey + ":" + (files.length ? "results" : "empty"), useMotionAllowed() && !preview);
   const scrollRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLTableSectionElement>(null);
@@ -67,7 +71,7 @@ export function FileTable({ files, categories, preview = false, filtered = false
     count: files.length,
     getScrollElement: () => scrollRef.current,
     getItemKey,
-    estimateSize: () => preview ? 56 : 41,
+    estimateSize: () => 41,
     overscan: 5,
     enabled: virtual,
     paddingStart: headerHeight,
@@ -143,7 +147,7 @@ export function FileTable({ files, categories, preview = false, filtered = false
     previousEnd = item.end;
     return <Fragment key={file.path}>
       <RowSpace height={gap} columns={preview ? 4 : 5} />
-      <FileRow file={file} index={item.index} preview={preview} category={categoryNames.get(file.category)} open={expanded.has(file.path)} onToggle={toggle} onView={onView} rowRef={virtual ? virtualizer.measureElement : undefined} selection={selection} />
+      <FileRow file={file} index={item.index} preview={preview} fullPaths={fullPaths} category={categoryNames.get(file.category)} open={expanded.has(file.path)} onToggle={toggle} onView={onView} rowRef={virtual ? virtualizer.measureElement : undefined} selection={selection} />
     </Fragment>;
   });
   return <div ref={setScrollRef} data-motion-group className="table-scroll" role="region" tabIndex={0} aria-label={preview ? t("Preview files scroll area") : t("Files scroll area")} aria-describedby={helpId} onKeyDown={navigateRows}
@@ -155,6 +159,6 @@ export function FileTable({ files, categories, preview = false, filtered = false
       if (!event.currentTarget.contains(event.relatedTarget as Node | null)) { focusOwned.current = false; setFocusedPath(null); }
     }}>
     <p id={helpId} className="sr-only">{preview ? t("Use the scroll keys to review the files and destinations.") : t("Use Tab or the arrow keys to move through the details. Home and End go to the first and last file.")}</p>
-    <table className={preview ? "preview-table" : "file-table"} aria-rowcount={files.length + 1}><caption className="sr-only">{preview ? t("Preview files and destinations") : t("Files in the source folder")}</caption><colgroup><col className="name-column" />{!preview && <col className="category-column" />}<col className="size-column" /><col className="detail-column" /><col className="status-column" /></colgroup><thead ref={headerRef}><tr aria-rowindex={1}><th scope="col">{selection && selection.ready > 0 && <input type="checkbox" className="preview-check" aria-label={t("Select all ready files")} checked={selection.selected === selection.ready} ref={element => { if (element) element.indeterminate = selection.selected > 0 && selection.selected < selection.ready; }} disabled={selection.disabled} onChange={event => selection.onToggleAll(event.target.checked)} />}{t("File")}</th>{!preview && <th scope="col">{t("Category")}</th>}<th scope="col" className="number-cell">{t("Size")}</th><th scope="col">{preview ? t("Planned destination") : t("Modified")}</th><th scope="col">{t("Status")}</th></tr></thead><tbody>{rows}{virtual && <RowSpace height={virtualizer.getTotalSize() - previousEnd} columns={preview ? 4 : 5} />}</tbody></table>
+    <table className={preview ? "preview-table" : "file-table"} aria-rowcount={files.length + 1}><caption className="sr-only">{preview ? t("Preview files and destinations") : t("Files in the source folder")}</caption><colgroup><col className="name-column" />{!preview && <col className="category-column" />}<col className="size-column" /><col className="detail-column" /><col className="status-column" /></colgroup><thead ref={headerRef}><tr aria-rowindex={1}><th scope="col">{selection && selection.ready > 0 && <input type="checkbox" className="preview-check" aria-label={t("Select all ready files")} checked={selection.selected === selection.ready} ref={element => { if (element) element.indeterminate = selection.selected > 0 && selection.selected < selection.ready; }} disabled={selection.disabled} onChange={event => selection.onToggleAll(event.target.checked)} />}{t("File")}</th>{!preview && <th scope="col">{t("Category")}</th>}<th scope="col" className="number-cell">{t("Size")}</th><th scope="col">{preview ? <>{t("Planned destination")}{!fullPaths && <> <code className="preview-root">{displayPath(files[0].destination).replace(/[^\\/]+[\\/][^\\/]+$/, "")}</code></>}</> : t("Modified")}</th><th scope="col">{t("Status")}</th></tr></thead><tbody>{rows}{virtual && <RowSpace height={virtualizer.getTotalSize() - previousEnd} columns={preview ? 4 : 5} />}</tbody></table>
   </div>;
 }

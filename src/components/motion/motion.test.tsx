@@ -203,7 +203,7 @@ describe("feedback sem atrasar estados e foco", () => {
     expect(screen.getByRole("progressbar").getAttribute("value")).toBe("2");
     expect(playbacks).toHaveLength(1);
     view.rerender(<OperationFeedback action={{ kind: "organize", phase: "completed", operationId: 42 }} operation={operation} />);
-    expect(screen.getByText("Processamento concluído")).toBeTruthy();
+    expect(screen.getByText("Concluído")).toBeTruthy();
     expect(playbacks).toHaveLength(3);
     expect((playbacks[1].from as Element).tagName.toLowerCase()).toBe("svg");
     view.rerender(<OperationFeedback action={{ kind: "organize", phase: "completed", operationId: 42 }} operation={structuredClone(operation)} />);
@@ -218,7 +218,7 @@ describe("feedback sem atrasar estados e foco", () => {
     const partial = { ...operation, movements: [...operation.movements, { ...operation.movements[0], id: 2, status: "failed", error: "Conflito" }] };
     const view = render(<OperationFeedback action={{ kind: "organize", phase: "preparing" }} />);
     view.rerender(<OperationFeedback action={{ kind: "organize", phase: "completed" }} operation={partial} />);
-    expect(screen.getByText("Processamento concluído com ocorrências")).toBeTruthy();
+    expect(screen.getByText("Concluído com problemas")).toBeTruthy();
     expect(playbacks).toHaveLength(0);
     view.unmount();
     render(<OperationFeedback action={{ kind: "organize", phase: "completed" }} operation={operation} />);

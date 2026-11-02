@@ -39,7 +39,7 @@ vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => ({
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: mocks.choose }));
 
 let snapshot: Omit<Snapshot, "history" | "history_cursor"> & { history: Operation[] };
-const initial: Preferences = { source: "/isolated/source", destination: "/isolated/destination", language: "system", theme: "dark", automatic: false, enabled_categories: ["documents"], notifications: true, updates: true, autostart: false };
+const initial: Preferences = { source: "/isolated/source", destination: "/isolated/destination", language: "system", theme: "dark", automatic: false, enabled_categories: ["documents"], notifications: true, updates: true, autostart: false, rules: [] };
 const operation: Operation = { id: 42, created: 1_700_000_000, kind: "manual", movements: [{ id: 1, source: "/isolated/source/a.txt", destination: "/isolated/destination/Documentos/a.txt", status: "moved", error: null, size: 1 }] };
 function snapshotPayload(): Snapshot { return { ...snapshot, history: snapshot.history.slice(0, 100).map(summarizeOperation), history_cursor: snapshot.history.length > 100 ? snapshot.history[99].id : null }; }
 
@@ -128,7 +128,7 @@ describe("histórico paginado", () => {
     expect(within(row).getByText("Arquivos envolvidos")).toBeTruthy();
     expect(mocks.operation).not.toHaveBeenCalled();
     await act(async () => { fireEvent.click(within(row).getByRole("button", { name: "Desfazer" })); });
-    const dialog = screen.getByRole("dialog", { name: "Restaurar os arquivos à origem?" });
+    const dialog = screen.getByRole("dialog", { name: "Restaurar os arquivos para a origem?" });
     expect(mocks.operation).toHaveBeenCalledExactlyOnceWith(900);
     mocks.undo.mockImplementationOnce(async (id: number) => { snapshot.history.find(op => op.id === id)!.movements[0].status = "undone"; });
     await act(async () => { fireEvent.click(within(dialog).getByRole("button", { name: "Confirmar restauração" })); });
@@ -186,6 +186,9 @@ describe("destinos recusados pelo aplicativo", () => {
     const save = screen.getByRole("button", { name: "Salvar preferências" });
     fireEvent.click(save);
     await waitFor(() => expect(screen.getByRole("alert").textContent).toContain(folderError));
+    expect(screen.getByRole("region", { name: "Ações das configurações" }).textContent).toContain(folderError);
+    fireEvent.click(screen.getByRole("button", { name: "Fechar aviso" }));
+    expect(screen.getByRole("region", { name: "Ações das configurações" }).textContent).not.toContain(folderError);
     expect(snapshot.preferences).toEqual(initial);
     expect(screen.getByText("/isolated/unavailable")).toBeTruthy();
     expect(screen.getByText("Alterações não salvas. As configurações salvas continuam em uso.")).toBeTruthy();
@@ -205,7 +208,7 @@ describe("destinos recusados pelo aplicativo", () => {
     const warning = await screen.findByRole("alert");
     expect(warning.textContent).toContain(folderError);
     expect((screen.getByRole("button", { name: "Organizar arquivos" }) as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(within(warning).getByRole("button", { name: "Revisar diretórios" }));
+    fireEvent.click(within(warning).getByRole("button", { name: "Revisar pastas" }));
     expect(screen.getByText("/isolated/unavailable")).toBeTruthy();
     mocks.choose.mockResolvedValueOnce(initial.destination);
     fireEvent.click(screen.getByRole("button", { name: "Selecionar destino da organização" }));
@@ -295,7 +298,7 @@ describe("feedback sonoro de ações reais", () => {
     await start(); navigate("Histórico");
     expect(mocks.sound).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Desfazer" }));
-    const dialog = await screen.findByRole("dialog", { name: "Restaurar os arquivos à origem?" });
+    const dialog = await screen.findByRole("dialog", { name: "Restaurar os arquivos para a origem?" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Confirmar restauração" }));
     await waitFor(() => expect(mocks.sound).toHaveBeenCalledExactlyOnceWith(complete ? sounds.restore : sounds.warning));
   });
@@ -342,7 +345,7 @@ describe("feedback sonoro de ações reais", () => {
     mocks.organize.mockImplementationOnce(async () => { snapshot.history = [structuredClone(operation)]; return 42; });
     mocks.sound.mockImplementationOnce(() => { throw new Error("Dispositivo ausente"); });
     await start(); const dialog = await confirmOrganization();
-    await within(dialog).findByText(/1 organizado · 0 ocorrência/);
+    await within(dialog).findByText(/1 organizado · 0 problema/);
     expect(mocks.sound).toHaveBeenCalledExactlyOnceWith(sounds.organize);
     expect(screen.queryByText("Dispositivo ausente")).toBeNull();
   });
@@ -351,7 +354,7 @@ describe("feedback sonoro de ações reais", () => {
     fireEvent.click(screen.getByRole("switch", { name: "Organizar novos arquivos" }));
     mocks.snapshot.mockRejectedValueOnce("Falha ao consultar estado");
     fireEvent.click(screen.getByRole("button", { name: "Salvar preferências" }));
-    await screen.findByText("Falha ao consultar estado");
+    await screen.findAllByText("Falha ao consultar estado");
     expect(mocks.sound).toHaveBeenCalledExactlyOnceWith(sounds.saved);
   });
   it("operações manuais distintas podem tocar novamente sem cooldown global", async () => {
@@ -369,7 +372,7 @@ describe("feedback sonoro de ações reais", () => {
     await start(); navigate("Configurações");
     fireEvent.click(screen.getByRole("switch", { name: "Organizar novos arquivos" }));
     fireEvent.click(screen.getByRole("button", { name: "Salvar preferências" }));
-    await screen.findByText("Preferências salvas. Verifique separadamente o estado do monitoramento.");
+    await screen.findByText("Preferências salvas. Confira também o estado do monitoramento.");
     expect(mocks.save).toHaveBeenCalledOnce(); expect(mocks.sound).not.toHaveBeenCalled();
   });
 });
@@ -412,7 +415,7 @@ describe("rascunho de áudio no fluxo global", () => {
   });
   it("navegação e refresh preservam áudio pendente e a proteção de beforeunload", async () => {
     await start(); navigate("Configurações"); volume(75); navigate("Arquivos");
-    expect(screen.getByText("Há configurações não salvas")).toBeTruthy();
+    expect(screen.getByText("Você tem configurações não salvas")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Atualizar arquivos" }));
     await waitFor(() => expect((screen.getByRole("button", { name: "Atualizar arquivos" }) as HTMLButtonElement).disabled).toBe(false));
     navigate("Histórico"); navigate("Configurações");
@@ -437,7 +440,7 @@ describe("rascunho de áudio no fluxo global", () => {
     await start(); const dialog = await openPreview();
     expect(within(dialog).queryByText(/a \(2\)\.txt/)).toBeNull();
     fireEvent.click(within(dialog).getByRole("checkbox", { name: "Renomear arquivos em conflito" }));
-    within(dialog).getByText(/a \(2\)\.txt/);
+    within(dialog).getAllByText(/a \(2\)\.txt/);
     fireEvent.click(within(dialog).getByRole("checkbox", { name: "Conferi os arquivos e destinos desta prévia" }));
     mocks.organize.mockResolvedValueOnce(1);
     fireEvent.click(within(dialog).getByRole("button", { name: "Confirmar organização" }));
@@ -513,7 +516,7 @@ describe("rascunho de áudio no fluxo global", () => {
     await start(); navigate("Configurações"); volume(70); fireEvent.click(screen.getByRole("button", { name: "Claro" }));
     const original = Storage.prototype.setItem;
     const write = vi.spyOn(Storage.prototype, "setItem").mockImplementationOnce(() => { throw new Error("Quota"); });
-    fireEvent.click(saveButton()); await screen.findByText(/Não foi possível salvar o áudio neste dispositivo/);
+    fireEvent.click(saveButton()); await screen.findAllByText(/Não foi possível salvar o áudio neste dispositivo/);
     expect(snapshot.preferences.theme).toBe("light"); expect(mocks.save).toHaveBeenCalledOnce();
     expect(localStorage.getItem(audioStorageKey)).toBeNull(); expect((screen.getByRole("slider", { name: "Volume" }) as HTMLInputElement).value).toBe("70");
     expect(saveButton().disabled).toBe(false); expect(screen.queryByText("Todas as alterações estão salvas.")).toBeNull();
@@ -672,7 +675,7 @@ describe("composição desktop", () => {
   it("leva da categoria real à tabela filtrada e mantém os nomes de navegação estáveis", async () => {
     await start();
     expect(screen.getByRole("heading", { name: "source" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /Documentos.*Habilitada/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Documentos.*Ativada/ }));
     expect(screen.getByRole("button", { name: "Arquivos" }).getAttribute("aria-current")).toBe("page");
     expect((screen.getByRole("combobox", { name: "Filtrar por categoria" }) as HTMLSelectElement).value).toBe("documents");
     expect(screen.getByRole("table", { name: "Arquivos da pasta de origem" })).toBeTruthy();
@@ -689,12 +692,12 @@ describe("composição desktop", () => {
     await start(); navigate("Histórico");
     const row = screen.getByRole("region", { name: "Operação 42" });
     expect(within(row).getByText("#42")).toBeTruthy();
-    expect(within(row).getByText("1 ocorrência")).toBeTruthy();
+    expect(within(row).getByText("1 problema")).toBeTruthy();
     expect((within(row).getByRole("button", { name: "Desfazer" }) as HTMLButtonElement).disabled).toBe(false);
     const expand = within(row).getByRole("button", { name: /1 arquivo organizado/ });
     fireEvent.click(expand);
     expect(expand.getAttribute("aria-expanded")).toBe("true");
-    expect(within(row).getByText("Falhas ou verificação")).toBeTruthy();
+    expect(within(row).getByText("Falhas ou itens a verificar")).toBeTruthy();
     expect(within(row).queryByText("/isolated/source/locked.txt")).toBeNull();
     fireEvent.click(within(row).getByRole("button", { name: "Explorar arquivos" }));
     const explorer = screen.getByRole("dialog", { name: "Arquivos da operação #42" });
@@ -741,7 +744,7 @@ describe("rascunho de configurações", () => {
     expect((within(dock).getByRole("button", { name: "Descartar alterações" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(save); expect(mocks.save).toHaveBeenCalledOnce();
     await act(async () => pending.reject("Falha isolada ao salvar"));
-    await screen.findByText("Falha isolada ao salvar");
+    await screen.findAllByText("Falha isolada ao salvar");
     expect(screen.getByRole("button", { name: "Claro" }).getAttribute("aria-pressed")).toBe("true");
     expect(save.disabled).toBe(false);
     expect(screen.getByRole("region", { name: "Ações das configurações" })).toBe(dock);
@@ -750,7 +753,7 @@ describe("rascunho de configurações", () => {
     await start(); navigate("Configurações");
     fireEvent.click(screen.getByRole("button", { name: "Claro" }));
     navigate("Histórico");
-    expect(screen.getByText("Há configurações não salvas")).toBeTruthy();
+    expect(screen.getByText("Você tem configurações não salvas")).toBeTruthy();
     navigate("Configurações");
     expect(screen.getByRole("button", { name: "Claro" }).getAttribute("aria-pressed")).toBe("true");
     fireEvent.click(screen.getByRole("button", { name: "Descartar alterações" }));
@@ -766,7 +769,7 @@ describe("rascunho de configurações", () => {
     expect(screen.getByText("As configurações salvas foram atualizadas")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Claro" }).getAttribute("aria-pressed")).toBe("true");
     expect((screen.getByRole("button", { name: "Salvar preferências" }) as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(screen.getByRole("button", { name: "Manter rascunho sobre esta versão" }));
+    fireEvent.click(screen.getByRole("button", { name: "Manter meu rascunho no lugar desta versão" }));
     fireEvent.click(screen.getByRole("button", { name: "Salvar preferências" }));
     await waitFor(() => expect(mocks.save).toHaveBeenCalledWith({ ...initial, theme: "light" }, { ...initial, automatic: true }));
     await screen.findByText("Todas as alterações estão salvas.");
@@ -810,7 +813,7 @@ describe("rascunho de configurações", () => {
       snapshot.preferences = prefs; snapshot.watch_error = "Monitoramento indisponível"; return prefs;
     });
     fireEvent.click(screen.getByRole("button", { name: "Salvar preferências" }));
-    await screen.findByText("Preferências salvas. Verifique separadamente o estado do monitoramento.");
+    await screen.findByText("Preferências salvas. Confira também o estado do monitoramento.");
     expect(screen.getByText("Monitoramento indisponível")).toBeTruthy();
     expect(screen.getByText("Todas as alterações estão salvas.")).toBeTruthy();
   });
@@ -830,14 +833,14 @@ describe("prévia e operações", () => {
     expect(within(dialog).queryByText("first.txt")).toBeNull();
     expect(within(dialog).getByRole("progressbar").closest("[aria-live]")).toBeNull();
     progress({ kind: "manual", phase: "completed", operation_id: 42, completed: 5000, total: 5000, name: "" });
-    expect(within(dialog).getByText("Processamento concluído")).toBeTruthy();
+    expect(within(dialog).getByText("Concluído")).toBeTruthy();
     snapshot.history = [structuredClone(operation)]; snapshot.preview_id = null;
     await act(async () => pending.resolve(42));
-    expect(within(dialog).getByText("Processamento concluído")).toBeTruthy();
+    expect(within(dialog).getByText("Concluído")).toBeTruthy();
     expect(within(dialog).getByText(/1 organizado/)).toBeTruthy();
     act(() => vi.advanceTimersByTime(300));
     expect(within(dialog).queryByRole("progressbar")).toBeNull();
-    expect(within(dialog).getByText("Processamento concluído")).toBeTruthy();
+    expect(within(dialog).getByText("Concluído")).toBeTruthy();
   });
 
   it("conclui lotes automáticos imediatamente e reinicia o progresso somente para um novo lote", async () => {
@@ -846,7 +849,7 @@ describe("prévia e operações", () => {
     send("preparing", 0, null); send("organizing", 0, 42); send("preparing", 4999, 42);
     snapshot.history = [{ ...structuredClone(operation), kind: "automatic" }];
     await act(async () => send("completed", 5000, 42));
-    expect(screen.getByText("Processamento concluído")).toBeTruthy();
+    expect(screen.getByText("Concluído")).toBeTruthy();
     expect(screen.getByText(/1 organizado/)).toBeTruthy();
     act(() => vi.advanceTimersByTime(150)); expect(screen.queryByRole("progressbar")).toBeNull();
     send("preparing", 0, null); send("organizing", 0, 43); send("organizing", 100, 43);
@@ -905,7 +908,7 @@ describe("prévia e operações", () => {
     snapshot.history = [{ ...structuredClone(operation), kind: "automatic" }];
     await start();
     progress({ kind: "automatic", phase: "completed", operation_id: 43, completed: 1, total: 1, name: "" });
-    const feedback = screen.getByText("Processamento concluído").closest("[role=status]")! as HTMLElement;
+    const feedback = screen.getByText("Concluído").closest("[role=status]")! as HTMLElement;
     expect(within(feedback).queryByText(/1 organizado/)).toBeNull();
     snapshot.history.unshift({ ...structuredClone(operation), id: 43, kind: "automatic" });
     await updateSnapshot();
@@ -977,7 +980,7 @@ describe("prévia e operações", () => {
     snapshot.history = [{ ...operation, movements: Array.from({ length: 10000 }, (_, index) => ({ ...operation.movements[0], id: index + 1, source: `/isolated/source/File-${index}.txt`, destination: `/isolated/destination/File-${index}.txt` })) }];
     await start(); navigate("Histórico");
     fireEvent.click(screen.getByRole("button", { name: "Desfazer" }));
-    const dialog = await screen.findByRole("dialog", { name: "Restaurar os arquivos à origem?" });
+    const dialog = await screen.findByRole("dialog", { name: "Restaurar os arquivos para a origem?" });
     expect(within(dialog).getByText("Operação #42 · 10000 de 10000 arquivos para restaurar")).toBeTruthy();
     const rows = dialog.querySelectorAll("[data-undo-movement-id]");
     expect(rows.length).toBeGreaterThan(0); expect(rows.length).toBeLessThan(25);
@@ -996,7 +999,7 @@ describe("prévia e operações", () => {
   it("mostra restauração em andamento e resultados reais de desfazer", async () => {
     snapshot.history = [structuredClone(operation)]; await start(); navigate("Histórico");
     fireEvent.click(screen.getByRole("button", { name: "Desfazer" }));
-    const dialog = await screen.findByRole("dialog", { name: "Restaurar os arquivos à origem?" });
+    const dialog = await screen.findByRole("dialog", { name: "Restaurar os arquivos para a origem?" });
     const pending = deferred<void>(); mocks.undo.mockReturnValueOnce(pending.promise);
     const confirm = within(dialog).getByRole("button", { name: "Confirmar restauração" });
     fireEvent.click(confirm); fireEvent.click(confirm); expect(mocks.undo).toHaveBeenCalledOnce();
@@ -1015,7 +1018,7 @@ describe("prévia e operações", () => {
   it("atualiza os itens reversíveis após uma restauração interrompida", async () => {
     snapshot.history = [structuredClone(operation)]; await start(); navigate("Histórico");
     fireEvent.click(screen.getByRole("button", { name: "Desfazer" }));
-    const dialog = await screen.findByRole("dialog", { name: "Restaurar os arquivos à origem?" });
+    const dialog = await screen.findByRole("dialog", { name: "Restaurar os arquivos para a origem?" });
     const pending = deferred<void>(); mocks.undo.mockReturnValueOnce(pending.promise);
     fireEvent.click(within(dialog).getByRole("button", { name: "Confirmar restauração" }));
     progress({ kind: "undo", phase: "organizing", operation_id: 42, completed: 1, total: 1, name: "a.txt" });
@@ -1070,14 +1073,14 @@ describe("avisos e clareza", () => {
     snapshot.preferences.automatic = true; snapshot.watch_error = "Monitoramento indisponível";
     await start();
     mocks.retryMonitoring.mockRejectedValueOnce("Pasta ainda indisponível");
-    fireEvent.click(screen.getByRole("button", { name: "Verificar e reativar monitor" }));
+    fireEvent.click(screen.getByRole("button", { name: "Verificar e reativar o monitoramento" }));
     await screen.findByText("Pasta ainda indisponível");
-    await waitFor(() => expect((screen.getByRole("button", { name: "Verificar e reativar monitor" }) as HTMLButtonElement).disabled).toBe(false));
+    await waitFor(() => expect((screen.getByRole("button", { name: "Verificar e reativar o monitoramento" }) as HTMLButtonElement).disabled).toBe(false));
     expect(screen.getByText("Monitoramento indisponível")).toBeTruthy();
     mocks.retryMonitoring.mockImplementationOnce(async () => { snapshot.watch_error = null; snapshot.monitoring = true; });
-    fireEvent.click(screen.getByRole("button", { name: "Verificar e reativar monitor" }));
+    fireEvent.click(screen.getByRole("button", { name: "Verificar e reativar o monitoramento" }));
     await waitFor(() => expect(screen.queryByText("Monitoramento indisponível")).toBeNull());
-    expect(screen.getByText("Monitoramento ativo")).toBeTruthy();
+    expect(screen.getAllByText("Monitoramento ativo").length).toBeGreaterThan(0);
   });
   it("ignora respostas de leitura antigas sem substituir a versão atual ou o rascunho", async () => {
     await start(); navigate("Configurações");
@@ -1096,7 +1099,7 @@ describe("avisos e clareza", () => {
     snapshot.scan_error = "Pasta removida"; snapshot.watch_error = "Watcher parou";
     render(<App />); await screen.findByText("Pasta removida");
     expect(screen.getByText("Watcher parou")).toBeTruthy();
-    const toggle = screen.getAllByRole("button", { name: "Recolher detalhes do problema" })[0];
+    const toggle = screen.getAllByRole("button", { name: "Ocultar detalhes do problema" })[0];
     act(() => { toggle.focus(); });
     fireEvent.click(toggle);
     expect((screen.getByText("Pasta removida") as HTMLElement).hidden).toBe(true);

@@ -20,7 +20,7 @@ async function resize(element: HTMLElement) {
     observer.callback([{ target: element, borderBoxSize: [{ blockSize: element.offsetHeight, inlineSize: 800 }] } as unknown as ResizeObserverEntry], {} as ResizeObserver);
   } await new Promise<void>(resolve => requestAnimationFrame(() => resolve())); });
 }
-function scroller() { return screen.getByLabelText("Rolagem dos arquivos", { selector: "div" }); }
+function scroller() { return screen.getByLabelText("Área de rolagem dos arquivos", { selector: "div" }); }
 function scrollTo(element: HTMLElement, top: number) { element.scrollTop = top; fireEvent.scroll(element); }
 beforeEach(() => {
   height = 400; observers.length = 0;
@@ -66,7 +66,7 @@ describe("tabela virtual", () => {
   });
   it.each([100, 1000, 5000, 10000])("limita DOM e alcança o último registro com %i arquivos", count => {
     render(<FileTable files={filesOf(count)} categories={categories} />);
-    expect(screen.getByRole("region", { name: "Rolagem dos arquivos" }).getAttribute("tabindex")).toBe("0");
+    expect(screen.getByRole("region", { name: "Área de rolagem dos arquivos" }).getAttribute("tabindex")).toBe("0");
     expect(screen.getByRole("table").getAttribute("aria-rowcount")).toBe(String(count + 1));
     expect(document.querySelectorAll("tr[data-file-path]").length).toBeGreaterThan(0);
     expect(document.querySelectorAll("tr[data-file-path]").length).toBeLessThan(25);
@@ -133,7 +133,7 @@ describe("tabela virtual", () => {
     expect(document.querySelectorAll("tr[data-file-path]").length).toBeLessThan(25);
     expect(screen.getByText(files[0].destination)).toBeTruthy();
     expect(screen.getAllByText("Nome já existe").length).toBeGreaterThan(0);
-    const container = screen.getByLabelText("Rolagem dos arquivos da prévia", { selector: "div" });
+    const container = screen.getByLabelText("Área de rolagem dos arquivos da prévia", { selector: "div" });
     fireEvent.keyDown(container, { key: "End" });
     expect(screen.getByText(files[4999].destination)).toBeTruthy();
     expect(files).toHaveLength(5000);

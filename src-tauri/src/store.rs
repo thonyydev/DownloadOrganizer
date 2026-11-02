@@ -101,6 +101,7 @@ impl Store {
 
             updates: true,
             autostart: false,
+            rules: Vec::new(),
         };
         // Defaults belong only to a new database, never to an incomplete existing one.
         if new_database {
