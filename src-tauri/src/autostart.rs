@@ -44,10 +44,7 @@ pub fn apply(enabled: bool) -> Result<()> {
     } else {
         Err(format!(
             "{}: {}",
-            t(
-                "Não foi possível alterar a inicialização com o Windows",
-                "Could not change starting with Windows"
-            ),
+            t("Could not change starting with Windows"),
             std::io::Error::from_raw_os_error(status as i32)
         ))
     }

@@ -1,10 +1,9 @@
 import { useSyncExternalStore } from "react";
-import catalog from "./translations.json";
 
 export type Language = "pt-BR" | "en" | "es" | "fr" | "it";
 
-// Each row in translations.json: Portuguese text -> [Spanish, French, Italian].
-const columns: Partial<Record<Language, number>> = { es: 0, fr: 1, it: 2 };
+// i18n/<language>.json: English key -> text in that language.
+const catalogs = import.meta.glob<Record<string, string>>("/i18n/*.json", { eager: true, import: "default" });
 const locales: Record<Language, string> = { "pt-BR": "pt-BR", en: "en-US", es: "es-ES", fr: "fr-FR", it: "it-IT" };
 
 const listeners = new Set<() => void>();
@@ -12,7 +11,7 @@ const listeners = new Set<() => void>();
 // The native app reports the Windows display language in its first snapshot.
 function detect(): Language {
   const prefix = typeof navigator === "undefined" ? "" : navigator.language.slice(0, 2).toLowerCase();
-  return prefix === "pt" ? "pt-BR" : prefix === "es" || prefix === "fr" || prefix === "it" ? prefix : "en";
+  return (Object.keys(locales) as Language[]).find(code => code.slice(0, 2) === prefix) ?? "en";
 }
 
 let current: Language = detect();
@@ -27,11 +26,9 @@ export function setLanguage(next: Language) {
   listeners.forEach(listener => listener());
 }
 
-/** Other languages look up the Portuguese text; a test fails if a row is missing. Call it during render, not at module level. */
-export function t(portuguese: string, english: string) {
-  if (current === "pt-BR") return portuguese;
-  const column = columns[current];
-  return column === undefined ? english : (catalog as Record<string, string[]>)[portuguese]?.[column] ?? english;
+/** Looks up the key in the active language; a test fails if a key is missing. Call it during render, not at module level. */
+export function t(key: string) {
+  return catalogs[`/i18n/${current}.json`][key] ?? key;
 }
 
 function subscribe(listener: () => void) {

@@ -1388,6 +1388,33 @@ fn undo_refuses_modified_content_even_with_same_size_and_time() {
 }
 
 #[test]
+fn empty_files_wait_for_their_content() {
+    let (_temp, _runtime, prefs) = fixture();
+    let placeholder = Path::new(&prefs.source).join("report.pdf");
+    old_file(&placeholder, b"");
+    assert_eq!(plan(&prefs).files[0].status, "ignored");
+    old_file(&placeholder, b"content");
+    assert_eq!(plan(&prefs).files[0].status, "ready");
+}
+
+#[test]
+fn a_source_inside_its_own_category_folder_is_left_alone() {
+    let (_temp, _runtime, mut prefs) = fixture();
+    let first = Path::new(&prefs.source).join("a.pdf");
+    old_file(&first, b"content");
+    let planned = plan(&prefs).files[0].destination.clone();
+    let folder = Path::new(&planned).parent().unwrap();
+    // A different case still names the same folder on Windows.
+    let upper = folder.with_file_name(folder.file_name().unwrap().to_string_lossy().to_uppercase());
+    fs::create_dir_all(&upper).unwrap();
+    prefs.source = upper.to_string_lossy().into_owned();
+    old_file(&upper.join("a.pdf"), b"content");
+    let file = plan(&prefs).files.remove(0);
+    assert_eq!(file.status, "ignored");
+    assert_eq!(file.rename_to, None);
+}
+
+#[test]
 fn temporary_recent_files_and_disabled_categories_are_ignored() {
     let (_temp, mut runtime, mut prefs) = fixture();
     for name in ["a.crdownload", "b.part", "c.tmp", ".hidden", "~office.docx"] {

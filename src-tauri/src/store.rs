@@ -159,7 +159,7 @@ impl Store {
         if let Some(expected) = expected
             && Self::read_preferences(&tx)? != *expected
         {
-            return Err(t("PREFERENCES_CHANGED: As configurações foram atualizadas fora deste formulário. Revise a versão atual antes de salvar.", "PREFERENCES_CHANGED: The settings were updated outside this form. Review the current version before saving.").into());
+            return Err(t("PREFERENCES_CHANGED: The settings were updated outside this form. Review the current version before saving.").into());
         }
         tx.execute(
             "UPDATE preferences SET value=?1 WHERE id=1",
@@ -238,9 +238,7 @@ impl Store {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
             Err(error) => return Err(error.to_string()),
         }
-        let path_text = path
-            .to_str()
-            .ok_or(t("Caminho de pasta inválido", "Invalid folder path"))?;
+        let path_text = path.to_str().ok_or(t("Invalid folder path"))?;
         self.db
             .execute(
                 "INSERT INTO created_directories(operation_id,path,state) VALUES(?1,?2,'intent')",
@@ -288,10 +286,7 @@ impl Store {
         } else {
             Err(format!(
                 "{}: {}",
-                t(
-                    "Os arquivos foram preservados, mas não foi possível concluir a limpeza das pastas",
-                    "The files were preserved, but the folder cleanup could not be finished"
-                ),
+                t("The files were preserved, but the folder cleanup could not be finished"),
                 errors.join("; ")
             ))
         }
@@ -303,7 +298,6 @@ impl Store {
             .execute(
                 "UPDATE created_directories SET state='unverified',error=?1 WHERE state='intent'",
                 [t(
-                    "Criação interrompida sem identidade confirmada; pasta preservada",
                     "Creation interrupted without a confirmed identity; folder preserved",
                 )],
             )
@@ -342,10 +336,7 @@ impl Store {
                     fs::canonicalize(path).map_err(|error| {
                         format!(
                             "{}: {error}",
-                            t(
-                                "Não foi possível validar as pastas configuradas antes da limpeza",
-                                "Could not validate the configured folders before cleanup"
-                            )
+                            t("Could not validate the configured folders before cleanup")
                         )
                     })
                 })
@@ -361,13 +352,7 @@ impl Store {
                 self.db
                     .execute(
                         "UPDATE created_directories SET error=?1 WHERE id=?2",
-                        params![
-                            t(
-                                "Pasta usada pelas configurações atuais; preservada",
-                                "Folder used by the current settings; preserved"
-                            ),
-                            id
-                        ],
+                        params![t("Folder used by the current settings; preserved"), id],
                     )
                     .map_err(|e| e.to_string())?;
                 continue;
@@ -380,12 +365,7 @@ impl Store {
             };
             let (state, error) = match result {
                 Ok(true) => ("removed", None),
-                Ok(false) => (
-                    "created",
-                    Some(
-                        t("Pasta não vazia; preservada", "Folder not empty; preserved").to_owned(),
-                    ),
-                ),
+                Ok(false) => ("created", Some(t("Folder not empty; preserved").to_owned())),
                 Err(error) => {
                     // Old cleanup failures remain journaled without failing an unrelated operation.
                     if operation.is_none_or(|op| op == owner) {
@@ -406,7 +386,7 @@ impl Store {
 
     pub fn history_page(&self, before: Option<i64>) -> Result<HistoryPage> {
         if before.is_some_and(|id| id <= 0) {
-            return Err(t("Cursor de histórico inválido", "Invalid history cursor").into());
+            return Err(t("Invalid history cursor").into());
         }
         let bound = before.map_or(i64::MAX, |id| id - 1);
         let operations = self.summaries(1, bound, 100)?;
@@ -432,7 +412,7 @@ impl Store {
     pub fn operation_summary(&self, id: i64) -> Result<OperationSummary> {
         self.summaries(id, id, 1)?
             .pop()
-            .ok_or(t("Operação não encontrada", "Operation not found").into())
+            .ok_or(t("Operation not found").into())
     }
 
     fn summaries(&self, lower: i64, upper: i64, limit: i64) -> Result<Vec<OperationSummary>> {
@@ -467,7 +447,7 @@ impl Store {
             )
             .optional()
             .map_err(|error| error.to_string())?
-            .ok_or(t("Operação não encontrada", "Operation not found"))?;
+            .ok_or(t("Operation not found"))?;
         Ok(Operation {
             id,
             created,
@@ -532,7 +512,7 @@ impl Store {
                 if source.as_ref().err().is_some_and(|e| engine::is_busy(e))
                     || target.as_ref().err().is_some_and(|e| engine::is_busy(e))
                 {
-                    self.status(item.id, &item.status, Some(t("Arquivo ocupado; libere e reinicie para verificar a operação interrompida", "File is busy; release it and restart to check the interrupted operation")))?;
+                    self.status(item.id, &item.status, Some(t("File is busy; release it and restart to check the interrupted operation")))?;
                     continue;
                 }
                 let at_source = source.is_ok();
@@ -561,10 +541,7 @@ impl Store {
                 self.status(
                     item.id,
                     state,
-                    Some(t(
-                        "Operação interrompida; estado verificado ao iniciar",
-                        "Operation interrupted; state checked at startup",
-                    )),
+                    Some(t("Operation interrupted; state checked at startup")),
                 )?;
             }
         }

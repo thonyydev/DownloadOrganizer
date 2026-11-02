@@ -35,7 +35,7 @@ pub fn configure(runtime: &mut Runtime, sender: &mpsc::SyncSender<Message>) -> R
         |source| {
             fs::read_dir(source)
                 .and_then(|entries| entries.map(|entry| entry.map(|entry| entry.path())).collect())
-                .map_err(|e| format!("{}: {e}", t("Monitoramento pausado: não foi possível preparar os arquivos existentes. Verifique a pasta e tente reativar. Detalhes", "Monitoring paused: could not prepare the existing files. Check the folder and try turning it back on. Details")))
+                .map_err(|e| format!("{}: {e}", t("Monitoring paused: could not prepare the existing files. Check the folder and try turning it back on. Details")))
         },
     )
 }
@@ -92,7 +92,7 @@ pub(crate) fn configure_with(
     let baseline = enumerate(&source)?;
     let current = runtime.store.preferences()?;
     if !current.automatic || current.source != prefs.source {
-        return Err(t("As configurações de monitoramento mudaram durante a ativação. Confira a origem e tente reativar o monitoramento.", "Monitoring settings changed during activation. Check the source folder and try turning monitoring on again.").into());
+        return Err(t("Monitoring settings changed during activation. Check the source folder and try turning monitoring on again.").into());
     }
     runtime.session = Some(Session {
         generation,
@@ -150,10 +150,7 @@ pub fn worker(app: AppHandle, receiver: mpsc::Receiver<Message>) {
             if runtime.watch_error != previous_error
                 && let Some(error) = runtime.watch_error.clone()
             {
-                let title = t(
-                    "Há um problema no monitoramento",
-                    "There's a problem with monitoring",
-                );
+                let title = t("There's a problem with monitoring");
                 crate::notify(&app, &runtime, title, &error);
             }
             let _ = app.emit("organizer-changed", ());

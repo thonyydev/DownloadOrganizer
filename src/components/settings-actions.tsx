@@ -49,9 +49,9 @@ export function SettingsActions({ busy, dirty, external, onSave, onDiscard }: {
     };
   }, [surfaceRef]);
   return <div className="settings-actions-rail" ref={railRef}>
-    <div className="settings-actions" ref={surfaceRef} role="region" aria-label={t("Ações das configurações", "Settings actions")}>
-      <Button variant="outline" onClick={onDiscard} disabled={busy || !dirty}>{t("Descartar alterações", "Discard changes")}</Button>
-      <Button onClick={onSave} disabled={busy || !dirty || external}><Save aria-hidden="true" /><span className="settings-save-label"><span aria-hidden="true" className="settings-save-size">{t("Salvar preferências", "Save preferences")}</span><span>{busy ? t("Salvando…", "Saving…") : t("Salvar preferências", "Save preferences")}</span></span></Button>
+    <div className="settings-actions" ref={surfaceRef} role="region" aria-label={t("Settings actions")}>
+      <Button variant="outline" onClick={onDiscard} disabled={busy || !dirty}>{t("Discard changes")}</Button>
+      <Button onClick={onSave} disabled={busy || !dirty || external}><Save aria-hidden="true" /><span className="settings-save-label"><span aria-hidden="true" className="settings-save-size">{t("Save preferences")}</span><span>{busy ? t("Saving…") : t("Save preferences")}</span></span></Button>
     </div>
   </div>;
 }
