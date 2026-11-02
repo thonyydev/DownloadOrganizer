@@ -1,6 +1,21 @@
 # Changelog
 
-## 0.1.1
+## 0.1.2 — 2026-11-02
+
+- Add custom rules: send files to your own folders by name, with patterns such as `*.stl` or `invoice*.pdf`. The first matching rule decides, even if the file's category is turned off. A short tutorial explains them the first time, and you can reopen it from Settings.
+- Review the preview more easily: conflicts come first, the other files are grouped by destination folder, and each row shows a short destination. You can still show full paths.
+- Leave empty files where they are, so an empty file that a browser creates when a download starts isn't moved before the download finishes.
+- Leave a file alone when it's already in its category folder, instead of offering to rename it.
+- Show save errors in the save bar, which stays in view while you scroll Settings.
+- Make result dialogs smaller and category colors easier to tell apart.
+- Don't install an update if you turned updates off while it was downloading.
+- Reword stiff text in Portuguese, Spanish, French and Italian.
+
+Known limits:
+
+- The installer isn't code-signed yet, so Windows SmartScreen may show a warning.
+
+## 0.1.1 — 2026-11-02
 
 - Choose which files to organize in the preview.
 - Rename conflicting files instead of leaving them behind. Existing files are still never overwritten.
@@ -14,7 +29,7 @@ Known limits:
 
 - The installer isn't code-signed yet, so Windows SmartScreen may show a warning.
 
-## 0.1.0 — first public beta
+## 0.1.0 — 2026-11-01 (first public beta)
 
 First public release, for Windows 11.
 
