@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.2 — 2026-11-02
+## 0.1.2 — 2026-11-04
 
 - Add custom rules: send files to your own folders by name, with patterns such as `*.stl` or `invoice*.pdf`. The first matching rule decides, even if the file's category is turned off. A short tutorial explains them the first time, and you can reopen it from Settings.
 - Review the preview more easily: conflicts come first, the other files are grouped by destination folder, and each row shows a short destination. You can still show full paths.
