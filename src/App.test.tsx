@@ -39,7 +39,7 @@ vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => ({
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: mocks.choose }));
 
 let snapshot: Omit<Snapshot, "history" | "history_cursor"> & { history: Operation[] };
-const initial: Preferences = { source: "/isolated/source", destination: "/isolated/destination", language: "system", theme: "dark", automatic: false, enabled_categories: ["documents"], notifications: true, updates: true, autostart: false, rules: [] };
+const initial: Preferences = { source: "/isolated/source", destination: "/isolated/destination", language: "system", theme: "dark", automatic: false, enabled_categories: ["documents"], notifications: true, updates: true, autostart: false, extra_sources: [], rules: [] };
 const operation: Operation = { id: 42, created: 1_700_000_000, kind: "manual", movements: [{ id: 1, source: "/isolated/source/a.txt", destination: "/isolated/destination/Documentos/a.txt", status: "moved", error: null, size: 1 }] };
 function snapshotPayload(): Snapshot { return { ...snapshot, history: snapshot.history.slice(0, 100).map(summarizeOperation), history_cursor: snapshot.history.length > 100 ? snapshot.history[99].id : null }; }
 

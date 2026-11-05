@@ -102,6 +102,7 @@ impl Store {
             updates: true,
             autostart: false,
             rules: Vec::new(),
+            extra_sources: Vec::new(),
         };
         // Defaults belong only to a new database, never to an incomplete existing one.
         if new_database {
@@ -331,8 +332,8 @@ impl Store {
             .map_err(|e| e.to_string())?;
         drop(query);
         let protected = self.preferences().and_then(|prefs| {
-            [prefs.source, prefs.destination]
-                .iter()
+            engine::sources(&prefs)
+                .chain([prefs.destination.as_str()])
                 .map(|path| {
                     fs::canonicalize(path).map_err(|error| {
                         format!(

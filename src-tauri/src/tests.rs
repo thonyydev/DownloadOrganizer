@@ -397,8 +397,8 @@ mod monitor_activation {
             assert!(runtime.session.is_none());
         } else {
             assert_eq!(
-                runtime.session.as_ref().unwrap().source,
-                fs::canonicalize(next_source).unwrap()
+                runtime.session.as_ref().unwrap().sources,
+                [fs::canonicalize(next_source).unwrap()]
             );
         }
     }
@@ -2042,4 +2042,105 @@ fn moves_and_undoes_between_real_drives() {
     undo(&mut runtime, id, None).unwrap();
     assert_eq!(fs::read(&source).unwrap(), b"between drives");
     assert_eq!(runtime.store.movements(id).unwrap()[0].status, "undone");
+}
+
+fn extra_source(temp: &TempDir, prefs: &mut Preferences, name: &str) -> PathBuf {
+    let folder = temp.path().join(name);
+    fs::create_dir(&folder).unwrap();
+    let folder = fs::canonicalize(folder).unwrap();
+    prefs.extra_sources.push(folder.to_string_lossy().into());
+    folder
+}
+
+#[test]
+fn several_sources_go_to_one_destination_and_a_repeated_name_waits() {
+    let (temp, mut runtime, mut prefs) = fixture();
+    let main = PathBuf::from(&prefs.source);
+    let desktop = extra_source(&temp, &mut prefs, "desktop");
+    runtime.store.save(&prefs).unwrap();
+    old_file(&main.join("report.pdf"), b"main");
+    old_file(&desktop.join("report.pdf"), b"desktop");
+    old_file(&desktop.join("photo.png"), b"photo");
+    let preview = plan(&prefs);
+    let from = |folder: &Path, name: &str| {
+        preview
+            .files
+            .iter()
+            .find(|f| Path::new(&f.path) == folder.join(name))
+            .unwrap()
+            .clone()
+    };
+    assert_eq!(from(&main, "report.pdf").status, "ready");
+    let repeated = from(&desktop, "report.pdf");
+    assert_eq!(repeated.status, "conflict");
+    assert!(repeated.reason.as_ref().unwrap().ends_with(": downloads"));
+    assert!(repeated.rename_to.is_some());
+    execute(
+        &mut runtime,
+        select_files(preview, &[], false),
+        "manual",
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        fs::read(main.join("Documentos/report.pdf")).unwrap(),
+        b"main"
+    );
+    assert_eq!(fs::read(main.join("Imagens/photo.png")).unwrap(), b"photo");
+    assert_eq!(fs::read(desktop.join("report.pdf")).unwrap(), b"desktop");
+}
+
+#[test]
+fn a_source_cannot_be_added_twice_and_other_folders_stay_outside() {
+    let (temp, _runtime, mut prefs) = fixture();
+    let desktop = extra_source(&temp, &mut prefs, "desktop");
+    let entry = {
+        old_file(&desktop.join("a.txt"), b"a");
+        plan(&prefs).files.remove(0)
+    };
+    prefs.extra_sources.clear();
+    assert!(prepare_move(&entry, &prefs).is_err());
+    assert!(desktop.join("a.txt").exists());
+    prefs.extra_sources = vec![prefs.source.to_uppercase()];
+    assert!(engine::validate_preferences(&prefs).is_err());
+}
+
+#[test]
+fn automation_watches_every_source() {
+    let (temp, mut runtime, mut prefs) = fixture();
+    let desktop = extra_source(&temp, &mut prefs, "desktop");
+    // Files already there are never organized automatically, even when they change.
+    let existing = desktop.join("existing.txt");
+    old_file(&existing, b"existing");
+    let generation = automatic(&mut runtime, &mut prefs);
+    let file = desktop.join("new.txt");
+    old_file(&file, b"new");
+    let mut queue = queue::Queue::default();
+    queue.event(
+        &mut runtime,
+        (
+            generation,
+            Ok(event(EventKind::Create(CreateKind::File), &file)),
+        ),
+    );
+    queue.event(
+        &mut runtime,
+        (
+            generation,
+            Ok(event(
+                EventKind::Modify(notify::event::ModifyKind::Any),
+                &existing,
+            )),
+        ),
+    );
+    assert!(
+        queue
+            .process_due(&mut runtime, None, Instant::now() + Duration::from_secs(11))
+            .unwrap()
+    );
+    assert_eq!(
+        fs::read(Path::new(&prefs.destination).join("Documentos/new.txt")).unwrap(),
+        b"new"
+    );
+    assert_eq!(fs::read(&existing).unwrap(), b"existing");
 }

@@ -20,7 +20,7 @@ Sort files into categories, preview changes before applying them, and undo previ
 - **Preview Before Organizing** — See exactly where your files will go, and choose which ones to move.
 - **Undo Actions** — Restore previously moved files when supported and safe.
 - **Activity History** — Keep track of organized files and previous operations.
-- **Custom Folders** — Choose which folders to organize and where files should go.
+- **Custom Folders** — Choose which folders to organize, such as Downloads and Desktop, and one destination for all of them.
 - **Custom Rules** — Send files to your own folders by name, with patterns such as `*.stl` or `invoice*.pdf`.
 - **Safe File Handling** — Detect conflicts and avoid overwriting existing files.
 - **English, Portuguese, Spanish, French and Italian** — The app and new category folders follow your Windows language, or the one you choose in Settings. Existing files are not moved.
@@ -28,7 +28,7 @@ Sort files into categories, preview changes before applying them, and undo previ
 
 ## How It Works
 
-1. **Choose a folder** — Select the folder you want to organize.
+1. **Choose your folders** — Select the folder you want to organize, and add more if you like.
 2. **Set your preferences** — Choose your destination and file categories.
 3. **Preview changes** — Review the files and their destinations.
 4. **Organize** — Confirm and let Download Organizer handle the rest.
@@ -47,7 +47,8 @@ The installer isn't code-signed yet, so Windows SmartScreen may warn you when yo
 
 ## Good to Know
 
-- Only files at the top level of the source folder are organized, not subfolders.
+- Only files at the top level of each source folder are organized, not subfolders.
+- If a source folder goes missing, such as an unplugged drive, organizing pauses until you reconnect it or remove it in Settings.
 - A destination on another drive works, but takes longer: each file is copied, checked and only then removed from the source.
 - Files with a name that already exists at the destination are never overwritten. In the preview you can choose to rename them, like `file (2).pdf`. Automatic organization leaves them in place.
 - Automatic organization is off by default. When it's on, closing the window keeps the app running in the system tray; choose Quit from the tray icon to stop it. It handles new files and waits until a file has gone 10 seconds without writes.

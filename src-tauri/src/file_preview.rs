@@ -20,14 +20,14 @@ pub(crate) fn changed() -> &'static str {
 
 #[derive(Default)]
 pub struct Access {
-    source: String,
+    sources: Vec<String>,
     destination: String,
     files: HashMap<String, Stamp>,
 }
 
 impl Access {
     pub fn update(&mut self, prefs: &Preferences, files: &[FileEntry]) {
-        self.source = prefs.source.clone();
+        self.sources = engine::sources(prefs).map(String::from).collect();
         self.destination = prefs.destination.clone();
         self.files = files
             .iter()
@@ -46,7 +46,10 @@ impl Access {
             .files
             .get(path)
             .filter(|stamp| {
-                self.source == prefs.source
+                self.sources
+                    .iter()
+                    .map(String::as_str)
+                    .eq(engine::sources(prefs))
                     && self.destination == prefs.destination
                     && u64::try_from(stamp.size).ok() == Some(size)
                     && stamp.modified / 1_000_000 == modified
