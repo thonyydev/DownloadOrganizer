@@ -1422,6 +1422,7 @@ fn rules_choose_the_folder_and_undo_restores_the_file() {
     prefs.rules = vec![engine::Rule {
         pattern: "INVOICE*".into(),
         folder: "Finance".into(),
+        keep: false,
     }];
     runtime.store.save(&prefs).unwrap();
     let preview = plan(&prefs);
@@ -1458,10 +1459,12 @@ fn the_first_matching_rule_wins_and_temporary_files_stay_ignored() {
         engine::Rule {
             pattern: "a*".into(),
             folder: "First".into(),
+            keep: false,
         },
         engine::Rule {
             pattern: "*".into(),
             folder: "Second".into(),
+            keep: false,
         },
     ];
     let files = plan(&prefs).files;
@@ -1513,6 +1516,7 @@ fn rules_cannot_leave_the_destination_or_name_a_device() {
         prefs.rules = vec![engine::Rule {
             pattern: "*.pdf".into(),
             folder: folder.into(),
+            keep: false,
         }];
         assert!(engine::validate_preferences(&prefs).is_err(), "{folder:?}");
     }
@@ -1520,6 +1524,7 @@ fn rules_cannot_leave_the_destination_or_name_a_device() {
         prefs.rules = vec![engine::Rule {
             pattern: pattern.into(),
             folder: "Finance".into(),
+            keep: false,
         }];
         assert!(engine::validate_preferences(&prefs).is_err(), "{pattern:?}");
     }
@@ -1527,6 +1532,7 @@ fn rules_cannot_leave_the_destination_or_name_a_device() {
         prefs.rules = vec![engine::Rule {
             pattern: "*.pdf".into(),
             folder: folder.into(),
+            keep: false,
         }];
         assert!(engine::validate_preferences(&prefs).is_ok(), "{folder:?}");
     }
@@ -1539,6 +1545,7 @@ fn an_incomplete_rule_says_so() {
         prefs.rules = vec![engine::Rule {
             pattern: pattern.into(),
             folder: folder.into(),
+            keep: false,
         }];
         assert_eq!(
             engine::validate_preferences(&prefs).unwrap_err(),
@@ -1558,6 +1565,7 @@ fn a_conflict_in_a_rule_folder_keeps_both_files_and_undoes() {
     prefs.rules = vec![engine::Rule {
         pattern: "*.pdf".into(),
         folder: "Finance".into(),
+        keep: false,
     }];
     runtime.store.save(&prefs).unwrap();
     let mut preview = plan(&prefs);
@@ -2143,4 +2151,44 @@ fn automation_watches_every_source() {
         b"new"
     );
     assert_eq!(fs::read(&existing).unwrap(), b"existing");
+}
+
+#[test]
+fn a_keep_rule_leaves_matching_files_in_place() {
+    let (_temp, mut runtime, mut prefs) = fixture();
+    let source = PathBuf::from(&prefs.source);
+    old_file(&source.join("movie.torrent"), b"torrent");
+    old_file(&source.join("notes.txt"), b"notes");
+    // A keep rule needs no folder, and comes before the rule that would move the file.
+    prefs.rules = vec![
+        engine::Rule {
+            pattern: "*.torrent".into(),
+            folder: String::new(),
+            keep: true,
+        },
+        engine::Rule {
+            pattern: "*".into(),
+            folder: "Everything".into(),
+            keep: false,
+        },
+    ];
+    engine::validate_preferences(&prefs).unwrap();
+    runtime.store.save(&prefs).unwrap();
+    let preview = plan(&prefs);
+    let kept = preview
+        .files
+        .iter()
+        .find(|f| f.name == "movie.torrent")
+        .unwrap();
+    assert_eq!(kept.status, "ignored");
+    assert_eq!(
+        kept.reason.as_deref(),
+        Some("Mantido no lugar por uma regra")
+    );
+    execute(&mut runtime, preview, "manual", None).unwrap();
+    assert_eq!(fs::read(source.join("movie.torrent")).unwrap(), b"torrent");
+    assert_eq!(
+        fs::read(source.join("Everything/notes.txt")).unwrap(),
+        b"notes"
+    );
 }

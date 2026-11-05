@@ -21,7 +21,7 @@ Sort files into categories, preview changes before applying them, and undo previ
 - **Undo Actions** — Restore previously moved files when supported and safe.
 - **Activity History** — Keep track of organized files and previous operations.
 - **Custom Folders** — Choose which folders to organize, such as Downloads and Desktop, and one destination for all of them.
-- **Custom Rules** — Send files to your own folders by name, with patterns such as `*.stl` or `invoice*.pdf`.
+- **Custom Rules** — Send files to your own folders by name, with patterns such as `*.stl` or `invoice*.pdf`, or keep them where they are.
 - **Safe File Handling** — Detect conflicts and avoid overwriting existing files.
 - **English, Portuguese, Spanish, French and Italian** — The app and new category folders follow your Windows language, or the one you choose in Settings. Existing files are not moved.
 - **Privacy First** — Everything runs locally, with no accounts or cloud uploads.
@@ -64,7 +64,7 @@ Download Organizer has no account, telemetry or cloud service. Its only network 
 
 Have an idea or found a bug?
 
-Feel free to [open an issue](https://github.com/thonyydev/DownloadOrganizer/issues). Feedback and suggestions are always welcome.
+Feel free to [open an issue](https://github.com/thonyydev/DownloadOrganizer/issues). Feedback and suggestions are always welcome. To contribute code or translations, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Building from Source
 

@@ -10,7 +10,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 afterEach(() => { cleanup(); localStorage.clear(); });
 
-const preferences: Preferences = { source: "/isolated/source", destination: "/isolated/destination", theme: "dark", language: "pt-BR", automatic: false, enabled_categories: [], notifications: true, updates: true, autostart: false, extra_sources: ["/isolated/desktop"], rules: [{ pattern: "*.stl", folder: "Modelos" }, { pattern: "*.obj", folder: "Malhas" }] };
+const preferences: Preferences = { source: "/isolated/source", destination: "/isolated/destination", theme: "dark", language: "pt-BR", automatic: false, enabled_categories: [], notifications: true, updates: true, autostart: false, extra_sources: ["/isolated/desktop"], rules: [{ pattern: "*.stl", folder: "Modelos", keep: false }, { pattern: "*.obj", folder: "Malhas", keep: false }] };
 
 function renderSettings() {
   let draft = preferences;
@@ -23,9 +23,11 @@ it("adiciona, edita e remove regras só no rascunho", () => {
   firstRuleTutorial();
   const draft = renderSettings();
   fireEvent.click(screen.getByRole("button", { name: "Adicionar regra" }));
-  expect(draft().rules[2]).toEqual({ pattern: "", folder: "" });
+  expect(draft().rules[2]).toEqual({ pattern: "", folder: "", keep: false });
   fireEvent.change(screen.getAllByRole("textbox", { name: "Nome da pasta" })[1], { target: { value: "Peças" } });
-  expect(draft().rules[1]).toEqual({ pattern: "*.obj", folder: "Peças" });
+  expect(draft().rules[1]).toEqual({ pattern: "*.obj", folder: "Peças", keep: false });
+  fireEvent.click(screen.getAllByRole("checkbox", { name: "Deixar no lugar" })[0]);
+  expect(draft().rules[0]).toEqual({ pattern: "*.stl", folder: "", keep: true });
   fireEvent.click(screen.getAllByRole("button", { name: "Remover regra" })[0]);
   expect(draft().rules.map(rule => rule.pattern)).toEqual(["*.obj", ""]);
 });

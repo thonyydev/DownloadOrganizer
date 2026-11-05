@@ -156,3 +156,14 @@ describe("tabela virtual", () => {
     fireEvent.click(screen.getByRole("button", { name: "Limpar filtros" })); expect(clear).toHaveBeenCalledOnce();
   });
 });
+
+it("mostra a pasta de origem só quando os arquivos vêm de mais de uma", () => {
+  const files = filesOf(2);
+  const sources = () => [...document.querySelectorAll(".file-source")].map(element => element.textContent);
+  const { rerender } = render(<FileTable files={files} categories={categories} preview />);
+  expect(sources()).toEqual([]);
+  rerender(<FileTable files={[files[0], { ...files[1], path: "C:/Desktop/1.pdf" }]} categories={categories} preview />);
+  expect(sources()).toEqual(["Origem: isolated", "Origem: Desktop"]);
+  rerender(<FileTable files={[{ ...files[0], path: "C:/Users/Ana/Downloads/0.pdf" }, { ...files[1], path: "D:/Downloads/1.pdf" }]} categories={categories} preview />);
+  expect(sources()).toEqual(["Origem: C:/Users/Ana/Downloads", "Origem: D:/Downloads"]);
+});
