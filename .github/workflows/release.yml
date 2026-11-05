@@ -106,6 +106,7 @@ jobs:
           printf '{"version":"%s","pub_date":"%s","platforms":{"windows-x86_64":{"signature":"%s","url":"%s"}}}\n' \
             "${GITHUB_REF_NAME#v}" "$(date -u +%FT%TZ)" "$(cat "$installer.sig")" \
             "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/${installer// /.}" > latest.json
+          # Links to main, so a date fixed after tagging still shows.
           gh release create "$GITHUB_REF_NAME" "$installer" "$installer.sha256" latest.json \
             --repo "$GITHUB_REPOSITORY" --draft --title "Download Organizer $GITHUB_REF_NAME" \
-            --notes "See [CHANGELOG.md](https://github.com/$GITHUB_REPOSITORY/blob/$GITHUB_REF_NAME/CHANGELOG.md)."
+            --notes "See [CHANGELOG.md](https://github.com/$GITHUB_REPOSITORY/blob/main/CHANGELOG.md)."
