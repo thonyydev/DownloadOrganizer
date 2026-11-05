@@ -1,5 +1,5 @@
 import { File, ArrowRight, ChevronRight, Eye, SearchX } from "lucide-react";
-import { displayPath, bytes, date, statusLabel, type Category, type FileEntry } from "@/lib/api";
+import { basename, displayPath, bytes, date, statusLabel, type Category, type FileEntry } from "@/lib/api";
 import { t, useLanguage } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { Fragment, useCallback, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type Ref } from "react";
@@ -11,15 +11,16 @@ import { useMotionAllowed } from "@/components/motion/feedback";
 // Every destination is <root>\<folder>\<name>; the table header shows the root once.
 export function plannedFolder(file: FileEntry) { return file.destination.split(/[\\/]/).slice(-2)[0]; }
 function plannedName(file: FileEntry) { return file.destination.split(/[\\/]/).slice(-1)[0]; }
+const sourceFolder = (file: FileEntry) => file.path.replace(/[\\/][^\\/]*$/, "");
 
-function FileName({ file }: { file: FileEntry }) {
-  return <><strong>{file.name}</strong>{!file.extension && <small className="file-extension">{t("No extension")}</small>}</>;
+function FileName({ file, source }: { file: FileEntry; source?: string }) {
+  return <><strong>{file.name}</strong>{!file.extension && <small className="file-extension">{t("No extension")}</small>}{source && <small className="file-source"><span className="sr-only">{t("Source")}: </span>{source}</small>}</>;
 }
 
-function FileDetails({ file, open, onToggle }: { file: FileEntry; open: boolean; onToggle: () => void }) {
+function FileDetails({ file, source, open, onToggle }: { file: FileEntry; source?: string; open: boolean; onToggle: () => void }) {
   const interacted = useRef(false);
   const id = useId();
-  return <div className="file-name"><button className="file-disclosure" aria-expanded={open} aria-controls={id} onClick={() => { interacted.current = true; onToggle(); }}><ChevronRight size={16} aria-hidden="true" /><span className="sr-only">{t("View path and destination")}</span></button><div className="file-copy"><FileName file={file} /><Collapse open={open} id={id} className="file-details" animateInitial={interacted.current}><p>{t("Source")}: {displayPath(file.path)}</p><p>{t("Planned destination")}: {displayPath(file.destination)}</p></Collapse></div></div>;
+  return <div className="file-name"><button className="file-disclosure" aria-expanded={open} aria-controls={id} onClick={() => { interacted.current = true; onToggle(); }}><ChevronRight size={16} aria-hidden="true" /><span className="sr-only">{t("View path and destination")}</span></button><div className="file-copy"><FileName file={file} source={source} /><Collapse open={open} id={id} className="file-details" animateInitial={interacted.current}><p>{t("Source")}: {displayPath(file.path)}</p><p>{t("Planned destination")}: {displayPath(file.destination)}</p></Collapse></div></div>;
 }
 
 function RowSpace({ height, columns }: { height: number; columns: number }) {
@@ -28,8 +29,8 @@ function RowSpace({ height, columns }: { height: number; columns: number }) {
 
 export interface PreviewSelection { excluded: Set<string>; selected: number; ready: number; disabled: boolean; onToggle: (path: string) => void; onToggleAll: (all: boolean) => void }
 
-function FileRow({ file, index, preview, fullPaths, category, open, onToggle, onView, rowRef, selection }: {
-  file: FileEntry; index: number; preview: boolean; fullPaths: boolean; category?: string; open: boolean;
+function FileRow({ file, source, index, preview, fullPaths, category, open, onToggle, onView, rowRef, selection }: {
+  file: FileEntry; source?: string; index: number; preview: boolean; fullPaths: boolean; category?: string; open: boolean;
   onToggle: (path: string) => void; rowRef?: Ref<HTMLTableRowElement>;
   onView?: (file: FileEntry, trigger: HTMLButtonElement) => void; selection?: PreviewSelection;
 }) {
@@ -37,7 +38,7 @@ function FileRow({ file, index, preview, fullPaths, category, open, onToggle, on
   const size = useMemo(() => bytes(file.size), [file.size, language]);
   const modified = useMemo(() => preview ? "" : date(file.modified), [file.modified, preview, language]);
   return <tr data-index={index} data-file-path={file.path} aria-rowindex={index + 2} ref={rowRef}>
-    <td>{preview ? <div className="file-name">{selection && file.status === "ready" ? <input type="checkbox" className="preview-check" aria-label={`${t("Organize")} ${file.name}`} checked={!selection.excluded.has(file.path)} disabled={selection.disabled} onChange={() => selection.onToggle(file.path)} /> : <span className="file-icon"><File size={16} aria-hidden="true" /></span>}<div className="file-copy"><FileName file={file} /></div></div> : <FileDetails file={file} open={open} onToggle={() => onToggle(file.path)} />}</td>
+    <td>{preview ? <div className="file-name">{selection && file.status === "ready" ? <input type="checkbox" className="preview-check" aria-label={`${t("Organize")} ${file.name}`} checked={!selection.excluded.has(file.path)} disabled={selection.disabled} onChange={() => selection.onToggle(file.path)} /> : <span className="file-icon"><File size={16} aria-hidden="true" /></span>}<div className="file-copy"><FileName file={file} source={source} /></div></div> : <FileDetails file={file} source={source} open={open} onToggle={() => onToggle(file.path)} />}</td>
     {!preview && <td><span className={"category-label tone-" + file.category}><span className="tone-dot" aria-hidden="true" />{category}</span></td>}
     <td className="tabular number-cell">{size}</td><td>{preview ? <span className="destination" title={displayPath(file.destination)}><ArrowRight size={16} aria-hidden="true" />{fullPaths ? <span>{displayPath(file.destination)}</span> : <><span aria-hidden="true">{plannedFolder(file)}{plannedName(file) !== file.name && <>\{plannedName(file)}</>}</span><span className="sr-only">{displayPath(file.destination)}</span></>}</span> : <span className="tabular">{modified}</span>}</td>
     <td><div className="status-cell"><div><span className={"status status-" + file.status}>{statusLabel(file.status)}</span>{file.reason && <small className="reason">{file.reason}</small>}</div>{!preview && onView && <Button variant="ghost" size="icon-xs" className="file-view-button" aria-haspopup="dialog" aria-label={`${t("View")} ${file.name}`} onClick={event => onView(file, event.currentTarget)}><Eye className="size-4" aria-hidden="true" /></Button>}</div></td>
@@ -58,6 +59,13 @@ export function FileTable({ files, categories, preview = false, fullPaths = fals
   const previousFilter = useRef(filterKey);
   const toggle = useCallback((path: string) => setExpanded(previous => { const next = new Set(previous); if (next.has(path)) next.delete(path); else next.add(path); return next; }), []);
   const indexByPath = useMemo(() => new Map(files.map((file, index) => [file.path, index])), [files]);
+  // Several source folders can hold files with the same name, so each row then names its folder.
+  const sourceLabels = useMemo(() => {
+    const folders = [...new Set(files.map(sourceFolder))];
+    const names = folders.map(basename);
+    // Folders that share a name, such as C:\Downloads and D:\Downloads, show the whole path.
+    return folders.length > 1 ? new Map(folders.map((folder, i) => [folder, names.indexOf(names[i]) === names.lastIndexOf(names[i]) ? names[i] : displayPath(folder)])) : null;
+  }, [files]);
   const categoryNames = useMemo(() => new Map(categories.map(category => [category.id, category.name])), [categories]);
   const focusedIndex = focusedPath === null ? undefined : indexByPath.get(focusedPath);
   const virtual = files.length > 50;
@@ -147,7 +155,7 @@ export function FileTable({ files, categories, preview = false, fullPaths = fals
     previousEnd = item.end;
     return <Fragment key={file.path}>
       <RowSpace height={gap} columns={preview ? 4 : 5} />
-      <FileRow file={file} index={item.index} preview={preview} fullPaths={fullPaths} category={categoryNames.get(file.category)} open={expanded.has(file.path)} onToggle={toggle} onView={onView} rowRef={virtual ? virtualizer.measureElement : undefined} selection={selection} />
+      <FileRow file={file} source={sourceLabels?.get(sourceFolder(file))} index={item.index} preview={preview} fullPaths={fullPaths} category={categoryNames.get(file.category)} open={expanded.has(file.path)} onToggle={toggle} onView={onView} rowRef={virtual ? virtualizer.measureElement : undefined} selection={selection} />
     </Fragment>;
   });
   return <div ref={setScrollRef} data-motion-group className="table-scroll" role="region" tabIndex={0} aria-label={preview ? t("Preview files scroll area") : t("Files scroll area")} aria-describedby={helpId} onKeyDown={navigateRows}
