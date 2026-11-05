@@ -250,6 +250,7 @@ fn media_access_requires_the_current_authorized_snapshot() {
 
         autostart: false,
         rules: Vec::new(),
+        extra_sources: Vec::new(),
     };
     let files = engine::scan(&prefs).unwrap();
     let entry = files

@@ -510,5 +510,11 @@
   "Create my rules": "Create my rules",
   "How rules work": "How rules work",
   "Fill in or remove the incomplete rule": "Fill in or remove the incomplete rule",
-  "Show full paths": "Show full paths"
+  "Show full paths": "Show full paths",
+  "Source folder added twice": "Source folder added twice",
+  "Preserved because the file with the same name in this folder goes first": "Preserved because the file with the same name in this folder goes first",
+  "Another source folder": "Another source folder",
+  "Remove source folder": "Remove source folder",
+  "Add source folder": "Add source folder",
+  "Files from every source folder go to the same destination.": "Files from every source folder go to the same destination."
 }

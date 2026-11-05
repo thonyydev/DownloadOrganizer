@@ -510,5 +510,11 @@
   "Create my rules": "Crea le mie regole",
   "How rules work": "Come funzionano le regole",
   "Fill in or remove the incomplete rule": "Completa o rimuovi la regola incompleta",
-  "Show full paths": "Mostra i percorsi completi"
+  "Show full paths": "Mostra i percorsi completi",
+  "Source folder added twice": "Cartella di origine aggiunta due volte",
+  "Preserved because the file with the same name in this folder goes first": "Conservato perché il file con lo stesso nome in questa cartella ha la precedenza",
+  "Another source folder": "Altra cartella di origine",
+  "Remove source folder": "Rimuovi cartella di origine",
+  "Add source folder": "Aggiungi cartella di origine",
+  "Files from every source folder go to the same destination.": "I file di tutte le cartelle di origine vanno nella stessa destinazione."
 }

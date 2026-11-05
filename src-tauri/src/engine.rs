@@ -139,6 +139,30 @@ pub struct Preferences {
     pub autostart: bool,
     #[serde(default)]
     pub rules: Vec<Rule>,
+    // More folders organized into the same destination as `source`.
+    #[serde(default)]
+    pub extra_sources: Vec<String>,
+}
+
+pub fn sources(prefs: &Preferences) -> impl Iterator<Item = &str> {
+    std::iter::once(prefs.source.as_str()).chain(prefs.extra_sources.iter().map(String::as_str))
+}
+
+pub fn validate_sources(prefs: &Preferences) -> Result<Vec<PathBuf>> {
+    let mut found = Vec::new();
+    for source in sources(prefs) {
+        let path = validate_directory(Path::new(source))?;
+        if found.contains(&path) {
+            return Err(format!("{}: {source}", t("Source folder added twice")));
+        }
+        found.push(path);
+    }
+    Ok(found)
+}
+
+fn in_sources(sources: &[PathBuf], path: &Path) -> bool {
+    path.parent()
+        .is_some_and(|parent| sources.iter().any(|source| source == parent))
 }
 
 // Case-insensitive like Windows file names. * is any text and ? is one character.
@@ -282,7 +306,7 @@ pub fn validate_directory(path: &Path) -> Result<PathBuf> {
 }
 
 pub fn validate_preferences(prefs: &Preferences) -> Result<()> {
-    validate_directory(Path::new(&prefs.source))?;
+    validate_sources(prefs)?;
     validate_directory(Path::new(&prefs.destination))?;
     if !["dark", "light"].contains(&prefs.theme.as_str()) {
         return Err(t("Invalid theme").into());
@@ -371,12 +395,12 @@ pub struct Preview {
 }
 
 pub fn scan(prefs: &Preferences) -> Result<Vec<FileEntry>> {
-    let source = validate_directory(Path::new(&prefs.source))?;
-    let paths = fs::read_dir(&source)
-        .map_err(|e| e.to_string())?
-        .map(|item| item.map(|item| item.path()))
-        .collect::<io::Result<Vec<_>>>()
-        .map_err(|e| e.to_string())?;
+    let mut paths = Vec::new();
+    for source in validate_sources(prefs)? {
+        for item in fs::read_dir(&source).map_err(|e| format!("{}: {e}", source.display()))? {
+            paths.push(item.map_err(|e| e.to_string())?.path());
+        }
+    }
     scan_paths(prefs, paths)
 }
 
@@ -385,11 +409,11 @@ pub fn scan_paths(
     paths: impl IntoIterator<Item = PathBuf>,
 ) -> Result<Vec<FileEntry>> {
     validate_preferences(prefs)?;
-    let source = validate_directory(Path::new(&prefs.source))?;
+    let sources = validate_sources(prefs)?;
     let destination = validate_directory(Path::new(&prefs.destination))?;
     let mut files = Vec::new();
     for path in paths {
-        if path.parent() != Some(source.as_path()) {
+        if !in_sources(&sources, &path) {
             continue;
         }
         let name = path.file_name().ok_or(t("Invalid file name"))?;
@@ -464,6 +488,25 @@ pub fn scan_paths(
         });
     }
     files.sort_by_key(|f| f.name.to_lowercase());
+    // Two sources can hold files with the same name; only the first one can take it.
+    let mut taken = std::collections::HashMap::new();
+    for file in files.iter_mut().filter(|file| file.status == "ready") {
+        // The folder name, so the preview tells the two files apart.
+        let folder = Path::new(&file.path)
+            .parent()
+            .and_then(Path::file_name)
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        if let Some(first) = taken.get(&file.destination.to_lowercase()) {
+            file.status = "conflict".into();
+            file.reason = Some(format!(
+                "{}: {first}",
+                t("Preserved because the file with the same name in this folder goes first")
+            ));
+        } else {
+            taken.insert(file.destination.to_lowercase(), folder);
+        }
+    }
     plan_renames(&mut files);
     Ok(files)
 }
@@ -627,9 +670,8 @@ pub fn prepare_move(
     prefs: &Preferences,
     create_directory: impl FnOnce(&Path) -> Result<()>,
 ) -> Result<(LockedFile, String)> {
-    let source = validate_directory(Path::new(&prefs.source))?;
     let path = Path::new(&entry.path);
-    if path.parent() != Some(source.as_path()) || temporary(path) {
+    if !in_sources(&validate_sources(prefs)?, path) || temporary(path) {
         return Err(t("File is outside the authorized folder").into());
     }
     let category = classify(path);

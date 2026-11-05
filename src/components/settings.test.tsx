@@ -5,11 +5,12 @@ import { firstRuleTutorial } from "@/components/rules-tutorial";
 import { Settings } from "@/components/settings";
 import { samePreferences } from "@/lib/experience";
 import type { Preferences } from "@/lib/api";
+import { open } from "@tauri-apps/plugin-dialog";
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 afterEach(() => { cleanup(); localStorage.clear(); });
 
-const preferences: Preferences = { source: "/isolated/source", destination: "/isolated/destination", theme: "dark", language: "pt-BR", automatic: false, enabled_categories: [], notifications: true, updates: true, autostart: false, rules: [{ pattern: "*.stl", folder: "Modelos" }, { pattern: "*.obj", folder: "Malhas" }] };
+const preferences: Preferences = { source: "/isolated/source", destination: "/isolated/destination", theme: "dark", language: "pt-BR", automatic: false, enabled_categories: [], notifications: true, updates: true, autostart: false, extra_sources: ["/isolated/desktop"], rules: [{ pattern: "*.stl", folder: "Modelos" }, { pattern: "*.obj", folder: "Malhas" }] };
 
 function renderSettings() {
   let draft = preferences;
@@ -92,4 +93,14 @@ it("trata regra alterada ou reordenada como alteração das preferências", () =
   expect(samePreferences(preferences, { ...preferences, rules: [...preferences.rules] })).toBe(true);
   expect(samePreferences(preferences, { ...preferences, rules: [...preferences.rules].reverse() })).toBe(false);
   expect(samePreferences(preferences, { ...preferences, rules: [] })).toBe(false);
+});
+
+it("adiciona e remove outras pastas de origem só no rascunho", async () => {
+  vi.mocked(open).mockResolvedValueOnce("/isolated/temp");
+  const draft = renderSettings();
+  fireEvent.click(screen.getByRole("button", { name: "Adicionar pasta de origem" }));
+  await waitFor(() => expect(draft().extra_sources).toEqual(["/isolated/desktop", "/isolated/temp"]));
+  fireEvent.click(screen.getByRole("button", { name: "Remover pasta de origem: /isolated/desktop" }));
+  expect(draft().extra_sources).toEqual(["/isolated/temp"]);
+  expect(samePreferences(preferences, { ...preferences, extra_sources: [] })).toBe(false);
 });

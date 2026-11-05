@@ -20,7 +20,7 @@ pub struct Session {
     pub generation: u64,
     pub baseline: HashSet<PathBuf>,
     pub restored: HashMap<PathBuf, Stamp>,
-    pub source: PathBuf,
+    pub sources: Vec<PathBuf>,
 }
 
 pub fn configure(runtime: &mut Runtime, sender: &mpsc::SyncSender<Message>) -> Result<()> {
@@ -44,8 +44,8 @@ pub fn configure(runtime: &mut Runtime, sender: &mpsc::SyncSender<Message>) -> R
 pub(crate) fn configure_with(
     runtime: &mut Runtime,
     sender: &mpsc::SyncSender<Message>,
-    register: impl FnOnce(&mut RecommendedWatcher, &Path) -> Result<()>,
-    enumerate: impl FnOnce(&Path) -> Result<HashSet<PathBuf>>,
+    mut register: impl FnMut(&mut RecommendedWatcher, &Path) -> Result<()>,
+    mut enumerate: impl FnMut(&Path) -> Result<HashSet<PathBuf>>,
 ) -> Result<()> {
     let prefs = runtime.store.preferences()?;
     if !prefs.automatic {
@@ -55,8 +55,8 @@ pub(crate) fn configure_with(
         runtime.watch_error = None;
         return Ok(());
     }
-    let source = match engine::validate_directory(Path::new(&prefs.source)) {
-        Ok(source) => source,
+    let sources = match engine::validate_sources(&prefs) {
+        Ok(sources) => sources,
         Err(error) => {
             runtime.watcher = None;
             runtime.session = None;
@@ -66,7 +66,10 @@ pub(crate) fn configure_with(
     };
     if prefs.automatic
         && runtime.watcher.is_some()
-        && runtime.session.as_ref().is_some_and(|s| s.source == source)
+        && runtime
+            .session
+            .as_ref()
+            .is_some_and(|s| s.sources == sources)
     {
         return Ok(());
     }
@@ -88,17 +91,22 @@ pub(crate) fn configure_with(
     })
     .map_err(|e| e.to_string())?;
     // Observe first; queued arrivals remove entries sampled during enumeration.
-    register(&mut watcher, &source)?;
-    let baseline = enumerate(&source)?;
+    for source in &sources {
+        register(&mut watcher, source)?;
+    }
+    let mut baseline = HashSet::new();
+    for source in &sources {
+        baseline.extend(enumerate(source)?);
+    }
     let current = runtime.store.preferences()?;
-    if !current.automatic || current.source != prefs.source {
+    if !current.automatic || !engine::sources(&current).eq(engine::sources(&prefs)) {
         return Err(t("Monitoring settings changed during activation. Check the source folder and try turning monitoring on again.").into());
     }
     runtime.session = Some(Session {
         generation,
         baseline,
         restored: HashMap::new(),
-        source,
+        sources,
     });
     runtime.watcher = Some(watcher);
     Ok(())
