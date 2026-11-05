@@ -64,7 +64,7 @@ Download Organizer has no account, telemetry or cloud service. Its only network 
 
 Have an idea or found a bug?
 
-Feel free to [open an issue](https://github.com/thonyydev/DownloadOrganizer/issues). Feedback and suggestions are always welcome.
+Feel free to [open an issue](https://github.com/thonyydev/DownloadOrganizer/issues). Feedback and suggestions are always welcome. To contribute code or translations, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Building from Source
 
