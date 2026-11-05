@@ -119,6 +119,9 @@ pub fn classify(path: &Path) -> &'static Category {
 pub struct Rule {
     pub pattern: String,
     pub folder: String,
+    // Matching files stay where they are; `folder` is then unused.
+    #[serde(default)]
+    pub keep: bool,
 }
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Eq, Debug)]
@@ -190,22 +193,21 @@ pub(crate) fn matches_pattern(pattern: &str, name: &str) -> bool {
     pattern[p..].iter().all(|c| *c == '*')
 }
 
-fn rule_folder<'a>(prefs: &'a Preferences, path: &Path) -> Option<&'a str> {
+fn matching_rule<'a>(prefs: &'a Preferences, path: &Path) -> Option<&'a Rule> {
     let name = path.file_name()?.to_str()?;
     prefs
         .rules
         .iter()
         .find(|rule| matches_pattern(&rule.pattern, name))
-        .map(|rule| rule.folder.as_str())
 }
 
 // A rule names its folder and so applies even when the file's category is turned off.
 fn target_folder<'a>(prefs: &'a Preferences, path: &Path, category: &Category) -> (&'a str, bool) {
-    match rule_folder(prefs, path) {
-        Some(folder) => (folder, true),
-        None => (
+    match matching_rule(prefs, path) {
+        Some(rule) if !rule.keep => (rule.folder.as_str(), true),
+        rule => (
             category_folder(&category.id, &prefs.language),
-            prefs.enabled_categories.contains(&category.id),
+            rule.is_none() && prefs.enabled_categories.contains(&category.id),
         ),
     }
 }
@@ -322,13 +324,13 @@ pub fn validate_preferences(prefs: &Preferences) -> Result<()> {
         return Err(t("Invalid category").into());
     }
     for rule in &prefs.rules {
-        if rule.pattern.trim().is_empty() || rule.folder.trim().is_empty() {
+        if rule.pattern.trim().is_empty() || (!rule.keep && rule.folder.trim().is_empty()) {
             return Err(t("Fill in or remove the incomplete rule").into());
         }
         if !valid_pattern(&rule.pattern) {
             return Err(format!("{}: {}", t("Invalid file pattern"), rule.pattern));
         }
-        if !valid_folder_name(&rule.folder) {
+        if !rule.keep && !valid_folder_name(&rule.folder) {
             return Err(format!("{}: {}", t("Invalid folder name"), rule.folder));
         }
     }
@@ -439,7 +441,11 @@ pub fn scan_paths(
         } else if temporary(&path) {
             reason = Some(t("Temporary file or incomplete download").into());
         } else if !enabled {
-            reason = Some(t("Category turned off").into());
+            reason = Some(if matching_rule(prefs, &path).is_some() {
+                t("Kept in place by a rule").into()
+            } else {
+                t("Category turned off").into()
+            });
         } else if captured.is_none() {
             reason = Some(t("Metadata unavailable").into());
         } else if meta.len() == 0 {

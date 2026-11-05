@@ -2,7 +2,7 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import { locale, t, type Language } from "./i18n";
 
 export interface Category { id: string; name: string; extensions: string[] }
-export interface Rule { pattern: string; folder: string }
+export interface Rule { pattern: string; folder: string; keep: boolean }
 export interface Preferences { source: string; destination: string; automatic: boolean; enabled_categories: string[]; theme: "dark" | "light"; language: "system" | Language; notifications: boolean; updates: boolean; autostart: boolean; rules: Rule[]; extra_sources: string[] }
 export interface FileEntry { name: string; path: string; extension: string; category: string; size: number; modified: number; destination: string; status: "ready" | "ignored" | "conflict"; reason: string | null; rename_to?: string | null }
 export interface Movement { id: number; source: string; destination: string; status: string; error: string | null; size: number }
