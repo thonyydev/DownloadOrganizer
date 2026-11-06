@@ -114,6 +114,10 @@ pub(super) fn open_source(path: &Path, expected: &Stamp) -> Result<(File, Vec<Fi
     let directories = engine::guard_directory(parent).map_err(|_| {
         t("The folder changed, is inaccessible or contains a link. Refresh the list.")
     })?;
+    // Viewing must not download an online-only file either.
+    if std::fs::symlink_metadata(path).is_ok_and(|meta| engine::cloud_only(&meta)) {
+        return Err(t("Only in the cloud, not on this PC").into());
+    }
     let file = {
         use std::os::windows::fs::OpenOptionsExt;
         use windows_sys::Win32::Storage::FileSystem::{

@@ -334,13 +334,14 @@ impl Store {
         let protected = self.preferences().and_then(|prefs| {
             engine::sources(&prefs)
                 .chain([prefs.destination.as_str()])
-                .map(|path| {
-                    fs::canonicalize(path).map_err(|error| {
-                        format!(
-                            "{}: {error}",
-                            t("Could not validate the configured folders before cleanup")
-                        )
-                    })
+                .filter_map(|path| match fs::canonicalize(path) {
+                    Ok(path) => Some(Ok(path)),
+                    // A folder that isn't there can't be emptied here, so an unplugged source doesn't block cleanup.
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+                    Err(error) => Some(Err(format!(
+                        "{}: {error}",
+                        t("Could not validate the configured folders before cleanup")
+                    ))),
                 })
                 .collect::<Result<Vec<_>>>()
         });

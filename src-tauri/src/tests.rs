@@ -2213,5 +2213,47 @@ fn online_only_files_are_never_read_or_moved() {
         Some("Só na nuvem, não está neste PC")
     );
     assert!(engine::locked_file(&path).is_err());
+    let stamp = engine::stamp(&fs::symlink_metadata(&path).unwrap()).unwrap();
+    assert_eq!(
+        file_preview::load(&path, &stamp).err().as_deref(),
+        Some("Só na nuvem, não está neste PC")
+    );
     assert_eq!(fs::read(&path).unwrap(), b"photo");
+}
+
+#[test]
+fn a_missing_extra_source_does_not_block_cleanup_after_undo() {
+    let (temp, mut runtime, mut prefs) = fixture();
+    let usb = extra_source(&temp, &mut prefs, "usb");
+    runtime.store.save(&prefs).unwrap();
+    let source = PathBuf::from(&prefs.source);
+    old_file(&source.join("notes.txt"), b"notes");
+    let operation = execute(&mut runtime, plan(&prefs), "manual", None).unwrap();
+    // The drive is unplugged before the undo.
+    fs::remove_dir(&usb).unwrap();
+    undo(&mut runtime, operation, None).unwrap();
+    assert_eq!(fs::read(source.join("notes.txt")).unwrap(), b"notes");
+    assert!(!source.join("Documentos").exists());
+}
+
+#[test]
+fn undo_waits_for_an_unplugged_source_and_retries_later() {
+    let (temp, mut runtime, mut prefs) = fixture();
+    let usb = extra_source(&temp, &mut prefs, "usb");
+    runtime.store.save(&prefs).unwrap();
+    old_file(&usb.join("notes.txt"), b"notes");
+    let operation = execute(&mut runtime, plan(&prefs), "manual", None).unwrap();
+    let organized = Path::new(&prefs.destination).join("Documentos/notes.txt");
+    // The drive is unplugged: the file can't go back yet, and nothing is lost.
+    fs::remove_dir(&usb).unwrap();
+    undo(&mut runtime, operation, None).unwrap();
+    assert_eq!(fs::read(&organized).unwrap(), b"notes");
+    let movement = runtime.store.movements(operation).unwrap().remove(0);
+    assert_eq!(movement.status, "moved");
+    assert!(movement.error.is_some());
+    // Plugged in again, the same undo brings it back.
+    fs::create_dir(&usb).unwrap();
+    undo(&mut runtime, operation, None).unwrap();
+    assert_eq!(fs::read(usb.join("notes.txt")).unwrap(), b"notes");
+    assert!(!organized.exists());
 }
