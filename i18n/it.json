@@ -519,5 +519,6 @@
   "Files from every source folder go to the same destination.": "I file di tutte le cartelle di origine vanno nella stessa destinazione.",
   "Kept in place by a rule": "Lasciato al suo posto da una regola",
   "Keep in place": "Lascia al suo posto",
-  "Stays where it is": "Resta dov'è"
+  "Stays where it is": "Resta dov'è",
+  "Only in the cloud, not on this PC": "Solo nel cloud, non su questo PC"
 }

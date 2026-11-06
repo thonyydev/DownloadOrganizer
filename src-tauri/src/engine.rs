@@ -279,6 +279,19 @@ pub fn linked(meta: &Metadata) -> bool {
     meta.file_attributes() & 0x400 != 0
 }
 
+// OneDrive and similar keep online-only files as placeholders; reading one downloads it.
+pub fn cloud_only(meta: &Metadata) -> bool {
+    use std::os::windows::fs::MetadataExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_ATTRIBUTE_OFFLINE, FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS, FILE_ATTRIBUTE_RECALL_ON_OPEN,
+    };
+    meta.file_attributes()
+        & (FILE_ATTRIBUTE_OFFLINE
+            | FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS
+            | FILE_ATTRIBUTE_RECALL_ON_OPEN)
+        != 0
+}
+
 // Validate every ancestor: junctions and symlinks must never redirect a move.
 pub fn validate_directory(path: &Path) -> Result<PathBuf> {
     if !path.is_absolute()
@@ -434,7 +447,9 @@ pub fn scan_paths(
         let mut reason = None;
         let mut status = "ready";
         let captured = stamp(&meta).ok();
-        if linked(&meta) || !meta.is_file() {
+        if cloud_only(&meta) {
+            reason = Some(t("Only in the cloud, not on this PC").into());
+        } else if linked(&meta) || !meta.is_file() {
             reason = Some(t("Link or special file ignored").into());
         } else if path.to_str().is_none() {
             reason = Some(t("Name cannot be represented in UTF-8").into());
@@ -585,6 +600,10 @@ pub(crate) fn guard_directory(path: &Path) -> Result<Vec<File>> {
 pub fn locked_file(path: &Path) -> Result<LockedFile> {
     let directories = guard_directory(path.parent().ok_or(t("Path has no folder"))?)?;
     let meta = fs::symlink_metadata(path).map_err(|e| e.to_string())?;
+    // Checked before opening, so a move or undo never downloads a file.
+    if cloud_only(&meta) {
+        return Err(t("Only in the cloud, not on this PC").into());
+    }
     if linked(&meta) || !meta.is_file() {
         return Err(t("Invalid file or link").into());
     }
