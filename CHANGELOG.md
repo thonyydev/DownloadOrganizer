@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.3 — 2026-11-06
+
+- Organize several source folders into one destination, such as Downloads and Desktop. With more than one, each file in the preview shows its source folder. If two of them have a file with the same name, the first one goes and the other is kept as a conflict, which you can rename.
+- Set a custom rule to keep the files it fits where they are, such as `*.torrent`.
+- In the preview, files that won't move say "Stays where it is" instead of showing a folder.
+- Leave files that are only in the cloud, such as OneDrive online-only files, where they are. The app never downloads them to organize, undo or preview them.
+- Get a short guide the first time you open the app, and a summary of what's new after an update.
+- Undo no longer ends with an error when an extra source folder is unplugged. A file that came from it stays organized until the folder is back, and undoing again brings it back.
+
+Known limits:
+
+- The installer isn't code-signed yet, so Windows SmartScreen may show a warning.
+- Online-only files are recognized by the marks Windows puts on them. This hasn't been tested with OneDrive itself yet.
+
 ## 0.1.2 — 2026-11-04
 
 - Add custom rules: send files to your own folders by name, with patterns such as `*.stl` or `invoice*.pdf`. The first matching rule decides, even if the file's category is turned off. A short tutorial explains them the first time, and you can reopen it from Settings.
