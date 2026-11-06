@@ -518,5 +518,6 @@
   "Add source folder": "Add source folder",
   "Files from every source folder go to the same destination.": "Files from every source folder go to the same destination.",
   "Kept in place by a rule": "Kept in place by a rule",
-  "Keep in place": "Keep in place"
+  "Keep in place": "Keep in place",
+  "Stays where it is": "Stays where it is"
 }

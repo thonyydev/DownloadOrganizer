@@ -518,5 +518,6 @@
   "Add source folder": "Aggiungi cartella di origine",
   "Files from every source folder go to the same destination.": "I file di tutte le cartelle di origine vanno nella stessa destinazione.",
   "Kept in place by a rule": "Lasciato al suo posto da una regola",
-  "Keep in place": "Lascia al suo posto"
+  "Keep in place": "Lascia al suo posto",
+  "Stays where it is": "Resta dov'è"
 }

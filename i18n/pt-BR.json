@@ -518,5 +518,6 @@
   "Add source folder": "Adicionar pasta de origem",
   "Files from every source folder go to the same destination.": "Os arquivos de todas as pastas de origem vão para o mesmo destino.",
   "Kept in place by a rule": "Mantido no lugar por uma regra",
-  "Keep in place": "Deixar no lugar"
+  "Keep in place": "Deixar no lugar",
+  "Stays where it is": "Fica onde está"
 }
