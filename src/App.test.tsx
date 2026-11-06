@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { Operation, Preferences, Preview, Progress, Snapshot } from "./lib/api";
+import { version } from "../package.json";
 import { summarizeOperation } from "./lib/api";
 import App from "./App";
 import brandPrimary from "@/assets/branding/symbol-primary.svg";
@@ -70,7 +71,7 @@ async function openPreview() {
 }
 
 beforeEach(() => {
-  localStorage.clear(); vi.stubGlobal("AudioContext", class {});
+  localStorage.clear(); localStorage.setItem("download-organizer-version", version); vi.stubGlobal("AudioContext", class {});
   vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
   vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (this: HTMLElement) { return this.classList.contains("table-scroll") || this.classList.contains("undo-files") ? 400 : this.hasAttribute("data-undo-movement-id") ? 140 : this.tagName === "TR" ? 80 : 0; });
   vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(800);
@@ -1133,4 +1134,13 @@ describe("avisos e clareza", () => {
     fireEvent.click(screen.getByRole("button", { name: "Limpar filtros" }));
     expect(screen.getByText("a.txt")).toBeTruthy();
   });
+});
+
+it("mostra o guia na primeira abertura e não repete na seguinte", async () => {
+  localStorage.removeItem("download-organizer-version");
+  const first = render(<App />);
+  expect(await screen.findByRole("dialog", { name: "Boas-vindas ao Download Organizer" })).toBeTruthy();
+  first.unmount();
+  await start();
+  expect(screen.queryByRole("dialog")).toBeNull();
 });
