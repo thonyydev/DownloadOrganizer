@@ -2192,3 +2192,26 @@ fn a_keep_rule_leaves_matching_files_in_place() {
         b"notes"
     );
 }
+
+#[test]
+fn online_only_files_are_never_read_or_moved() {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{FILE_ATTRIBUTE_OFFLINE, SetFileAttributesW};
+    let (_temp, _runtime, prefs) = fixture();
+    let path = Path::new(&prefs.source).join("photo.jpg");
+    old_file(&path, b"photo");
+    // OneDrive's own flags can't be set here; offline is the one a test can set, and it is checked the same way.
+    let wide: Vec<u16> = path.as_os_str().encode_wide().chain([0]).collect();
+    assert_ne!(
+        unsafe { SetFileAttributesW(wide.as_ptr(), FILE_ATTRIBUTE_OFFLINE) },
+        0
+    );
+    let file = plan(&prefs).files.remove(0);
+    assert_eq!(file.status, "ignored");
+    assert_eq!(
+        file.reason.as_deref(),
+        Some("Só na nuvem, não está neste PC")
+    );
+    assert!(engine::locked_file(&path).is_err());
+    assert_eq!(fs::read(&path).unwrap(), b"photo");
+}
