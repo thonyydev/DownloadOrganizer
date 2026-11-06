@@ -144,6 +144,10 @@ it("mostra primeiro os conflitos, agrupa por pasta e mostra a raiz uma vez", () 
   const destination = dialog.querySelector('tr[data-file-path="C:\\\\source\\\\d.pdf"] .destination')!;
   expect(destination.querySelector('[aria-hidden="true"]:not(svg)')!.textContent).toBe("Documents");
   expect(destination.getAttribute("title")).toBe("E:\\Organized\\Documents\\d.pdf");
+  // An ignored file doesn't move, so its row says so instead of naming a folder.
+  const ignored = dialog.querySelector('tr[data-file-path="C:\\\\source\\\\b.tmp"]')!;
+  expect(ignored.querySelector(".destination")).toBeNull();
+  expect(ignored.textContent).toContain("Fica onde está");
   const showPaths = within(dialog).getByRole("checkbox", { name: "Mostrar caminhos completos" });
   fireEvent.click(showPaths);
   expect(destination.textContent).toBe("E:\\Organized\\Documents\\d.pdf");
