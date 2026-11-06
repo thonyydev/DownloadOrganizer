@@ -13,6 +13,7 @@ import { FilePreviewDialog } from "@/components/file-preview-dialog";
 import { Settings } from "@/components/settings";
 import { SettingsActions } from "@/components/settings-actions";
 import { OperationDialogs } from "@/components/operation-dialogs";
+import { Guide, welcomeFor } from "@/components/guide";
 import { OperationFeedback } from "@/components/operation-feedback";
 import { ProblemNotice } from "@/components/problem-notice";
 import { NavigationIndicator, PageTransition, useContentMotion, usePagePosition } from "@/components/motion/transitions";
@@ -144,6 +145,14 @@ function OrganizerApp() {
   useLayoutEffect(() => { document.documentElement.classList.toggle("dark", data?.preferences.theme !== "light"); }, [data?.preferences.theme]);
   useLayoutEffect(() => { if (data) setLanguage(data.language); }, [data]);
   useEffect(() => () => clearTimeout(feedbackTimer.current), []);
+  const [welcome, setWelcome] = useState<"onboarding" | "news" | null>(null);
+  const welcomed = useRef(false);
+  // Decided once, from the first snapshot: its history tells an update from a new install.
+  useEffect(() => {
+    if (!data || welcomed.current) return;
+    welcomed.current = true;
+    setWelcome(welcomeFor(data.history.length > 0));
+  }, [data]);
   useEffect(() => {
     if (!preview) return;
     setClock(Date.now());
@@ -326,6 +335,7 @@ function OrganizerApp() {
       onOrganize={(excluded, renameConflicts, count) => { if (!preview || issue || !reviewed) return; const id = preview.id; organizeCount.current = count; void run(() => api.organize(id, excluded, renameConflicts), "organize"); }}
       onUndo={() => { if (!undoTarget) return; const id = undoTarget.id; void run(async () => { await api.undo(id); return id; }, "undo"); }}
       onViewResult={() => { const id = action?.operationId; const operation = resultOperation ?? data?.history.find(op => op.id === id); if (operation) upsertHistory(summarizeOperation(operation)); closeDialogs(); setPage("history"); if (id !== undefined) setExpanded(id); }} />
+    {welcome && <Guide kind={welcome} onClose={() => setWelcome(null)} onFinish={() => { setWelcome(null); setPage("settings"); }} />}
     <Dialog open={closeRequested} onOpenChange={setCloseRequested}><DialogContent><DialogHeader><DialogTitle>{working ? t("An operation is in progress") : dirty ? t("You have unsaved changes") : t("Close the app?")}</DialogTitle><DialogDescription>{working ? t("Wait for it to finish before closing the app.") : dirty ? t("You can save or discard the draft before leaving.") : t("The operation finished. See the history to check the results.")}</DialogDescription></DialogHeader>
       {working && <OperationFeedback action={isRunning(action) ? action : automatic} />}
       {external && <p className="inline-error" role="alert">{t("The saved settings changed. Review the versions in Settings before saving.")}</p>}
