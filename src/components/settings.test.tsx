@@ -6,8 +6,11 @@ import { Settings } from "@/components/settings";
 import { samePreferences } from "@/lib/experience";
 import type { Preferences } from "@/lib/api";
 import { open } from "@tauri-apps/plugin-dialog";
+import { invoke } from "@tauri-apps/api/core";
+import { version } from "../../package.json";
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), isTauri: () => true }));
 afterEach(() => { cleanup(); localStorage.clear(); });
 
 const preferences: Preferences = { source: "/isolated/source", destination: "/isolated/destination", theme: "dark", language: "pt-BR", automatic: false, enabled_categories: [], notifications: true, updates: true, autostart: false, extra_sources: ["/isolated/desktop"], rules: [{ pattern: "*.stl", folder: "Modelos", keep: false }, { pattern: "*.obj", folder: "Malhas", keep: false }] };
@@ -105,4 +108,17 @@ it("adiciona e remove outras pastas de origem só no rascunho", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Remover pasta de origem: /isolated/desktop" }));
   expect(draft().extra_sources).toEqual(["/isolated/temp"]);
   expect(samePreferences(preferences, { ...preferences, extra_sources: [] })).toBe(false);
+});
+
+it("verifica atualizações quando pedido e diz o resultado", async () => {
+  vi.mocked(invoke).mockResolvedValueOnce(null).mockResolvedValueOnce("9.9.9").mockRejectedValueOnce("Confira sua conexão e tente de novo.");
+  renderSettings();
+  const check = () => fireEvent.click(screen.getByRole("button", { name: "Verificar atualizações" }));
+  check();
+  expect(await screen.findByText(`Você está na versão mais recente (${version})`)).toBeTruthy();
+  expect(invoke).toHaveBeenCalledWith("check_update");
+  check();
+  expect(await screen.findByText("Nova versão pronta para instalar: 9.9.9")).toBeTruthy();
+  check();
+  expect(await screen.findByText("Não foi possível verificar atualizações. Confira sua conexão e tente de novo.")).toBeTruthy();
 });

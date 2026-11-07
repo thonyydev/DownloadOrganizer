@@ -189,43 +189,55 @@ fn install_pending_update(app: &AppHandle) -> Result<()> {
     Ok(())
 }
 
-// Downloads and verifies a newer signed version. A visible window asks first; the tray has no draft to lose.
-fn update_cycle(app: &AppHandle) -> Result<()> {
+// Downloads and verifies a newer signed version, and returns the one ready to install.
+// `asked` is a check the user started: it runs even with automatic updates off.
+fn fetch_update(app: &AppHandle, asked: bool) -> Result<Option<String>> {
     use tauri_plugin_updater::UpdaterExt;
     let state = app.state::<AppState>();
-    // Turned off, the app makes no network request at all.
-    if !lock(&state)?.store.preferences()?.updates {
-        return Ok(());
+    // Turned off, the app makes no network request unless the user asks.
+    if !asked && !lock(&state)?.store.preferences()?.updates {
+        return Ok(None);
     }
     let pending = state
         .update
         .lock()
         .map_err(|_| internal_state_error())?
-        .is_some();
-    if !pending {
-        let found = tauri::async_runtime::block_on(async {
-            let updater = app
-                .updater_builder()
-                .timeout(Duration::from_secs(300))
-                .build()?;
-            let Some(update) = updater.check().await? else {
-                return Ok(None);
-            };
-            let bytes = update.download(|_, _| {}, || {}).await?;
-            Ok::<_, tauri_plugin_updater::Error>(Some((update, bytes)))
-        })
-        .map_err(|e| e.to_string())?;
-        if found.is_none() {
-            return Ok(());
-        }
-        // Saving holds this lock too, so turning updates off can't slip in between.
-        let runtime = lock(&state)?;
-        if !runtime.store.preferences()?.updates {
-            return Ok(());
-        }
-        *state.update.lock().map_err(|_| internal_state_error())? = found;
-        drop(runtime);
-        let _ = app.emit("organizer-changed", ());
+        .as_ref()
+        .map(|(update, _)| update.version.clone());
+    if pending.is_some() {
+        return Ok(pending);
+    }
+    let found = tauri::async_runtime::block_on(async {
+        let updater = app
+            .updater_builder()
+            .timeout(Duration::from_secs(300))
+            .build()?;
+        let Some(update) = updater.check().await? else {
+            return Ok(None);
+        };
+        let bytes = update.download(|_, _| {}, || {}).await?;
+        Ok::<_, tauri_plugin_updater::Error>(Some((update, bytes)))
+    })
+    .map_err(|e| e.to_string())?;
+    let Some(found) = found else {
+        return Ok(None);
+    };
+    // Saving holds this lock too, so turning updates off can't slip in between.
+    let runtime = lock(&state)?;
+    if !asked && !runtime.store.preferences()?.updates {
+        return Ok(None);
+    }
+    let version = found.0.version.clone();
+    *state.update.lock().map_err(|_| internal_state_error())? = Some(found);
+    drop(runtime);
+    let _ = app.emit("organizer-changed", ());
+    Ok(Some(version))
+}
+
+// A visible window asks first; the tray has no draft to lose.
+fn update_cycle(app: &AppHandle) -> Result<()> {
+    if fetch_update(app, false)?.is_none() {
+        return Ok(());
     }
     let hidden = app
         .get_webview_window("main")
@@ -748,7 +760,8 @@ async fn save_preferences(
             &expected,
             autostart::apply,
         )?;
-        if !preferences.updates {
+        // Only when turned off now: a version the user checked for by hand stays ready while it's off.
+        if !preferences.updates && expected.updates {
             *state.update.lock().map_err(|_| internal_state_error())? = None;
         }
         i18n::set_language(&preferences.language);
@@ -764,6 +777,21 @@ async fn save_preferences(
         runtime.store.preferences()
     })
     .await
+}
+
+#[tauri::command]
+async fn check_update(app: AppHandle) -> Result<Option<String>> {
+    // Like the automatic checks, a dev build must never replace itself with a release.
+    if cfg!(debug_assertions) {
+        return Err("Development builds don't check for updates".into());
+    }
+    blocking(move || fetch_update(&app, true))
+        .await
+        .map_err(|error| {
+            // The details are technical and in English; the person gets the next step.
+            eprintln!("{error}");
+            t("Check your connection and try again.").into()
+        })
 }
 
 #[tauri::command]
@@ -880,6 +908,7 @@ fn run_application() -> std::result::Result<(), startup::StartupError> {
             organize,
             undo_operation,
             save_preferences,
+            check_update,
             install_update,
             retry_monitoring
         ])

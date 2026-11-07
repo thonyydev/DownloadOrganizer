@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { CircleHelp, FolderOpen, Moon, Plus, Sun, ShieldCheck, Trash2 } from "lucide-react";
+import { CircleHelp, FolderOpen, Moon, Plus, RefreshCw, Sun, ShieldCheck, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { displayPath, type Category, type Preferences, type Rule } from "@/lib/api";
+import { api, displayPath, type Category, type Preferences, type Rule } from "@/lib/api";
 import { t } from "@/lib/i18n";
+import { version } from "../../package.json";
 
 // Each language keeps its own name, so anyone can find theirs.
 const languages = () => [{ id: "system", name: t("System") }, { id: "pt-BR", name: "Português (Brasil)" }, { id: "en", name: "English" }, { id: "es", name: "Español" }, { id: "fr", name: "Français" }, { id: "it", name: "Italiano" }] as const;
@@ -18,6 +19,15 @@ export function Settings({ draft, categories, busy, dirty, external, onChange: s
 }) {
   const [pickerError, setPickerError] = useState("");
   const [tutorial, setTutorial] = useState(false);
+  // Kept as data, so the message follows the language at render.
+  const [updateCheck, setUpdateCheck] = useState<{ state: "checking" } | { state: "found"; version: string } | { state: "latest" } | { state: "error"; error: string } | null>(null);
+  async function checkUpdates() {
+    setUpdateCheck({ state: "checking" });
+    try {
+      const found = await api.checkUpdate();
+      setUpdateCheck(found ? { state: "found", version: found } : { state: "latest" });
+    } catch (error) { setUpdateCheck({ state: "error", error: String(error) }); }
+  }
   async function choose(field: "source" | "destination") {
     try {
       setPickerError("");
@@ -53,7 +63,7 @@ export function Settings({ draft, categories, busy, dirty, external, onChange: s
     </section>
     <section data-motion-group className="settings-section" aria-labelledby="system-heading">
       <div className="settings-section-heading"><h2 id="system-heading">{t("Startup, notifications and updates")}</h2><p>{t("Preferences applied on save")}</p></div>
-      <div className="settings-body"><div className="setting-row"><div><label htmlFor="autostart">{t("Start with Windows")}</label><p>{t("With automatic organization on, the app starts straight in the tray")}</p></div><Switch id="autostart" checked={draft.autostart} disabled={busy} onCheckedChange={autostart => setDraft(p => ({ ...p, autostart }))} /></div><div className="setting-row"><div><label htmlFor="notifications">{t("Show notifications")}</label><p>{t("Tells you when automation organizes files or hits a problem, if the window isn't in focus")}</p></div><Switch id="notifications" checked={draft.notifications} disabled={busy} onCheckedChange={notifications => setDraft(p => ({ ...p, notifications }))} /></div><div className="setting-row"><div><label htmlFor="updates">{t("Update automatically")}</label><p>{t("Looks for new versions on GitHub every 6 hours. When off, the app doesn't use the internet")}</p></div><Switch id="updates" checked={draft.updates} disabled={busy} onCheckedChange={updates => setDraft(p => ({ ...p, updates }))} /></div></div>
+      <div className="settings-body"><div className="setting-row"><div><label htmlFor="autostart">{t("Start with Windows")}</label><p>{t("With automatic organization on, the app starts straight in the tray")}</p></div><Switch id="autostart" checked={draft.autostart} disabled={busy} onCheckedChange={autostart => setDraft(p => ({ ...p, autostart }))} /></div><div className="setting-row"><div><label htmlFor="notifications">{t("Show notifications")}</label><p>{t("Tells you when automation organizes files or hits a problem, if the window isn't in focus")}</p></div><Switch id="notifications" checked={draft.notifications} disabled={busy} onCheckedChange={notifications => setDraft(p => ({ ...p, notifications }))} /></div><div className="setting-row"><div><label htmlFor="updates">{t("Update automatically")}</label><p>{t("Looks for new versions on GitHub every 6 hours. When off, the app only goes online when you check for updates")}</p></div><Switch id="updates" checked={draft.updates} disabled={busy} onCheckedChange={updates => setDraft(p => ({ ...p, updates }))} /></div><div className="update-check"><Button variant="outline" size="sm" disabled={updateCheck?.state === "checking"} onClick={() => void checkUpdates()}><RefreshCw aria-hidden="true" className={updateCheck?.state === "checking" ? "spin" : ""} />{updateCheck?.state === "checking" ? t("Checking for updates…") : t("Check for updates")}</Button><p className="settings-draft-note" role="status">{updateCheck?.state === "found" ? `${t("New version ready to install")}: ${updateCheck.version}` : updateCheck?.state === "latest" ? `${t("You have the latest version")} (${version})` : updateCheck?.state === "error" ? `${t("Couldn't check for updates")}. ${updateCheck.error}` : ""}</p></div></div>
     </section>
     <section data-motion-group className="settings-section" aria-labelledby="rules-heading">
       <div className="settings-section-heading"><h2 id="rules-heading">{t("Enabled categories")}</h2><p>{t("Sorted by extension. Turned-off categories keep their files in the source, unless a custom rule fits them.")}</p></div>

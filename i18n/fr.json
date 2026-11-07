@@ -289,7 +289,7 @@
   "Saved startup": "Démarrage enregistré",
   "Startup, notifications and updates": "Démarrage, notifications et mises à jour",
   "Update automatically": "Mettre à jour automatiquement",
-  "Looks for new versions on GitHub every 6 hours. When off, the app doesn't use the internet": "Recherche de nouvelles versions sur GitHub toutes les 6 heures. Désactivé, l'application n'accède pas à Internet",
+  "Looks for new versions on GitHub every 6 hours. When off, the app only goes online when you check for updates": "Recherche de nouvelles versions sur GitHub toutes les 6 heures. Désactivé, l'application ne se connecte à internet que lorsque vous recherchez des mises à jour",
   "Saved updates": "Mises à jour enregistrées",
   "Preferences applied on save": "Préférences appliquées à l'enregistrement",
   "Start with Windows": "Démarrer avec Windows",
@@ -541,5 +541,10 @@
   "With several folders, each file in the preview shows its source folder. Files that are only in the cloud, such as OneDrive online-only files, are left alone and never downloaded.": "Avec plusieurs dossiers, chaque fichier de l'aperçu indique son dossier source. Les fichiers qui sont uniquement dans le cloud, comme les fichiers en ligne uniquement de OneDrive, restent où ils sont et ne sont jamais téléchargés.",
   "What's new in version": "Nouveautés de la version",
   "Choose my folders": "Choisir mes dossiers",
-  "Got it": "Compris"
+  "Got it": "Compris",
+  "Check for updates": "Rechercher des mises à jour",
+  "Checking for updates…": "Recherche de mises à jour…",
+  "You have the latest version": "Vous avez la version la plus récente",
+  "Couldn't check for updates": "Impossible de rechercher des mises à jour",
+  "Check your connection and try again.": "Vérifiez votre connexion et réessayez."
 }

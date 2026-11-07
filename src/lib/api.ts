@@ -31,6 +31,7 @@ export const api = {
   undo: (operationId: number) => invoke<void>("undo_operation", { operationId }),
   save: (preferences: Preferences, expected: Preferences) => invoke<Preferences>("save_preferences", { preferences, expected }),
   retryMonitoring: () => invoke<void>("retry_monitoring"),
+  checkUpdate: () => invoke<string | null>("check_update"),
   installUpdate: () => invoke<void>("install_update"),
 };
 

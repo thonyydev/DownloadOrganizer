@@ -289,7 +289,7 @@
   "Saved startup": "Inicialização salva",
   "Startup, notifications and updates": "Inicialização, notificações e atualizações",
   "Update automatically": "Atualizar automaticamente",
-  "Looks for new versions on GitHub every 6 hours. When off, the app doesn't use the internet": "Procura novas versões no GitHub a cada 6 horas. Desligado, o aplicativo não acessa a internet",
+  "Looks for new versions on GitHub every 6 hours. When off, the app only goes online when you check for updates": "Procura novas versões no GitHub a cada 6 horas. Desligado, o aplicativo só acessa a internet quando você verifica se há atualizações",
   "Saved updates": "Atualizações salvas",
   "Preferences applied on save": "Preferências aplicadas ao salvar",
   "Start with Windows": "Iniciar com o Windows",
@@ -541,5 +541,10 @@
   "With several folders, each file in the preview shows its source folder. Files that are only in the cloud, such as OneDrive online-only files, are left alone and never downloaded.": "Com várias pastas, cada arquivo na prévia mostra a pasta de origem. Arquivos que estão só na nuvem, como os arquivos somente online do OneDrive, ficam onde estão e nunca são baixados.",
   "What's new in version": "Novidades da versão",
   "Choose my folders": "Escolher minhas pastas",
-  "Got it": "Entendi"
+  "Got it": "Entendi",
+  "Check for updates": "Verificar atualizações",
+  "Checking for updates…": "Verificando atualizações…",
+  "You have the latest version": "Você está na versão mais recente",
+  "Couldn't check for updates": "Não foi possível verificar atualizações",
+  "Check your connection and try again.": "Confira sua conexão e tente de novo."
 }
