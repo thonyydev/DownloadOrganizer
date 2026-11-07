@@ -41,7 +41,7 @@ Get the installer from the [Releases page](https://github.com/thonyydev/Download
 
 The installer isn't code-signed yet, so Windows SmartScreen may warn you when you run it. Each release lists a SHA-256 hash you can check before installing.
 
-**Updates** arrive on their own from this project's GitHub Releases and are checked against a signature before installing. With the window open, the app asks first. In the system tray, it installs them and opens again. Your history and settings are kept. You can turn this off in Settings, then install new versions by hand.
+**Updates** arrive on their own from this project's GitHub Releases and are checked against a signature before installing. With the window open, the app asks first. In the system tray, it installs them and opens again. Your history and settings are kept. To look right away, use **Check for updates** in Settings. You can also turn automatic updates off there.
 
 **To uninstall,** use Windows Settings. Your organized files are never touched. Settings and history stay in `%APPDATA%\com.thonyy.download-organizer` unless you remove them.
 
@@ -58,7 +58,7 @@ The installer isn't code-signed yet, so Windows SmartScreen may warn you when yo
 
 ## Privacy
 
-Download Organizer has no account, telemetry or cloud service. Its only network use is checking GitHub for updates at startup and every 6 hours, which shares your IP address with GitHub and sends no file data. Turning off automatic updates in Settings stops it. Its local database stores file paths, sizes, dates and content hashes so that it can show your history and undo safely. When reporting a problem, remove personal file names and paths, and don't attach the database.
+Download Organizer has no account, telemetry or cloud service. Its only network use is checking GitHub for updates at startup and every 6 hours, or when you check for updates yourself, which shares your IP address with GitHub and sends no file data. Turning off automatic updates in Settings stops the automatic checks. Its local database stores file paths, sizes, dates and content hashes so that it can show your history and undo safely. When reporting a problem, remove personal file names and paths, and don't attach the database.
 
 ## Feedback & Suggestions
 

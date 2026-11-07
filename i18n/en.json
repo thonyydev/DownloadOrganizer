@@ -289,7 +289,7 @@
   "Saved startup": "Saved startup",
   "Startup, notifications and updates": "Startup, notifications and updates",
   "Update automatically": "Update automatically",
-  "Looks for new versions on GitHub every 6 hours. When off, the app doesn't use the internet": "Looks for new versions on GitHub every 6 hours. When off, the app doesn't use the internet",
+  "Looks for new versions on GitHub every 6 hours. When off, the app only goes online when you check for updates": "Looks for new versions on GitHub every 6 hours. When off, the app only goes online when you check for updates",
   "Saved updates": "Saved updates",
   "Preferences applied on save": "Preferences applied on save",
   "Start with Windows": "Start with Windows",
@@ -541,5 +541,10 @@
   "With several folders, each file in the preview shows its source folder. Files that are only in the cloud, such as OneDrive online-only files, are left alone and never downloaded.": "With several folders, each file in the preview shows its source folder. Files that are only in the cloud, such as OneDrive online-only files, are left alone and never downloaded.",
   "What's new in version": "What's new in version",
   "Choose my folders": "Choose my folders",
-  "Got it": "Got it"
+  "Got it": "Got it",
+  "Check for updates": "Check for updates",
+  "Checking for updates…": "Checking for updates…",
+  "You have the latest version": "You have the latest version",
+  "Couldn't check for updates": "Couldn't check for updates",
+  "Check your connection and try again.": "Check your connection and try again."
 }
