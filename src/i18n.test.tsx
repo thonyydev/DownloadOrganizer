@@ -126,7 +126,7 @@ describe("idioma", () => {
 describe("interface em inglês", () => {
   it("mostra a visão geral sem texto em português", () => {
     setLanguage("en");
-    render(<Tooltip.Provider><Overview data={snapshot} onFiles={() => {}} onSettings={() => {}} onCategory={() => {}} onHistory={() => {}} onOperation={() => {}} /></Tooltip.Provider>);
+    render(<Tooltip.Provider><Overview data={snapshot} onFiles={() => {}} onSettings={() => {}} onCategory={() => {}} onHistory={() => {}} onOperation={() => {}} onOpenDestination={() => {}} counts={new Map()} /></Tooltip.Provider>);
     expect(screen.getByRole("button", { name: /Documents.*Enabled/ })).toBeTruthy();
     expect(screen.getByRole("img").getAttribute("aria-label")).toBe("1 ready, 1 conflict, 0 ignored");
     expectEnglish();
@@ -171,7 +171,7 @@ describe("interface em inglês", () => {
 
 describe("seletor de idioma", () => {
   const renderSettings = (onChange = vi.fn()) => {
-    render(<AudioProvider><Settings draft={{ ...preferences, language: "system", enabled_categories: [...preferences.enabled_categories] }} categories={categories} busy={false} dirty={false} external={null} onChange={onChange} onDiscard={() => {}} onAcceptExternal={() => {}} /></AudioProvider>);
+    render(<AudioProvider><Settings draft={{ ...preferences, language: "system", enabled_categories: [...preferences.enabled_categories] }} categories={categories} busy={false} dirty={false} external={null} tab="appearance" onTab={() => {}} onChange={onChange} onDiscard={() => {}} onAcceptExternal={() => {}} /></AudioProvider>);
     return onChange;
   };
 

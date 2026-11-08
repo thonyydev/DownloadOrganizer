@@ -12,7 +12,7 @@ import type { ReactNode } from "react";
 
 const mocks = vi.hoisted(() => ({
   snapshot: vi.fn(), history: vi.fn(), operation: vi.fn(), operationSummary: vi.fn(), destinations: vi.fn(), filePreview: vi.fn(), preview: vi.fn(), organize: vi.fn(), undo: vi.fn(), save: vi.fn(), retryMonitoring: vi.fn(),
-  installUpdate: vi.fn().mockResolvedValue(undefined), close: vi.fn(), hide: vi.fn().mockResolvedValue(undefined), choose: vi.fn(),
+  installUpdate: vi.fn().mockResolvedValue(undefined), openFolder: vi.fn().mockResolvedValue(undefined), close: vi.fn(), hide: vi.fn().mockResolvedValue(undefined), choose: vi.fn(),
   events: new Map<string, (event: { payload: unknown }) => void>(),
   closeHandler: null as null | ((event: { preventDefault: () => void }) => void),
   sound: vi.fn(), soundStop: vi.fn(),
@@ -29,7 +29,7 @@ vi.mock("@web-kits/audio/react", () => ({
 }));
 vi.mock("./lib/api", async importOriginal => ({
   ...await importOriginal<typeof import("./lib/api")>(), native: true,
-  api: { snapshot: mocks.snapshot, history: mocks.history, operation: mocks.operation, operationSummary: mocks.operationSummary, destinations: mocks.destinations, filePreview: mocks.filePreview, preview: mocks.preview, organize: mocks.organize, undo: mocks.undo, save: mocks.save, retryMonitoring: mocks.retryMonitoring, installUpdate: mocks.installUpdate },
+  api: { snapshot: mocks.snapshot, history: mocks.history, operation: mocks.operation, operationSummary: mocks.operationSummary, destinations: mocks.destinations, filePreview: mocks.filePreview, preview: mocks.preview, organize: mocks.organize, undo: mocks.undo, save: mocks.save, retryMonitoring: mocks.retryMonitoring, installUpdate: mocks.installUpdate, openFolder: mocks.openFolder },
 }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async (name, callback) => {
   mocks.events.set(name, callback); return () => mocks.events.delete(name);
@@ -57,6 +57,17 @@ async function start() {
 function navigate(name: string) {
   const navigation = screen.getByRole("navigation", { name: "Navegação principal" });
   fireEvent.click(within(navigation).getByRole("button", { name }));
+}
+// Settings show one tab at a time: find a control on whichever tab holds it.
+function setting(role: string, name: string) {
+  const found = screen.queryByRole(role, { name });
+  if (found) return found;
+  for (const tab of screen.getAllByRole("tab")) {
+    fireEvent.mouseDown(tab);
+    const element = screen.queryByRole(role, { name });
+    if (element) return element;
+  }
+  return screen.getByRole(role, { name });
 }
 function progress(payload: Progress) { act(() => mocks.events.get("organizer-progress")?.({ payload })); }
 async function updateSnapshot() {
@@ -181,7 +192,7 @@ describe("destinos recusados pelo aplicativo", () => {
   it("recusa salvar um destino incompatível e preserva o rascunho até descartar", async () => {
     await start(); navigate("Configurações");
     mocks.choose.mockResolvedValueOnce("/isolated/unavailable");
-    fireEvent.click(screen.getByRole("button", { name: "Selecionar destino da organização" }));
+    fireEvent.click(setting("button", "Selecionar destino da organização"));
     await screen.findByText("/isolated/unavailable");
     mocks.save.mockRejectedValueOnce(folderError);
     const save = screen.getByRole("button", { name: "Salvar preferências" });
@@ -212,7 +223,7 @@ describe("destinos recusados pelo aplicativo", () => {
     fireEvent.click(within(warning).getByRole("button", { name: "Revisar pastas" }));
     expect(screen.getByText("/isolated/unavailable")).toBeTruthy();
     mocks.choose.mockResolvedValueOnce(initial.destination);
-    fireEvent.click(screen.getByRole("button", { name: "Selecionar destino da organização" }));
+    fireEvent.click(setting("button", "Selecionar destino da organização"));
     await screen.findByText(initial.destination);
     mocks.save.mockImplementationOnce(async prefs => {
       snapshot.preferences = prefs; snapshot.scan_error = null; return prefs;
@@ -305,17 +316,17 @@ describe("feedback sonoro de ações reais", () => {
   });
   it.each([true, false])("salvar preferências combinadas com sucesso=%s preserva áudio pendente até confirmar", async success => {
     await start(); navigate("Configurações");
-    fireEvent.change(screen.getByRole("slider", { name: "Volume" }), { target: { value: "30" } });
+    fireEvent.change(setting("slider", "Volume"), { target: { value: "30" } });
     expect((screen.getByRole("button", { name: "Salvar preferências" }) as HTMLButtonElement).disabled).toBe(false);
     expect(localStorage.getItem(audioStorageKey)).toBeNull();
-    fireEvent.click(screen.getByRole("switch", { name: "Organizar novos arquivos" }));
+    fireEvent.click(setting("switch", "Organizar novos arquivos"));
     if (!success) mocks.save.mockRejectedValueOnce("Não foi possível salvar");
     fireEvent.click(screen.getByRole("button", { name: "Salvar preferências" }));
     await waitFor(() => expect(mocks.sound).toHaveBeenCalledExactlyOnceWith(success ? sounds.saved : sounds.warning));
     if (success) expect(localStorage.getItem(audioStorageKey)).toContain('"volume":0.3');
     else {
       expect(localStorage.getItem(audioStorageKey)).toBeNull();
-      expect((screen.getByRole("slider", { name: "Volume" }) as HTMLInputElement).value).toBe("30");
+      expect((setting("slider", "Volume") as HTMLInputElement).value).toBe("30");
       expect((screen.getByRole("button", { name: "Salvar preferências" }) as HTMLButtonElement).disabled).toBe(false);
     }
   });
@@ -324,7 +335,7 @@ describe("feedback sonoro de ações reais", () => {
     for (const phase of ["preparing", "organizing", "completed"] as const) progress({ kind: "automatic", phase, total: 1, completed: phase === "completed" ? 1 : 0, name: "", operation_id: phase === "preparing" ? null : 42 });
     await waitFor(() => expect((screen.getByRole("button", { name: "Atualizar arquivos" }) as HTMLButtonElement).disabled).toBe(false));
     navigate("Histórico"); navigate("Configurações");
-    fireEvent.click(screen.getByRole("switch", { name: "Organizar novos arquivos" }));
+    fireEvent.click(setting("switch", "Organizar novos arquivos"));
     fireEvent.click(screen.getByRole("button", { name: "Descartar alterações" }));
     navigate("Visão geral"); await openPreview();
     expect(mocks.sound).not.toHaveBeenCalled();
@@ -352,7 +363,7 @@ describe("feedback sonoro de ações reais", () => {
   });
   it("salvamento confirmado não toca aviso extra se a atualização posterior falhar", async () => {
     await start(); navigate("Configurações");
-    fireEvent.click(screen.getByRole("switch", { name: "Organizar novos arquivos" }));
+    fireEvent.click(setting("switch", "Organizar novos arquivos"));
     mocks.snapshot.mockRejectedValueOnce("Falha ao consultar estado");
     fireEvent.click(screen.getByRole("button", { name: "Salvar preferências" }));
     await screen.findAllByText("Falha ao consultar estado");
@@ -371,7 +382,7 @@ describe("feedback sonoro de ações reais", () => {
   it("mute não interrompe o salvamento principal", async () => {
     localStorage.setItem(audioStorageKey, JSON.stringify({ enabled: false, volume: 0.25 }));
     await start(); navigate("Configurações");
-    fireEvent.click(screen.getByRole("switch", { name: "Organizar novos arquivos" }));
+    fireEvent.click(setting("switch", "Organizar novos arquivos"));
     fireEvent.click(screen.getByRole("button", { name: "Salvar preferências" }));
     await screen.findByText("Preferências salvas. Confira também o estado do monitoramento.");
     expect(mocks.save).toHaveBeenCalledOnce(); expect(mocks.sound).not.toHaveBeenCalled();
@@ -381,10 +392,10 @@ describe("feedback sonoro de ações reais", () => {
 describe("rascunho de áudio no fluxo global", () => {
   const saveButton = () => screen.getByRole("button", { name: "Salvar preferências" }) as HTMLButtonElement;
   const discardButton = () => screen.getByRole("button", { name: "Descartar alterações" }) as HTMLButtonElement;
-  function volume(value: number) { fireEvent.change(screen.getByRole("slider", { name: "Volume" }), { target: { value: String(value) } }); }
+  function volume(value: number) { fireEvent.change(setting("slider", "Volume"), { target: { value: String(value) } }); }
   it.each(["volume", "switch"])("apenas %s habilita ações globais e salva sem comandos Rust", async control => {
     await start(); navigate("Configurações");
-    if (control === "volume") volume(60); else fireEvent.click(screen.getByRole("switch", { name: "Efeitos sonoros" }));
+    if (control === "volume") volume(60); else fireEvent.click(setting("switch", "Efeitos sonoros"));
     expect(saveButton().disabled).toBe(false); expect(discardButton().disabled).toBe(false);
     expect(screen.getByRole("button", { name: "Configurações" }).getAttribute("aria-describedby")).toBe("pending-preferences");
     expect(localStorage.getItem(audioStorageKey)).toBeNull();
@@ -400,18 +411,18 @@ describe("rascunho de áudio no fluxo global", () => {
   it("restaurar manualmente o valor original remove dirty sem persistência", async () => {
     await start(); navigate("Configurações");
     volume(80); volume(25); expect(saveButton().disabled).toBe(true);
-    fireEvent.click(screen.getByRole("switch", { name: "Efeitos sonoros" })); expect(saveButton().disabled).toBe(false);
-    fireEvent.click(screen.getByRole("switch", { name: "Efeitos sonoros" })); expect(saveButton().disabled).toBe(true);
+    fireEvent.click(setting("switch", "Efeitos sonoros")); expect(saveButton().disabled).toBe(false);
+    fireEvent.click(setting("switch", "Efeitos sonoros")); expect(saveButton().disabled).toBe(true);
     expect(localStorage.getItem(audioStorageKey)).toBeNull(); expect(mocks.sound).not.toHaveBeenCalled();
   });
   it("descartar restaura todos os rascunhos, inclusive áudio salvo anteriormente", async () => {
     const stored = JSON.stringify({ enabled: false, volume: 0.4 }); localStorage.setItem(audioStorageKey, stored);
     await start(); navigate("Configurações");
-    volume(70); fireEvent.click(screen.getByRole("switch", { name: "Efeitos sonoros" }));
-    fireEvent.click(screen.getByRole("button", { name: "Claro" })); fireEvent.click(discardButton());
-    expect((screen.getByRole("slider", { name: "Volume" }) as HTMLInputElement).value).toBe("40");
-    expect(screen.getByRole("switch", { name: "Efeitos sonoros" }).getAttribute("aria-checked")).toBe("false");
-    expect(screen.getByRole("button", { name: "Escuro" }).getAttribute("aria-pressed")).toBe("true");
+    volume(70); fireEvent.click(setting("switch", "Efeitos sonoros"));
+    fireEvent.click(setting("button", "Claro")); fireEvent.click(discardButton());
+    expect((setting("slider", "Volume") as HTMLInputElement).value).toBe("40");
+    expect(setting("switch", "Efeitos sonoros").getAttribute("aria-checked")).toBe("false");
+    expect(setting("button", "Escuro").getAttribute("aria-pressed")).toBe("true");
     expect(saveButton().disabled).toBe(true); expect(localStorage.getItem(audioStorageKey)).toBe(stored); expect(mocks.sound).not.toHaveBeenCalled();
   });
   it("navegação e refresh preservam áudio pendente e a proteção de beforeunload", async () => {
@@ -420,7 +431,7 @@ describe("rascunho de áudio no fluxo global", () => {
     fireEvent.click(screen.getByRole("button", { name: "Atualizar arquivos" }));
     await waitFor(() => expect((screen.getByRole("button", { name: "Atualizar arquivos" }) as HTMLButtonElement).disabled).toBe(false));
     navigate("Histórico"); navigate("Configurações");
-    expect((screen.getByRole("slider", { name: "Volume" }) as HTMLInputElement).value).toBe("75");
+    expect((setting("slider", "Volume") as HTMLInputElement).value).toBe("75");
     const event = new Event("beforeunload", { cancelable: true }); window.dispatchEvent(event); expect(event.defaultPrevented).toBe(true);
     expect(saveButton().disabled).toBe(false); expect(localStorage.getItem(audioStorageKey)).toBeNull(); expect(mocks.sound).not.toHaveBeenCalled();
   });
@@ -450,9 +461,9 @@ describe("rascunho de áudio no fluxo global", () => {
   });
   it("salva as opções de notificações, atualizações e iniciar com o Windows", async () => {
     await start(); navigate("Configurações");
-    fireEvent.click(screen.getByRole("switch", { name: "Mostrar notificações" }));
-    fireEvent.click(screen.getByRole("switch", { name: "Iniciar com o Windows" }));
-    fireEvent.click(screen.getByRole("switch", { name: "Atualizar automaticamente" }));
+    fireEvent.click(setting("switch", "Mostrar notificações"));
+    fireEvent.click(setting("switch", "Iniciar com o Windows"));
+    fireEvent.click(setting("switch", "Atualizar automaticamente"));
     fireEvent.click(screen.getByRole("button", { name: "Salvar preferências" }));
     await waitFor(() => expect(mocks.save).toHaveBeenCalledOnce());
     expect(mocks.save.mock.calls[0][0]).toMatchObject({ notifications: false, updates: false, autostart: true });
@@ -462,10 +473,10 @@ describe("rascunho de áudio no fluxo global", () => {
     expect(screen.queryByRole("button", { name: "Instalar agora" })).toBeNull();
     snapshot.update_version = "9.9.9"; await updateSnapshot();
     screen.getByText(/9\.9\.9/);
-    navigate("Configurações"); fireEvent.click(screen.getByRole("switch", { name: "Mostrar notificações" }));
+    navigate("Configurações"); fireEvent.click(setting("switch", "Mostrar notificações"));
     const install = screen.getByRole("button", { name: "Instalar agora" }) as HTMLButtonElement;
     expect(install.disabled).toBe(true);
-    fireEvent.click(screen.getByRole("switch", { name: "Mostrar notificações" }));
+    fireEvent.click(setting("switch", "Mostrar notificações"));
     expect(install.disabled).toBe(false);
     fireEvent.click(install);
     await waitFor(() => expect(mocks.installUpdate).toHaveBeenCalledOnce());
@@ -514,12 +525,12 @@ describe("rascunho de áudio no fluxo global", () => {
     } else { expect(localStorage.getItem(audioStorageKey)).toBeNull(); expect(mocks.sound).not.toHaveBeenCalled(); }
   });
   it("falha local após salvar principais mantém somente áudio pendente, permitindo repetir sem salvar Rust", async () => {
-    await start(); navigate("Configurações"); volume(70); fireEvent.click(screen.getByRole("button", { name: "Claro" }));
+    await start(); navigate("Configurações"); volume(70); fireEvent.click(setting("button", "Claro"));
     const original = Storage.prototype.setItem;
     const write = vi.spyOn(Storage.prototype, "setItem").mockImplementationOnce(() => { throw new Error("Quota"); });
     fireEvent.click(saveButton()); await screen.findAllByText(/Não foi possível salvar o áudio neste dispositivo/);
     expect(snapshot.preferences.theme).toBe("light"); expect(mocks.save).toHaveBeenCalledOnce();
-    expect(localStorage.getItem(audioStorageKey)).toBeNull(); expect((screen.getByRole("slider", { name: "Volume" }) as HTMLInputElement).value).toBe("70");
+    expect(localStorage.getItem(audioStorageKey)).toBeNull(); expect((setting("slider", "Volume") as HTMLInputElement).value).toBe("70");
     expect(saveButton().disabled).toBe(false); expect(screen.queryByText("Todas as alterações estão salvas.")).toBeNull();
     expect(mocks.sound).toHaveBeenCalledExactlyOnceWith(sounds.warning);
     write.mockImplementation(original); fireEvent.click(saveButton()); await waitFor(() => expect(saveButton().disabled).toBe(true));
@@ -534,11 +545,11 @@ describe("rascunho de áudio no fluxo global", () => {
     await screen.findAllByText(/Não foi possível salvar o áudio neste dispositivo/);
     expect(mocks.close).not.toHaveBeenCalled(); expect(localStorage.getItem(audioStorageKey)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Continuar no aplicativo" }));
-    expect((screen.getByRole("slider", { name: "Volume" }) as HTMLInputElement).value).toBe("50");
+    expect((setting("slider", "Volume") as HTMLInputElement).value).toBe("50");
   });
   it("ativar áudio salvo como desabilitado prepara a confirmação somente no gesto de salvar", async () => {
     localStorage.setItem(audioStorageKey, JSON.stringify({ enabled: false, volume: 0.25 }));
-    await start(); navigate("Configurações"); fireEvent.click(screen.getByRole("switch", { name: "Efeitos sonoros" }));
+    await start(); navigate("Configurações"); fireEvent.click(setting("switch", "Efeitos sonoros"));
     expect(mocks.sound).not.toHaveBeenCalled(); fireEvent.click(saveButton());
     await waitFor(() => expect(saveButton().disabled).toBe(true));
     expect(mocks.sound).toHaveBeenCalledExactlyOnceWith(sounds.saved); expect(mocks.save).not.toHaveBeenCalled();
@@ -547,7 +558,7 @@ describe("rascunho de áudio no fluxo global", () => {
     await start(); navigate("Configurações"); volume(80);
     fireEvent.click(screen.getByRole("button", { name: "Testar som de organização" }));
     expect(localStorage.getItem(audioStorageKey)).toBeNull(); mocks.sound.mockClear();
-    fireEvent.click(screen.getByRole("switch", { name: "Efeitos sonoros" })); navigate("Visão geral");
+    fireEvent.click(setting("switch", "Efeitos sonoros")); navigate("Visão geral");
     mocks.organize.mockImplementationOnce(async () => { snapshot.history = [structuredClone(operation)]; return 42; });
     const dialog = await openPreview(); fireEvent.click(within(dialog).getByRole("checkbox", { name: "Conferi os arquivos e destinos desta prévia" }));
     fireEvent.click(within(dialog).getByRole("button", { name: "Confirmar organização" }));
@@ -665,13 +676,50 @@ describe("composição desktop", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "Buscar arquivos" }), { target: { value: "" } });
     fireEvent.change(screen.getByRole("combobox", { name: "Filtrar por categoria" }), { target: { value: "images" } });
     expect(screen.getByText("5000 arquivos")).toBeTruthy();
-    navigate("Configurações"); fireEvent.click(screen.getByRole("button", { name: "Claro" })); navigate("Arquivos");
+    navigate("Configurações"); fireEvent.click(setting("button", "Claro")); navigate("Arquivos");
     expect(normalizedFiles()).toBe(10000);
     expect(screen.getByText("5000 arquivos")).toBeTruthy();
     fireEvent.change(screen.getByRole("textbox", { name: "Buscar arquivos" }), { target: { value: "inexistente" } });
     fireEvent.click(screen.getByRole("button", { name: "Limpar filtros" }));
     expect(screen.getByText("10000 arquivos")).toBeTruthy();
     expect(document.querySelectorAll("tr[data-file-path]").length).toBeLessThan(25);
+  });
+  it("abre a pasta de destino pelo Explorer e explica quando ela ainda não existe", async () => {
+    await start();
+    fireEvent.click(screen.getByRole("button", { name: "Abrir pasta de destino" }));
+    expect(mocks.openFolder).toHaveBeenCalledWith("destination");
+    mocks.openFolder.mockRejectedValueOnce("Esta pasta ainda não existe. Ela é criada quando os arquivos são organizados.");
+    fireEvent.click(screen.getByRole("button", { name: "Abrir pasta de destino" }));
+    expect(await screen.findByText("Esta pasta ainda não existe. Ela é criada quando os arquivos são organizados.")).toBeTruthy();
+  });
+  it("lembra a ordem dos arquivos depois de reiniciar", async () => {
+    await start(); navigate("Arquivos");
+    fireEvent.change(screen.getByRole("combobox", { name: "Ordenar arquivos" }), { target: { value: "largest" } });
+    cleanup();
+    await start(); navigate("Arquivos");
+    expect((screen.getByRole("combobox", { name: "Ordenar arquivos" }) as HTMLSelectElement).value).toBe("largest");
+  });
+  it("ordena a lista, limpa a busca e conta os arquivos de cada categoria", async () => {
+    snapshot.files = [["a.txt", 1, 300], ["b.txt", 3, 100], ["c.txt", 2, 200]].map(([name, modified, size]) => ({ ...snapshot.files[0], name: name as string, path: "/isolated/source/" + name, modified: modified as number, size: size as number }));
+    await start(); navigate("Arquivos");
+    const names = () => [...document.querySelectorAll("tr[data-file-path] strong")].map(cell => cell.textContent);
+    expect(names()).toEqual(["a.txt", "b.txt", "c.txt"]);
+    const sort = screen.getByRole("combobox", { name: "Ordenar arquivos" });
+    fireEvent.change(sort, { target: { value: "newest" } });
+    expect(names()).toEqual(["b.txt", "c.txt", "a.txt"]);
+    fireEvent.change(sort, { target: { value: "largest" } });
+    expect(names()).toEqual(["a.txt", "c.txt", "b.txt"]);
+    expect(screen.getByRole("option", { name: "Documentos (3)" })).toBeTruthy();
+    const search = screen.getByRole("textbox", { name: "Buscar arquivos" });
+    fireEvent.change(search, { target: { value: "b" } });
+    expect(names()).toEqual(["b.txt"]);
+    fireEvent.keyDown(search, { key: "Escape" });
+    expect((search as HTMLInputElement).value).toBe("");
+    fireEvent.change(search, { target: { value: "c" } });
+    fireEvent.click(screen.getByRole("button", { name: "Limpar busca" }));
+    expect((search as HTMLInputElement).value).toBe("");
+    expect(document.activeElement).toBe(search);
+    expect(screen.queryByRole("button", { name: "Limpar busca" })).toBeNull();
   });
   it("leva da categoria real à tabela filtrada e mantém os nomes de navegação estáveis", async () => {
     await start();
@@ -682,7 +730,7 @@ describe("composição desktop", () => {
     expect(screen.getByRole("table", { name: "Arquivos da pasta de origem" })).toBeTruthy();
     expect(screen.getAllByRole("columnheader").every(header => header.getAttribute("scope") === "col")).toBe(true);
     navigate("Configurações");
-    fireEvent.click(screen.getByRole("button", { name: "Claro" }));
+    fireEvent.click(setting("button", "Claro"));
     const settings = screen.getByRole("button", { name: "Configurações" });
     expect(settings.getAttribute("aria-describedby")).toBe("pending-preferences");
     expect(document.getElementById("pending-preferences")?.textContent).toBe("Alterações não salvas");
@@ -717,11 +765,11 @@ describe("rascunho de configurações", () => {
     const discard = within(dock).getByRole("button", { name: "Descartar alterações" }) as HTMLButtonElement;
     expect(save.disabled).toBe(true); expect(discard.disabled).toBe(true);
     expect(dock.closest(".page-content")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Claro" }));
+    fireEvent.click(setting("button", "Claro"));
     expect(save.disabled).toBe(false); expect(discard.disabled).toBe(false);
     fireEvent.click(discard);
     expect(save.disabled).toBe(true);
-    fireEvent.click(screen.getByRole("switch", { name: "Documentos" }));
+    fireEvent.click(setting("switch", "Documentos"));
     fireEvent.click(save);
     await screen.findByText("Todas as alterações estão salvas.");
     expect(save.disabled).toBe(true); expect(discard.disabled).toBe(true);
@@ -736,7 +784,7 @@ describe("rascunho de configurações", () => {
   });
   it("bloqueia ações durante o salvamento e mantém o rascunho após uma falha", async () => {
     await start(); navigate("Configurações");
-    fireEvent.click(screen.getByRole("button", { name: "Claro" }));
+    fireEvent.click(setting("button", "Claro"));
     const pending = deferred<Preferences>(); mocks.save.mockReturnValueOnce(pending.promise);
     const dock = screen.getByRole("region", { name: "Ações das configurações" });
     fireEvent.click(within(dock).getByRole("button", { name: "Salvar preferências" }));
@@ -746,29 +794,29 @@ describe("rascunho de configurações", () => {
     fireEvent.click(save); expect(mocks.save).toHaveBeenCalledOnce();
     await act(async () => pending.reject("Falha isolada ao salvar"));
     await screen.findAllByText("Falha isolada ao salvar");
-    expect(screen.getByRole("button", { name: "Claro" }).getAttribute("aria-pressed")).toBe("true");
+    expect(setting("button", "Claro").getAttribute("aria-pressed")).toBe("true");
     expect(save.disabled).toBe(false);
     expect(screen.getByRole("region", { name: "Ações das configurações" })).toBe(dock);
   });
   it("preserva alterações ao navegar e só descarta explicitamente", async () => {
     await start(); navigate("Configurações");
-    fireEvent.click(screen.getByRole("button", { name: "Claro" }));
+    fireEvent.click(setting("button", "Claro"));
     navigate("Histórico");
     expect(screen.getByText("Você tem configurações não salvas")).toBeTruthy();
     navigate("Configurações");
-    expect(screen.getByRole("button", { name: "Claro" }).getAttribute("aria-pressed")).toBe("true");
+    expect(setting("button", "Claro").getAttribute("aria-pressed")).toBe("true");
     fireEvent.click(screen.getByRole("button", { name: "Descartar alterações" }));
-    expect(screen.getByRole("button", { name: "Escuro" }).getAttribute("aria-pressed")).toBe("true");
+    expect(setting("button", "Escuro").getAttribute("aria-pressed")).toBe("true");
     expect((screen.getByRole("button", { name: "Salvar preferências" }) as HTMLButtonElement).disabled).toBe(true);
     expect(mocks.save).not.toHaveBeenCalled();
   });
   it("preserva o rascunho externo e exige revisão antes de sobrescrever", async () => {
     await start(); navigate("Configurações");
-    fireEvent.click(screen.getByRole("button", { name: "Claro" }));
+    fireEvent.click(setting("button", "Claro"));
     snapshot.preferences = { ...initial, automatic: true };
     await updateSnapshot();
     expect(screen.getByText("As configurações salvas foram atualizadas")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Claro" }).getAttribute("aria-pressed")).toBe("true");
+    expect(setting("button", "Claro").getAttribute("aria-pressed")).toBe("true");
     expect((screen.getByRole("button", { name: "Salvar preferências" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Manter meu rascunho no lugar desta versão" }));
     fireEvent.click(screen.getByRole("button", { name: "Salvar preferências" }));
@@ -777,17 +825,17 @@ describe("rascunho de configurações", () => {
   });
   it("não anuncia um rascunho salvo enquanto a versão externa ainda precisa de revisão", async () => {
     await start(); navigate("Configurações");
-    fireEvent.click(screen.getByRole("button", { name: "Claro" }));
+    fireEvent.click(setting("button", "Claro"));
     snapshot.preferences = { ...initial, automatic: true };
     await updateSnapshot();
-    fireEvent.click(screen.getByRole("button", { name: "Escuro" }));
+    fireEvent.click(setting("button", "Escuro"));
     expect(screen.getByText("As configurações salvas mudaram. Revise seu rascunho antes de salvar.")).toBeTruthy();
     expect(screen.queryByText("Todas as alterações estão salvas.")).toBeNull();
     expect((screen.getByRole("button", { name: "Salvar preferências" }) as HTMLButtonElement).disabled).toBe(true);
   });
   it("mantém alterações pendentes e não fecha o app se salvar falhar", async () => {
     await start(); navigate("Configurações");
-    fireEvent.click(screen.getByRole("button", { name: "Claro" }));
+    fireEvent.click(setting("button", "Claro"));
     const preventDefault = vi.fn();
     act(() => mocks.closeHandler?.({ preventDefault }));
     expect(preventDefault).toHaveBeenCalledOnce();
@@ -799,7 +847,7 @@ describe("rascunho de configurações", () => {
   });
   it("salva antes de permitir fechar e intercepta beforeunload", async () => {
     await start(); navigate("Configurações");
-    fireEvent.click(screen.getByRole("button", { name: "Claro" }));
+    fireEvent.click(setting("button", "Claro"));
     const event = new Event("beforeunload", { cancelable: true });
     window.dispatchEvent(event); expect(event.defaultPrevented).toBe(true);
     act(() => mocks.closeHandler?.({ preventDefault: vi.fn() }));
@@ -809,7 +857,7 @@ describe("rascunho de configurações", () => {
   });
   it("informa preferências salvas sem esconder falha de monitoramento", async () => {
     await start(); navigate("Configurações");
-    fireEvent.click(screen.getByRole("button", { name: "Claro" }));
+    fireEvent.click(setting("button", "Claro"));
     mocks.save.mockImplementationOnce(async prefs => {
       snapshot.preferences = prefs; snapshot.watch_error = "Monitoramento indisponível"; return prefs;
     });
@@ -1085,7 +1133,7 @@ describe("avisos e clareza", () => {
   });
   it("ignora respostas de leitura antigas sem substituir a versão atual ou o rascunho", async () => {
     await start(); navigate("Configurações");
-    fireEvent.click(screen.getByRole("button", { name: "Claro" }));
+    fireEvent.click(setting("button", "Claro"));
     const oldSnapshot = structuredClone(snapshotPayload());
     const delayed = deferred<Snapshot>(); mocks.snapshot.mockReturnValueOnce(delayed.promise);
     fireEvent.click(screen.getByRole("button", { name: "Atualizar arquivos" }));
@@ -1094,7 +1142,7 @@ describe("avisos e clareza", () => {
     expect(screen.getByText("As configurações salvas foram atualizadas")).toBeTruthy();
     await act(async () => delayed.resolve(oldSnapshot));
     expect(screen.getByText("As configurações salvas foram atualizadas")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Claro" }).getAttribute("aria-pressed")).toBe("true");
+    expect(setting("button", "Claro").getAttribute("aria-pressed")).toBe("true");
   });
   it("mantém todos os problemas visíveis e recolhe sem anunciar resolução", async () => {
     snapshot.scan_error = "Pasta removida"; snapshot.watch_error = "Watcher parou";
@@ -1143,4 +1191,31 @@ it("mostra o guia na primeira abertura e não repete na seguinte", async () => {
   first.unmount();
   await start();
   expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+it("troca de página pelo teclado e abre a aba certa pelo rodapé da barra lateral", async () => {
+  await start();
+  fireEvent.keyDown(window, { key: "2", ctrlKey: true });
+  expect(screen.getByRole("heading", { name: "Arquivos", level: 1 })).toBeTruthy();
+  fireEvent.keyDown(window, { key: "4", ctrlKey: true });
+  expect(screen.getByRole("heading", { name: "Configurações", level: 1 })).toBeTruthy();
+  // Without Ctrl, a digit is just typing.
+  fireEvent.keyDown(window, { key: "1" });
+  expect(screen.getByRole("heading", { name: "Configurações", level: 1 })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: `Verificar atualizações (v${version})` }));
+  expect(screen.getByRole("tab", { name: "Sistema" }).getAttribute("aria-selected")).toBe("true");
+  fireEvent.click(screen.getByRole("button", { name: "Monitoramento pausado" }));
+  expect(screen.getByRole("tab", { name: "Organização automática" }).getAttribute("aria-selected")).toBe("true");
+  fireEvent.click(screen.getByRole("button", { name: /^source.*destination$/ }));
+  expect(screen.getByRole("tab", { name: "Pastas" }).getAttribute("aria-selected")).toBe("true");
+  // "Configure" is about the folders, whatever tab was open last.
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "Aparência" }));
+  fireEvent.keyDown(window, { key: "1", ctrlKey: true });
+  fireEvent.click(screen.getByRole("button", { name: "Configurar" }));
+  expect(screen.getByRole("tab", { name: "Pastas" }).getAttribute("aria-selected")).toBe("true");
+  // Never behind a dialog.
+  fireEvent.keyDown(window, { key: "1", ctrlKey: true });
+  await openPreview();
+  fireEvent.keyDown(window, { key: "4", ctrlKey: true });
+  expect(screen.getByRole("heading", { name: "Visão geral", level: 1, hidden: true })).toBeTruthy();
 });

@@ -1,5 +1,5 @@
 import { Tooltip } from "radix-ui";
-import { ArrowRight, History, ShieldCheck } from "lucide-react";
+import { ArrowRight, FolderOpen, History, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Activity } from "@/components/history";
 import { AnimatedCount } from "@/components/motion/animated-count";
@@ -8,15 +8,13 @@ import { TriageBar, triageCounts } from "@/components/triage";
 import { t } from "@/lib/i18n";
 import { displayPath, basename, bytes, type OperationSummary, type Snapshot } from "@/lib/api";
 
-export function Overview({ data, onFiles, onSettings, onCategory, onHistory, onOperation }: {
-  data: Snapshot | null; onFiles: () => void; onSettings: () => void; onCategory: (id: string) => void;
-  onHistory: () => void; onOperation: (operation: OperationSummary) => void;
+export function Overview({ data, counts, onFiles, onSettings, onCategory, onHistory, onOperation, onOpenDestination }: {
+  data: Snapshot | null; counts: Map<string, number>; onFiles: () => void; onSettings: () => void; onCategory: (id: string) => void;
+  onHistory: () => void; onOperation: (operation: OperationSummary) => void; onOpenDestination: () => void;
 }) {
   const motionAllowed = useMotionAllowed();
   const files = data?.files ?? [];
   const history = data?.history ?? [];
-  const counts = new Map<string, number>();
-  for (const file of files) counts.set(file.category, (counts.get(file.category) ?? 0) + 1);
   const triage = triageCounts(files);
   const fullest = Math.max(1, ...counts.values());
   const stats: [string, number, string, boolean][] = [
@@ -29,7 +27,7 @@ export function Overview({ data, onFiles, onSettings, onCategory, onHistory, onO
     <section data-motion-group className="source-section" aria-labelledby="source-heading">
       <div className="source-heading"><div className="folder-copy"><span className="section-label">{t("Source folder")}</span><div className="route"><h2 id="source-heading">{data?.preferences.source ? displayPath(basename(data.preferences.source)) + (data.preferences.extra_sources.length ? ` +${data.preferences.extra_sources.length}` : "") : t("No folder connected")}</h2>{data?.preferences.source && data.preferences.destination && <><ArrowRight aria-hidden="true" /><span className="route-target"><span className="sr-only">{t("Destination")}: </span>{displayPath(basename(data.preferences.destination))}</span></>}</div></div><Button variant="outline" size="sm" onClick={onSettings}>{t("Configure")}</Button></div>
       {data?.preferences.source ? <Tooltip.Root><Tooltip.Trigger asChild><code className="source-path" tabIndex={0}>{displayPath(data.preferences.source)}</code></Tooltip.Trigger><Tooltip.Portal><Tooltip.Content className="path-tooltip" sideOffset={6} collisionPadding={12}>{[data.preferences.source, ...data.preferences.extra_sources].map(path => <div key={path}>{displayPath(path)}</div>)}</Tooltip.Content></Tooltip.Portal></Tooltip.Root> : <p className="source-path">{t("Select a folder in Settings to get started.")}</p>}
-      <div className="source-meta"><span className={"monitor-status " + (data?.monitoring ? "online" : "")}><span className="small-dot" />{data?.monitoring ? t("Monitoring on") : t("Monitoring paused")}</span>{data && <span className="source-destination">{t("Destination")} <code>{displayPath(data.preferences.destination)}</code></span>}<Button variant="ghost" size="sm" onClick={onFiles}>{t("Explore files")}<ArrowRight aria-hidden="true" /></Button></div>
+      <div className="source-meta"><span className={"monitor-status " + (data?.monitoring ? "online" : "")}><span className="small-dot" />{data?.monitoring ? t("Monitoring on") : t("Monitoring paused")}</span>{data && <span className="source-destination">{t("Destination")} <code>{displayPath(data.preferences.destination)}</code></span>}{data && <Button variant="ghost" size="sm" onClick={onOpenDestination}><FolderOpen aria-hidden="true" />{t("Open destination folder")}</Button>}<Button variant="ghost" size="sm" onClick={onFiles}>{t("Explore files")}<ArrowRight aria-hidden="true" /></Button></div>
       {data && <TriageBar counts={triage} />}
       <dl className="file-summary">{stats.map(([label, value, description, animated]) => <div key={label}><dt>{label}</dt><dd>{data ? animated ? <AnimatedCount value={value} /> : value : "—"}<span>{data ? description : t("Waiting for desktop")}</span></dd></div>)}</dl>
       <p className="operational-note"><ShieldCheck size={16} aria-hidden="true" />{t("Review the preview before moving. Conflicting files are never overwritten.")}</p>

@@ -84,6 +84,14 @@
   "The folder may contain files. Try another name or category.": "Le dossier peut contenir des fichiers. Essayez un autre nom ou une autre catégorie.",
   "Files from the selected folder will appear here.": "Les fichiers du dossier sélectionné apparaîtront ici.",
   "Clear filters": "Effacer les filtres",
+  "Open destination folder": "Ouvrir le dossier de destination",
+  "This folder doesn't exist yet. It's created when files are organized.": "Ce dossier n'existe pas encore. Il est créé quand les fichiers sont organisés.",
+  "Could not open the folder.": "Impossible d'ouvrir le dossier.",
+  "Clear search": "Effacer la recherche",
+  "Sort files": "Trier les fichiers",
+  "Name (A–Z)": "Nom (A–Z)",
+  "Newest first": "Plus récents",
+  "Largest first": "Plus volumineux",
   "Preview files scroll area": "Zone de défilement des fichiers de l'aperçu",
   "Files scroll area": "Zone de défilement des fichiers",
   "Use the scroll keys to review the files and destinations.": "Utilisez les touches de défilement pour vérifier les fichiers et destinations.",
@@ -546,5 +554,6 @@
   "Checking for updates…": "Recherche de mises à jour…",
   "You have the latest version": "Vous avez la version la plus récente",
   "Couldn't check for updates": "Impossible de rechercher des mises à jour",
-  "Check your connection and try again.": "Vérifiez votre connexion et réessayez."
+  "Check your connection and try again.": "Vérifiez votre connexion et réessayez.",
+  "Settings sections": "Sections des paramètres"
 }

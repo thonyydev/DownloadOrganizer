@@ -1,4 +1,4 @@
-import { FolderDown, Loader2, Undo2 } from "lucide-react";
+import { FolderDown, FolderOpen, Loader2, Undo2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -15,10 +15,10 @@ interface Selection { id: number | null; excluded: Set<string>; rename: boolean 
 const noneExcluded = new Set<string>();
 const statusOrder = { conflict: 0, ready: 1, ignored: 2 };
 
-export function OperationDialogs({ preview, undoTarget, categories, action, busy, working, issue, reviewed, operation, onReviewed, onUpdate, onOrganize, onUndo, onClose, onViewResult, onRestoreFocus }: {
+export function OperationDialogs({ preview, undoTarget, categories, action, busy, working, issue, reviewed, operation, onReviewed, onUpdate, onOrganize, onUndo, onClose, onViewResult, onOpenDestination, onRestoreFocus }: {
   preview: Preview | null; undoTarget: Operation | null; categories: Category[]; action: Action | null; busy: boolean; working: boolean;
   issue: string; reviewed: boolean; operation?: Operation | OperationSummary;
-  onReviewed: (value: boolean) => void; onUpdate: () => void; onOrganize: (excluded: string[], renameConflicts: boolean, count: number) => void; onUndo: () => void; onClose: () => void; onViewResult: () => void;
+  onReviewed: (value: boolean) => void; onUpdate: () => void; onOrganize: (excluded: string[], renameConflicts: boolean, count: number) => void; onUndo: () => void; onClose: () => void; onViewResult: () => void; onOpenDestination: () => void;
   onRestoreFocus: () => void;
 }) {
   // Tied to the preview's id, so a refreshed preview starts with everything selected again.
@@ -61,7 +61,7 @@ export function OperationDialogs({ preview, undoTarget, categories, action, busy
           <div className="preview-files"><FileTable files={files} categories={categories} preview fullPaths={fullPaths} selection={{ excluded: selection.excluded, selected, ready: counts.ready, disabled: working, onToggle: toggleFile, onToggleAll: toggleAll }} /></div>
           <div className="preview-toolbar"><label className="review-confirmation"><input type="checkbox" checked={reviewed} disabled={working || !!issue} onChange={e => onReviewed(e.target.checked)} />{t("I reviewed the files and destinations in this preview")}</label><p className="preview-selection" role="status">{selected} {t("of")} {counts.ready} {t("selected")}</p></div>
         </>}
-        <DialogFooter>{done(previewAction) ? footer : <>
+        <DialogFooter>{done(previewAction) ? <><Button variant="outline" onClick={onOpenDestination}><FolderOpen aria-hidden="true" />{t("Open destination folder")}</Button>{footer}</> : <>
           <Button variant="outline" disabled={busy} onClick={onClose}>{t("Cancel")}</Button>
           {previewAction?.phase === "error" && operation && <Button variant="outline" onClick={onViewResult}>{t("View result in history")}</Button>}
           <Button variant="outline" disabled={working} onClick={onUpdate}>{t("Refresh preview")}</Button>

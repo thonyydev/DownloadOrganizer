@@ -799,6 +799,48 @@ async fn install_update(app: AppHandle) -> Result<()> {
     blocking(move || install_pending_update(&app)).await
 }
 
+/// Opens the saved source or destination folder in File Explorer. Takes no path from the page.
+#[tauri::command]
+async fn open_folder(app: AppHandle, which: String) -> Result<()> {
+    blocking(move || {
+        let prefs = lock(&app.state::<AppState>())?.store.preferences()?;
+        let path = match which.as_str() {
+            "source" => prefs.source,
+            "destination" => prefs.destination,
+            _ => return Err("Unknown folder".into()),
+        };
+        if !Path::new(&path).is_dir() {
+            return Err(
+                t("This folder doesn't exist yet. It's created when files are organized.").into(),
+            );
+        }
+        explore(&path)
+    })
+    .await
+}
+
+fn explore(path: &str) -> Result<()> {
+    use windows_sys::Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL};
+    let wide = |text: &str| text.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
+    let (verb, file) = (wide("explore"), wide(path));
+    // "explore" only opens folders: a path swapped for a program is never run.
+    let code = unsafe {
+        ShellExecuteW(
+            std::ptr::null_mut(),
+            verb.as_ptr(),
+            file.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            SW_SHOWNORMAL,
+        )
+    };
+    if code as isize > 32 {
+        Ok(())
+    } else {
+        Err(t("Could not open the folder.").into())
+    }
+}
+
 #[tauri::command]
 async fn retry_monitoring(app: AppHandle) -> Result<()> {
     blocking(move || {
@@ -910,7 +952,8 @@ fn run_application() -> std::result::Result<(), startup::StartupError> {
             save_preferences,
             check_update,
             install_update,
-            retry_monitoring
+            retry_monitoring,
+            open_folder
         ])
         .build(tauri::generate_context!())
         .map_err(|_| startup::StartupError::Runtime)?;

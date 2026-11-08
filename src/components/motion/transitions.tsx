@@ -20,14 +20,16 @@ export function useContentMotion(identity: string, enabled: boolean, enter = fal
     if (!root) return;
     const groups = pattern === "page" ? [...root.querySelectorAll<HTMLElement>("[data-motion-group]")].slice(0, 4) : [];
     const elements = [root, ...groups];
-    const reset = () => elements.forEach(element => { element.style.opacity = "1"; element.style.transform = "none"; });
+    const reset = () => elements.forEach(element => { element.style.opacity = "1"; element.style.transform = "none"; element.style.filter = ""; });
     if (!enabled || !changed) { reset(); return; }
     let stopped = false;
     const animations = elements.map((element, index) => {
       const preset = index ? entrances.context : entrances[pattern];
-      return animate(element, { opacity: [preset.opacity, 1], y: [preset.y, 0], scale: [preset.scale, 1] }, {
+      const blur = pattern === "page" && !index ? { filter: ["blur(3px)", "blur(0px)"] } : {};
+      return animate(element, { opacity: [preset.opacity, 1], y: [preset.y, 0], scale: [preset.scale, 1], ...blur }, {
         duration: preset.duration, delay: index ? (index - 1) * timing.stagger : 0, ease: "easeOut",
-        onComplete: () => { if (!stopped) element.style.transform = "none"; },
+        // A leftover filter would blur text and create a stacking context, so it is cleared too.
+        onComplete: () => { if (!stopped) { element.style.transform = "none"; element.style.filter = ""; } },
       });
     });
     return () => {
