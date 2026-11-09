@@ -5,6 +5,7 @@ export interface Category { id: string; name: string; extensions: string[] }
 export interface Rule { pattern: string; folder: string; keep: boolean }
 export interface Preferences { source: string; destination: string; automatic: boolean; enabled_categories: string[]; theme: "dark" | "light"; language: "system" | Language; notifications: boolean; updates: boolean; autostart: boolean; rules: Rule[]; extra_sources: string[] }
 export interface FileEntry { name: string; path: string; extension: string; category: string; size: number; modified: number; destination: string; status: "ready" | "ignored" | "conflict"; reason: string | null; rename_to?: string | null }
+export interface FoundMovement { id: number; operation_id: number; created: number; source: string; destination: string; status: string }
 export interface Movement { id: number; source: string; destination: string; status: string; error: string | null; size: number }
 export interface Operation { id: number; created: number; kind: string; movements: Movement[] }
 export interface OperationSummary { id: number; created: number; kind: string; total: number; moved: number; undone: number; errors: number }
@@ -33,6 +34,9 @@ export const api = {
   retryMonitoring: () => invoke<void>("retry_monitoring"),
   checkUpdate: () => invoke<string | null>("check_update"),
   installUpdate: () => invoke<void>("install_update"),
+  openFolder: (which: "source" | "destination") => invoke<void>("open_folder", { which }),
+  revealMovement: (operationId: number, movementId: number) => invoke<void>("reveal_movement", { operationId, movementId }),
+  searchHistory: (query: string) => invoke<FoundMovement[]>("search_history", { query }),
 };
 
 export function summarizeOperation(operation: Operation | OperationSummary): OperationSummary {
@@ -51,7 +55,14 @@ export function bytes(value: number) {
   const unit = Math.min(Math.floor(Math.log(value) / Math.log(1024)), 3);
   return `${new Intl.NumberFormat(locale(), { maximumFractionDigits: 1 }).format(value / 1024 ** unit)} ${["B", "KB", "MB", "GB"][unit]}`;
 }
-export function date(value: number) { return new Intl.DateTimeFormat(locale(), { dateStyle: "short", timeStyle: "short" }).format(value); }
+export function date(value: number, now = Date.now()) {
+  const midnight = (time: number) => new Date(time).setHours(0, 0, 0, 0);
+  const days = Math.round((midnight(now) - midnight(value)) / 86_400_000);
+  if (days !== 0 && days !== 1) return new Intl.DateTimeFormat(locale(), { dateStyle: "short", timeStyle: "short" }).format(value);
+  // "today" and "yesterday" come from the platform in every language.
+  const day = new Intl.RelativeTimeFormat(locale(), { numeric: "auto" }).format(-days, "day");
+  return `${day[0].toLocaleUpperCase(locale()) + day.slice(1)}, ${new Intl.DateTimeFormat(locale(), { timeStyle: "short" }).format(value)}`;
+}
 export function basename(path: string) { return path.split(/[\\/]/).pop() || path; }
 // Presentation only: keep original paths for identities, persistence and native commands.
 export function displayPath(path: string): string {

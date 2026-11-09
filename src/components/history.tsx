@@ -1,9 +1,10 @@
-import { ChevronDown, ChevronRight, CircleCheck, History, Undo2 } from "lucide-react";
+import { ArrowRight, ChevronDown, ChevronRight, CircleCheck, FolderSearch, History, Search, Undo2 } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useFeedbackMotion, useMotionAllowed } from "@/components/motion/feedback";
 import { Collapse } from "@/components/motion/collapse";
 import { useContentMotion } from "@/components/motion/transitions";
-import { displayPath, api, date, summarizeOperation, type DestinationSummary, type Operation, type OperationSummary as Summary } from "@/lib/api";
+import { displayPath, api, basename, date, statusLabel, summarizeOperation, type DestinationSummary, type FoundMovement, type Operation, type OperationSummary as Summary } from "@/lib/api";
 import { plural } from "@/lib/utils";
 import { t } from "@/lib/i18n";
 import { useEffect, useMemo, useState } from "react";
@@ -42,10 +43,10 @@ function OperationSummary({ operation }: { operation: Operation | Summary }) {
   </div>;
 }
 
-export function Activity({ operation, onOpen, expanded, motionAllowed = false }: { operation: Operation | Summary; onOpen: () => void; expanded?: boolean; motionAllowed?: boolean }) {
+export function Activity({ operation, onOpen, expanded, motionAllowed = false, className = "" }: { operation: Operation | Summary; onOpen: () => void; expanded?: boolean; motionAllowed?: boolean; className?: string }) {
   const { moved, undone, errors } = useMemo(() => summarizeOperation(operation), [operation]);
   const mark = useFeedbackMotion<SVGSVGElement>(`${operation.id}:${moved}:${undone}:${errors}`, motionAllowed && errors === 0);
-  return <button className="activity" onClick={onOpen} aria-expanded={expanded} aria-controls={expanded === undefined ? undefined : "movements-" + operation.id}>
+  return <button className={"activity " + className} onClick={onOpen} aria-expanded={expanded} aria-controls={expanded === undefined ? undefined : "movements-" + operation.id}>
     <span className={"activity-icon " + (errors ? "warning" : "")}>
       {undone ? <Undo2 ref={mark} size={16} aria-hidden="true" /> : <CircleCheck ref={mark} size={16} aria-hidden="true" />}
     </span>
@@ -58,16 +59,61 @@ export function Activity({ operation, onOpen, expanded, motionAllowed = false }:
   </button>;
 }
 
-export function HistoryView({ history, expanded, working, openingUndo, onExpand, onUndo, hasMore, loading, pageError, onLoadMore, onRetry, newAvailable, onReload }: {
+// The newest operation when the page opened: anything newer arrived while it was on screen.
+export function useSeenOperation(history: readonly { id: number }[]) {
+  const [seen] = useState(() => history[0]?.id ?? 0);
+  return seen;
+}
+export const arrivalClass = (id: number, index: number, seen: number) => (id > seen ? " arrived" : "") + (index === 0 ? " latest" : "");
+
+// Matches the backend's SEARCH_LIMIT: a full page means older matches may exist.
+const searchLimit = 50;
+
+// Finds a file by name across every operation, to see where it went.
+function HistorySearch() {
+  const [query, setQuery] = useState("");
+  const [found, setFound] = useState<{ query: string; results: FoundMovement[]; error: string } | null>(null);
+  const [revealError, setRevealError] = useState("");
+  const text = query.trim();
+  useEffect(() => {
+    if (!text) return;
+    let stale = false;
+    const timer = setTimeout(() => api.searchHistory(text)
+      .then(results => { if (!stale) setFound({ query: text, results, error: "" }); })
+      .catch(error => { if (!stale) setFound({ query: text, results: [], error: String(error) }); }), 250);
+    return () => { stale = true; clearTimeout(timer); };
+  }, [text]);
+  const shown = text && found?.query === text ? found : null;
+  // Only a short summary is live: the list itself would be read out at every keystroke.
+  const summary = !shown || shown.error ? "" : shown.results.length ? plural(shown.results.length, t("file"), t("files")) : t("No moved file has this name.");
+  return <div className="history-search">
+    <label className="search-field"><span className="sr-only">{t("Search the history")}</span><span className="search-input"><Search size={16} aria-hidden="true" /><Input value={query} onChange={event => { setQuery(event.target.value); setRevealError(""); }} onKeyDown={event => { if (event.key === "Escape" && query) { event.preventDefault(); setQuery(""); } }} placeholder={t("Where did a file go? Search by name")} aria-label={t("Search the history")} /></span></label>
+    <p className="sr-only" role="status">{summary}</p>
+    {shown && <div>
+      {shown.error ? <p className="inline-error" role="alert">{shown.error}</p> : !shown.results.length ? <p className="history-search-note">{t("No moved file has this name.")}</p> : <>
+        {revealError && <p className="inline-error" role="alert">{revealError}</p>}
+        <ul className="history-search-results" aria-label={t("Files found in the history")}>{shown.results.map(found => <li key={found.id} className="movement">
+          <div><strong>{basename(found.source)}</strong><p className="history-search-route"><ArrowRight size={14} aria-hidden="true" /><span>{displayPath(found.destination)}</span></p><small>#{found.operation_id} · {date(found.created * 1000)}</small></div>
+          <span className={"status status-" + found.status}>{statusLabel(found.status)}</span>
+          {found.status === "moved" && <Button variant="ghost" size="sm" aria-label={`${t("Show in folder")}: ${basename(found.source)}`} onClick={() => { setRevealError(""); api.revealMovement(found.operation_id, found.id).catch(error => setRevealError(String(error))); }}><FolderSearch aria-hidden="true" />{t("Show in folder")}</Button>}
+        </li>)}</ul>
+        {shown.results.length === searchLimit && <p className="history-search-note">{t("Showing the 50 most recent matches. Type more of the name to narrow them.")}</p>}
+      </>}
+    </div>}
+  </div>;
+}
+
+export function HistoryView({ history, expanded, working, openingUndo, onExpand, onUndo, hasMore, loading, pageError, onLoadMore, onRetry }: {
   history: (Operation | Summary)[]; expanded: number | null; working: boolean;
   onExpand: (id: number | null) => void; onUndo: (operation: Operation | Summary) => void;
-  hasMore?: boolean; loading?: boolean; pageError?: string; onLoadMore?: () => void; onRetry?: () => void; newAvailable?: boolean; onReload?: () => void;
+  hasMore?: boolean; loading?: boolean; pageError?: string; onLoadMore?: () => void; onRetry?: () => void;
   openingUndo?: number | null;
 }) {
   const motionAllowed = useMotionAllowed();
   const ref = useContentMotion(history.slice(0, 4).map(op => op.id).join(":"), motionAllowed);
+  const seen = useSeenOperation(history);
   if (!history.length) return <div ref={ref} data-motion-group className="empty" role="status"><History size={24} aria-hidden="true" /><h2>{t("No recorded operations")}</h2><p>{t("After you organize files, the results and undo options appear here.")}</p></div>;
-  return <><div className="table-footer">{plural(history.length, t("operation loaded"), t("operations loaded"))}{t(", newest first")}{newAvailable && <Button variant="outline" size="sm" disabled={loading || working} onClick={onReload}>{t("New operations — refresh the list")}</Button>}</div><div ref={ref} data-motion-group className="history-list" aria-label={t("Recorded operations")}>{history.map(op => <section className="history-operation" key={op.id} aria-label={t("Operation") + " " + op.id}>
+  return <><HistorySearch /><div className="table-footer">{plural(history.length, t("operation loaded"), t("operations loaded"))}{t(", newest first")}</div><div ref={ref} data-motion-group className="history-list" aria-label={t("Recorded operations")}>{history.map((op, index) => <section className={"history-operation" + arrivalClass(op.id, index, seen)} key={op.id} aria-label={t("Operation") + " " + op.id}>
     <div className="history-header"><Activity operation={op} motionAllowed={motionAllowed} expanded={expanded === op.id} onOpen={() => onExpand(expanded === op.id ? null : op.id)} />
       <Button variant="outline" size="sm" disabled={working || !summarizeOperation(op).moved} onClick={() => onUndo(op)}><Undo2 aria-hidden="true" />{openingUndo === op.id ? t("Preparing restore…") : t("Undo")}</Button>
     </div>

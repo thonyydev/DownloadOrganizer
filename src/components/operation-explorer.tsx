@@ -4,6 +4,7 @@ import { displayPath, api, basename, statusLabel, type Movement, type Operation,
 import { t } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { FolderSearch } from "lucide-react";
 import { plural } from "@/lib/utils";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 
@@ -11,8 +12,9 @@ export function movementProblem(movement: Movement) {
   return !!movement.error || ["failed", "uncertain", "pending", "undo_pending"].includes(movement.status);
 }
 
-function MovementList({ movements }: { movements: Movement[] }) {
+function MovementList({ operationId, movements }: { operationId: number; movements: Movement[] }) {
   const [search, setSearch] = useState("");
+  const [revealError, setRevealError] = useState("");
   const [status, setStatus] = useState("all");
   const scrollRef = useRef<HTMLDivElement>(null);
   const indexed = useMemo(() => {
@@ -42,6 +44,7 @@ function MovementList({ movements }: { movements: Movement[] }) {
       <label className="search-field"><span>{t("Search by name")}</span><Input aria-label={t("Search files in this operation")} value={search} onChange={event => setSearch(event.target.value)} placeholder={t("File name…")} /></label>
       <label className="filter-select"><span>{t("Filter by status")}</span><select value={status} onChange={event => setStatus(event.target.value)}><option value="all">{t("All statuses")}</option><option value="problems">{t("With problems")}</option>{statuses.map(value => <option key={value} value={value}>{statusLabel(value)}</option>)}</select></label>
     </div>
+    {revealError && <p className="inline-error" role="alert">{revealError}</p>}
     <p className="explorer-count">{results.length} {t("of")} {plural(movements.length, t("file"), t("files"))} · {t("Issues first")}</p>
     <div ref={scrollRef} className="movement-scroll" role="region" aria-label={t("Files in operation")} tabIndex={0} onKeyDown={event => {
       if (event.target !== event.currentTarget || !results.length || !["Home", "End"].includes(event.key)) return;
@@ -57,6 +60,7 @@ function MovementList({ movements }: { movements: Movement[] }) {
           <li className="movement" data-movement-id={movement.id} data-index={item.index} ref={virtual ? virtualizer.measureElement : undefined} aria-posinset={item.index + 1} aria-setsize={results.length}>
             <div><strong>{name}</strong><dl className="movement-paths"><dt>{t("Source")}</dt><dd>{displayPath(movement.source)}</dd><dt>{t("Destination")}</dt><dd>{displayPath(movement.destination)}</dd></dl>{movement.error && <p className="inline-error">{movement.error}</p>}</div>
             <span className={"status status-" + movement.status}>{statusLabel(movement.status)}</span>
+            {movement.status === "moved" && <Button variant="ghost" size="sm" aria-label={`${t("Show in folder")}: ${name}`} onClick={() => { setRevealError(""); api.revealMovement(operationId, movement.id).catch(error => setRevealError(String(error))); }}><FolderSearch aria-hidden="true" />{t("Show in folder")}</Button>}
           </li></Fragment>;
       })}{virtual && virtualizer.getTotalSize() > previousEnd && <li aria-hidden="true" role="presentation" style={{ height: virtualizer.getTotalSize() - previousEnd }} />}</ol>
         : <div className="empty" role="status"><h2>{movements.length ? t("No files match the filters") : t("No recorded moves")}</h2>{movements.length > 0 && <Button variant="outline" onClick={() => { setSearch(""); setStatus("all"); }}>{t("Clear filters")}</Button>}</div>}
@@ -80,7 +84,7 @@ export function OperationExplorer({ operation }: { operation: Operation | Operat
     <DialogTrigger asChild><Button className="summary-explore" variant="outline" size="sm">{t("Explore files")}</Button></DialogTrigger>
     <DialogContent className="operation-explorer">
       <DialogHeader><DialogTitle>{t("Files in operation")} #{operation.id}</DialogTitle><DialogDescription>{t("See the recorded moves. Use the filter to find problems, and Home or End in the list to jump to the start or end.")}</DialogDescription></DialogHeader>
-      {open && <>{error && <p className="inline-error" role="alert">{t("Could not look up the files.")} <Button variant="outline" onClick={() => setRetry(value => value + 1)}>{t("Try again")}</Button></p>}{current ? <MovementList movements={current.movements} /> : !error && <p role="status">{t("Loading the operation's files…")}</p>}</>}
+      {open && <>{error && <p className="inline-error" role="alert">{t("Could not look up the files.")} <Button variant="outline" onClick={() => setRetry(value => value + 1)}>{t("Try again")}</Button></p>}{current ? <MovementList operationId={current.id} movements={current.movements} /> : !error && <p role="status">{t("Loading the operation's files…")}</p>}</>}
     </DialogContent>
   </Dialog>;
 }

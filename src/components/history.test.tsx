@@ -4,7 +4,7 @@ import { HistoryView } from "./history";
 import type { Operation } from "@/lib/api";
 import { summarizeOperation } from "@/lib/api";
 
-const queries = vi.hoisted(() => ({ operation: vi.fn(), destinations: vi.fn() }));
+const queries = vi.hoisted(() => ({ operation: vi.fn(), destinations: vi.fn(), revealMovement: vi.fn(), searchHistory: vi.fn() }));
 vi.mock("@/lib/api", async original => ({ ...await original<typeof import("@/lib/api")>(), api: queries }));
 
 vi.mock("@/components/motion/feedback", () => ({ useMotionAllowed: () => false, useFeedbackMotion: () => ({ current: null }) }));
@@ -170,4 +170,64 @@ it("mantém 5.000 arquivos virtualizados durante a saída e reabre com movimento
   const next = operationOf(1); next.movements[0].source = "/isolated/latest.txt";
   view.rerender(<HistoryView {...props} history={[next]} />);
   const reopened = explore(); expect(within(reopened).getByText("latest.txt")).toBeTruthy(); expect(within(reopened).queryByText("File-0.txt")).toBeNull();
+});
+
+it("mostra na pasta só os arquivos que ainda estão no destino e explica a falha", async () => {
+  const operation = operationOf(2);
+  operation.movements[1].status = "undone";
+  queries.destinations.mockResolvedValue({ folders: [["/isolated/destination/Documents/", 2]], other_folders: 0, other_files: 0 });
+  queries.operation.mockResolvedValue(operation);
+  queries.revealMovement.mockResolvedValueOnce(undefined).mockRejectedValueOnce("Este arquivo não está mais no destino.");
+  render(<HistoryView {...props} history={[summarizeOperation(operation)]} />);
+  const dialog = explore();
+  await within(dialog).findByText("File-0.txt");
+  expect(within(dialog).queryByRole("button", { name: "Mostrar na pasta: File-1.txt" })).toBeNull();
+  const reveal = within(dialog).getByRole("button", { name: "Mostrar na pasta: File-0.txt" });
+  fireEvent.click(reveal);
+  expect(queries.revealMovement).toHaveBeenCalledWith(42, 1);
+  fireEvent.click(reveal);
+  expect(await within(dialog).findByRole("alert")).toHaveProperty("textContent", "Este arquivo não está mais no destino.");
+});
+
+it("busca um arquivo no histórico inteiro e mostra para onde ele foi", async () => {
+  const operation = operationOf(1);
+  queries.destinations.mockResolvedValue({ folders: [], other_folders: 0, other_files: 0 });
+  queries.searchHistory.mockImplementation(async (query: string) => query === "contrato" ? [
+    { id: 7, operation_id: 3, created: 1700000000, source: "/isolated/source/Contrato.pdf", destination: "/isolated/destination/Documents/Contrato.pdf", status: "moved" },
+    { id: 5, operation_id: 2, created: 1690000000, source: "/isolated/source/contrato-antigo.pdf", destination: "/isolated/destination/Documents/contrato-antigo.pdf", status: "undone" },
+  ] : []);
+  queries.revealMovement.mockResolvedValue(undefined);
+  render(<HistoryView {...props} history={[summarizeOperation(operation)]} />);
+  const search = screen.getByRole("textbox", { name: "Buscar no histórico" });
+  fireEvent.change(search, { target: { value: "contrato" } });
+  const list = await screen.findByRole("list", { name: "Arquivos encontrados no histórico" });
+  expect(screen.getByRole("status").textContent).toBe("2 arquivos");
+  expect(list.closest("[role=status]")).toBeNull();
+  expect(queries.searchHistory).toHaveBeenCalledExactlyOnceWith("contrato");
+  expect(within(list).getByText("/isolated/destination/Documents/Contrato.pdf")).toBeTruthy();
+  expect(within(list).queryByRole("button", { name: "Mostrar na pasta: contrato-antigo.pdf" })).toBeNull();
+  fireEvent.click(within(list).getByRole("button", { name: "Mostrar na pasta: Contrato.pdf" }));
+  expect(queries.revealMovement).toHaveBeenCalledWith(3, 7);
+  queries.revealMovement.mockRejectedValueOnce("Este arquivo não está mais no destino.");
+  fireEvent.click(within(list).getByRole("button", { name: "Mostrar na pasta: Contrato.pdf" }));
+  expect(await screen.findByRole("alert")).toBeTruthy();
+  fireEvent.change(search, { target: { value: "nada" } });
+  // The old error belongs to the old search.
+  expect(screen.queryByRole("alert")).toBeNull();
+  await waitFor(() => expect(screen.getByRole("status").textContent).toBe("Nenhum arquivo movido tem esse nome."));
+  fireEvent.keyDown(search, { key: "Escape" });
+  expect((search as HTMLInputElement).value).toBe("");
+  expect(screen.getByRole("status").textContent).toBe("");
+  expect(screen.queryByText("Nenhum arquivo movido tem esse nome.")).toBeNull();
+});
+
+it("destaca a operação mais recente e anima só a que chega com a página aberta", () => {
+  const first = { ...summarizeOperation(operationOf(1)), id: 41 };
+  queries.destinations.mockResolvedValue({ folders: [], other_folders: 0, other_files: 0 });
+  const view = render(<HistoryView {...props} expanded={null} history={[first]} />);
+  const section = (id: number) => screen.getByRole("region", { name: "Operação " + id });
+  expect(section(41).className).toBe("history-operation latest");
+  view.rerender(<HistoryView {...props} expanded={null} history={[{ ...first, id: 42 }, first]} />);
+  expect(section(42).className).toBe("history-operation arrived latest");
+  expect(section(41).className).toBe("history-operation");
 });

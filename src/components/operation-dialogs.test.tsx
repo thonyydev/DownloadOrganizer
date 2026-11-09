@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { OperationDialogs } from "./operation-dialogs";
 import type { Operation, Preview } from "@/lib/api";
 
 vi.mock("@/components/motion/feedback", () => ({ useMotionAllowed: () => false, useFeedbackMotion: () => ({ current: null }) }));
 const operation: Operation = { id: 42, kind: "manual", created: 1700000000, movements: [{ id: 1, source: "/isolated/file.txt", destination: "/isolated/destination/file.txt", status: "moved", size: 1, error: null }] };
 const preview: Preview = { id: 1, created: 1700000000, files: [{ name: "file.txt", path: "/isolated/file.txt", destination: "/isolated/destination/file.txt", size: 1, extension: "txt", category: "documents", modified: 1700000000000, status: "ready", reason: null }] };
-const props = { preview: null, undoTarget: null, categories: [], action: null, busy: false, working: false, issue: "", reviewed: true, onReviewed: vi.fn(), onUpdate: vi.fn(), onOrganize: vi.fn(), onUndo: vi.fn(), onClose: vi.fn(), onViewResult: vi.fn(), onRestoreFocus: vi.fn() };
+const props = { preview: null, undoTarget: null, categories: [], action: null, busy: false, working: false, issue: "", reviewed: true, onReviewed: vi.fn(), onUpdate: vi.fn(), onOrganize: vi.fn(), onUndo: vi.fn(), onClose: vi.fn(), onViewResult: vi.fn(), onOpenDestination: vi.fn(), onUndoResult: vi.fn(), onRestoreFocus: vi.fn() };
 const operationOf = (count: number): Operation => ({ ...operation, movements: Array.from({ length: count }, (_, index) => ({ ...operation.movements[0], id: index + 1, source: `/isolated/source/File-${index}.txt`, destination: `/isolated/destination/File-${index}.txt` })) });
 const originalScrollTo = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollTo");
 const observers: { elements: Set<Element>; callback: ResizeObserverCallback }[] = [];
@@ -182,4 +182,41 @@ it("preserva os arquivos de Desfazer ao fechar por Escape e aceita uma reabertur
   view.rerender(<OperationDialogs {...props} undoTarget={next} />);
   expect(panel()).toBe(old); expect(old.hasAttribute("inert")).toBe(false); expect(within(old).getByText("new.txt")).toBeTruthy();
   expect(within(old).queryByText("file.txt")).toBeNull();
+});
+
+it("só oferece Desfazer no resultado quando nada mais está rodando", () => {
+  const view = render(<OperationDialogs {...props} preview={preview} action={{ kind: "organize", phase: "completed", operationId: 42 }} operation={operation} />);
+  fireEvent.click(screen.getByRole("button", { name: "Desfazer" }));
+  expect(props.onUndoResult).toHaveBeenCalledOnce();
+  // An automatic batch would make the undo give up after the dialog closed.
+  view.rerender(<OperationDialogs {...props} working preview={preview} action={{ kind: "organize", phase: "completed", operationId: 42 }} operation={operation} />);
+  expect((screen.getByRole("button", { name: "Desfazer" }) as HTMLButtonElement).disabled).toBe(true);
+});
+
+it("mostra a prévia por pasta de destino, com conflitos, ignorados e desmarcados", () => {
+  const file = preview.files[0];
+  const files = [
+    { ...file, name: "a.pdf", path: "/isolated/a.pdf", destination: "/isolated/destination/Documents/a.pdf" },
+    { ...file, name: "b.pdf", path: "/isolated/b.pdf", destination: "/isolated/destination/Documents/b.pdf", status: "conflict" as const, reason: "Já existe" },
+    { ...file, name: "c.png", path: "/isolated/c.png", destination: "/isolated/destination/Images/c.png" },
+    { ...file, name: "d.tmp", path: "/isolated/d.tmp", destination: "/isolated/d.tmp", status: "ignored" as const, reason: "Temporário" },
+  ];
+  render(<OperationDialogs {...props} preview={{ ...preview, files }} />);
+  fireEvent.click(screen.getByRole("checkbox", { name: "Organizar c.png" }));
+  fireEvent.click(screen.getByRole("button", { name: "Por pasta" }));
+  expect(screen.getByRole("button", { name: "Por pasta" }).getAttribute("aria-pressed")).toBe("true");
+  expect(screen.queryByRole("table")).toBeNull();
+  const folders = screen.getByRole("list", { name: "Pastas de destino" });
+  expect([...folders.querySelectorAll("summary")].map(summary => summary.textContent)).toEqual(["Documents/2 arquivos1 conflito", "Images/1 arquivo", "Fica onde está1 arquivo"]);
+  expect(screen.getByText("/isolated/destination")).toBeTruthy();
+  // Closed folders render no rows.
+  expect(screen.queryByText("a.pdf")).toBeNull();
+  const [documents, images] = folders.querySelectorAll("details");
+  documents.open = true; fireEvent(documents, new Event("toggle"));
+  images.open = true; fireEvent(images, new Event("toggle"));
+  expect(screen.getByText("a.pdf")).toBeTruthy();
+  expect(screen.getByText("Já existe")).toBeTruthy();
+  expect(screen.getByText("c.png").closest("li")!.textContent).toContain("Não selecionado");
+  fireEvent.click(screen.getByRole("button", { name: "Lista" }));
+  expect(screen.getByRole("table")).toBeTruthy();
 });

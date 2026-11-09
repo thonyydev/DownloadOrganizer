@@ -26,6 +26,17 @@ pub struct Movement {
     pub digest: String,
 }
 
+/// A move found by a search of the whole history, with the operation it belongs to.
+#[derive(Serialize)]
+pub struct FoundMovement {
+    pub id: i64,
+    pub operation_id: i64,
+    pub created: i64,
+    pub source: String,
+    pub destination: String,
+    pub status: String,
+}
+
 #[derive(Serialize)]
 pub struct Operation {
     pub id: i64,
@@ -209,6 +220,42 @@ impl Store {
             )
             .map_err(|e| e.to_string())?;
         Ok(())
+    }
+
+    /// Up to `limit` moves whose file name contains `query`, newest first. The match ignores case
+    /// in every language, which SQLite's LIKE only does for ASCII, so the names are compared here.
+    pub fn search_movements(&self, query: &str, limit: usize) -> Result<Vec<FoundMovement>> {
+        let query = query.trim().to_lowercase();
+        if query.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut statement = self.db.prepare("SELECT m.id,m.operation_id,o.created,m.source,m.destination,m.status FROM movements m JOIN operations o ON o.id=m.operation_id ORDER BY m.id DESC").map_err(|e| e.to_string())?;
+        let rows = statement
+            .query_map([], |r| {
+                Ok(FoundMovement {
+                    id: r.get(0)?,
+                    operation_id: r.get(1)?,
+                    created: r.get(2)?,
+                    source: r.get(3)?,
+                    destination: r.get(4)?,
+                    status: r.get(5)?,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+        let mut found = Vec::new();
+        for row in rows {
+            let row = row.map_err(|e| e.to_string())?;
+            let name = Path::new(&row.source)
+                .file_name()
+                .map(|name| name.to_string_lossy().to_lowercase());
+            if name.is_some_and(|name| name.contains(&query)) {
+                found.push(row);
+                if found.len() == limit {
+                    break;
+                }
+            }
+        }
+        Ok(found)
     }
 
     pub fn movements(&self, operation: i64) -> Result<Vec<Movement>> {

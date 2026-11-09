@@ -2257,3 +2257,127 @@ fn undo_waits_for_an_unplugged_source_and_retries_later() {
     assert_eq!(fs::read(usb.join("notes.txt")).unwrap(), b"notes");
     assert!(!organized.exists());
 }
+
+#[test]
+fn reveal_only_finds_files_still_moved_and_present() {
+    let (temp, runtime, _) = fixture();
+    let store = &runtime.store;
+    let file = fs::canonicalize(temp.path()).unwrap().join("a.txt");
+    fs::write(&file, b"a").unwrap();
+    let verbatim = file.to_string_lossy().into_owned();
+    assert!(verbatim.starts_with(r"\\?\"));
+    let stamp = Stamp {
+        size: 1,
+        modified: 0,
+    };
+    let operation = store.begin("manual").unwrap();
+    let moved = store
+        .record(
+            operation,
+            "/isolated/a.txt",
+            &verbatim,
+            "moved",
+            &stamp,
+            "x",
+        )
+        .unwrap();
+    let undone = store
+        .record(
+            operation,
+            "/isolated/b.txt",
+            &verbatim,
+            "undone",
+            &stamp,
+            "x",
+        )
+        .unwrap();
+    // Explorer gets the plain form of the recorded path.
+    assert_eq!(
+        moved_destination(store, operation, moved).unwrap(),
+        file_preview::plain_path(&verbatim)
+    );
+    assert!(
+        !moved_destination(store, operation, moved)
+            .unwrap()
+            .starts_with(r"\\?\")
+    );
+    assert!(moved_destination(store, operation, undone).is_err());
+    assert!(moved_destination(store, operation + 1, moved).is_err());
+    fs::remove_file(&file).unwrap();
+    assert!(moved_destination(store, operation, moved).is_err());
+}
+
+#[test]
+fn plain_path_drops_only_the_verbatim_prefix() {
+    assert_eq!(
+        file_preview::plain_path(r"\\?\D:\Organized\a.pdf"),
+        r"D:\Organized\a.pdf"
+    );
+    assert_eq!(
+        file_preview::plain_path(r"\\?\UNC\server\share\a.pdf"),
+        r"\\server\share\a.pdf"
+    );
+    assert_eq!(
+        file_preview::plain_path(r"D:\Organized\a.pdf"),
+        r"D:\Organized\a.pdf"
+    );
+}
+
+#[test]
+fn history_search_matches_file_names_in_any_case_newest_first() {
+    let (_temp, runtime, _) = fixture();
+    let store = &runtime.store;
+    let stamp = Stamp {
+        size: 1,
+        modified: 0,
+    };
+    let first = store.begin("manual").unwrap();
+    let older = store
+        .record(
+            first,
+            r"C:\contratos\Contrato-Ação.pdf",
+            r"D:\Org\Documentos\Contrato-Ação.pdf",
+            "moved",
+            &stamp,
+            "x",
+        )
+        .unwrap();
+    let second = store.begin("automatic").unwrap();
+    let newer = store
+        .record(
+            second,
+            r"C:\Downloads\CONTRATO-AÇÃO (2).pdf",
+            r"D:\Org\Documentos\CONTRATO-AÇÃO (2).pdf",
+            "undone",
+            &stamp,
+            "x",
+        )
+        .unwrap();
+    // The folder name matches, but the search is about file names.
+    store
+        .record(
+            second,
+            r"C:\contratos\foto.png",
+            r"D:\Org\Imagens\foto.png",
+            "moved",
+            &stamp,
+            "x",
+        )
+        .unwrap();
+    let found = |query: &str, limit: usize| {
+        store
+            .search_movements(query, limit)
+            .unwrap()
+            .iter()
+            .map(|movement| (movement.id, movement.operation_id))
+            .collect::<Vec<_>>()
+    };
+    // Non-ASCII letters match in any case, which SQLite's LIKE would miss.
+    assert_eq!(
+        found("  contrato-ação ", 50),
+        [(newer, second), (older, first)]
+    );
+    assert_eq!(found("contrato", 1), [(newer, second)]);
+    assert!(found("   ", 50).is_empty());
+    assert!(found("inexistente", 50).is_empty());
+}

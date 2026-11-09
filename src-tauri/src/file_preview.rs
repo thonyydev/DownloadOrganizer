@@ -79,6 +79,15 @@ pub(super) fn identity(file: &File) -> Result<Identity> {
     ))
 }
 
+/// A path without the \\?\ prefix, the form people and Explorer read.
+pub(crate) fn plain_path(name: &str) -> String {
+    if let Some(tail) = name.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{tail}")
+    } else {
+        name.strip_prefix(r"\\?\").unwrap_or(name).to_owned()
+    }
+}
+
 fn verify_physical_path(file: &File, expected: &Path) -> Result<()> {
     use std::os::windows::io::AsRawHandle;
     use windows_sys::Win32::Storage::FileSystem::GetFinalPathNameByHandleW;
@@ -95,15 +104,8 @@ fn verify_physical_path(file: &File, expected: &Path) -> Result<()> {
         return Err(t("Could not confirm the file's safe path.").into());
     }
     let actual = String::from_utf16(&buffer[..length]).map_err(|_| changed())?;
-    let normalize = |name: &str| {
-        if let Some(tail) = name.strip_prefix(r"\\?\UNC\") {
-            format!(r"\\{tail}")
-        } else {
-            name.strip_prefix(r"\\?\").unwrap_or(name).to_owned()
-        }
-    };
     // Compare the resolved handle, never canonicalize the requested path after opening.
-    if normalize(&actual) != normalize(expected.to_str().ok_or(changed())?) {
+    if plain_path(&actual) != plain_path(expected.to_str().ok_or(changed())?) {
         return Err(changed().into());
     }
     Ok(())

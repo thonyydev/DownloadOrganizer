@@ -1,8 +1,9 @@
+import { useState, type ComponentProps } from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { AudioProvider } from "@/components/audio/audio-provider";
 import { firstRuleTutorial } from "@/components/rules-tutorial";
-import { Settings } from "@/components/settings";
+import { Settings, type SettingsTab } from "@/components/settings";
 import { samePreferences } from "@/lib/experience";
 import type { Preferences } from "@/lib/api";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -15,10 +16,15 @@ afterEach(() => { cleanup(); localStorage.clear(); });
 
 const preferences: Preferences = { source: "/isolated/source", destination: "/isolated/destination", theme: "dark", language: "pt-BR", automatic: false, enabled_categories: [], notifications: true, updates: true, autostart: false, extra_sources: ["/isolated/desktop"], rules: [{ pattern: "*.stl", folder: "Modelos", keep: false }, { pattern: "*.obj", folder: "Malhas", keep: false }] };
 
-function renderSettings() {
+// Settings shows one tab at a time; the page keeps which one, as App does.
+function Tabbed({ start, ...props }: Omit<ComponentProps<typeof Settings>, "tab" | "onTab"> & { start: SettingsTab }) {
+  const [tab, setTab] = useState(start);
+  return <Settings {...props} tab={tab} onTab={setTab} />;
+}
+function renderSettings(start: SettingsTab = "rules") {
   let draft = preferences;
   const onChange = vi.fn((update: (value: Preferences) => Preferences) => { draft = update(draft); });
-  render(<AudioProvider><Settings draft={preferences} categories={[]} busy={false} dirty={false} external={null} onChange={onChange} onDiscard={() => {}} onAcceptExternal={() => {}} /></AudioProvider>);
+  render(<AudioProvider><Tabbed start={start} draft={preferences} saved={preferences} categories={[]} busy={false} dirty={false} external={null} onChange={onChange} onDiscard={() => {}} onAcceptExternal={() => {}} /></AudioProvider>);
   return () => draft;
 }
 
@@ -102,7 +108,7 @@ it("trata regra alterada ou reordenada como alteração das preferências", () =
 
 it("adiciona e remove outras pastas de origem só no rascunho", async () => {
   vi.mocked(open).mockResolvedValueOnce("/isolated/temp");
-  const draft = renderSettings();
+  const draft = renderSettings("folders");
   fireEvent.click(screen.getByRole("button", { name: "Adicionar pasta de origem" }));
   await waitFor(() => expect(draft().extra_sources).toEqual(["/isolated/desktop", "/isolated/temp"]));
   fireEvent.click(screen.getByRole("button", { name: "Remover pasta de origem: /isolated/desktop" }));
@@ -112,7 +118,7 @@ it("adiciona e remove outras pastas de origem só no rascunho", async () => {
 
 it("verifica atualizações quando pedido e diz o resultado", async () => {
   vi.mocked(invoke).mockResolvedValueOnce(null).mockResolvedValueOnce("9.9.9").mockRejectedValueOnce("Confira sua conexão e tente de novo.");
-  renderSettings();
+  renderSettings("system");
   const check = () => fireEvent.click(screen.getByRole("button", { name: "Verificar atualizações" }));
   check();
   expect(await screen.findByText(`Você está na versão mais recente (${version})`)).toBeTruthy();
@@ -121,4 +127,32 @@ it("verifica atualizações quando pedido e diz o resultado", async () => {
   expect(await screen.findByText("Nova versão pronta para instalar: 9.9.9")).toBeTruthy();
   check();
   expect(await screen.findByText("Não foi possível verificar atualizações. Confira sua conexão e tente de novo.")).toBeTruthy();
+});
+
+it("mostra só as opções da aba escolhida", () => {
+  renderSettings("folders");
+  const tabs = screen.getAllByRole("tab");
+  expect(tabs.map(tab => tab.textContent)).toEqual(["Pastas", "Organização automática", "Categorias", "Regras personalizadas", "Aparência", "Sistema"]);
+  expect(screen.getByRole("tab", { name: "Pastas" }).getAttribute("aria-selected")).toBe("true");
+  expect(screen.getByRole("heading", { name: "Pasta de origem" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Adicionar regra" })).toBeNull();
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "Regras personalizadas" }));
+  expect(screen.getByRole("tab", { name: "Regras personalizadas" }).getAttribute("aria-selected")).toBe("true");
+  expect(screen.getByRole("button", { name: "Adicionar regra" })).toBeTruthy();
+  expect(screen.queryByRole("heading", { name: "Pasta de origem" })).toBeNull();
+  // Language and sounds live with the theme.
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "Aparência" }));
+  expect(screen.getByRole("button", { name: "Claro" })).toBeTruthy();
+  expect(screen.getByRole("group", { name: "Idioma" })).toBeTruthy();
+  expect(screen.getByRole("switch", { name: "Efeitos sonoros" })).toBeTruthy();
+});
+
+it("marca só as abas com alterações não salvas", () => {
+  // The same categories in another order are not a change.
+  const saved = { ...preferences, enabled_categories: ["images", "documents"] };
+  render(<AudioProvider><Tabbed start="folders" draft={{ ...saved, theme: "light", rules: [{ pattern: "*.pdf", folder: "PDFs", keep: false }], enabled_categories: ["documents", "images"] }} saved={saved} categories={[]} busy={false} dirty external={null} onChange={() => {}} onDiscard={() => {}} onAcceptExternal={() => {}} /></AudioProvider>);
+  const marked = screen.getAllByRole("tab").filter(tab => tab.getAttribute("aria-describedby")).map(tab => tab.textContent);
+  expect(marked).toEqual(["Regras personalizadas", "Aparência"]);
+  expect(screen.getByRole("tab", { name: "Aparência" }).getAttribute("aria-describedby")).toBeTruthy();
+  expect(document.getElementById(screen.getByRole("tab", { name: "Aparência" }).getAttribute("aria-describedby")!)?.textContent).toBe("Alterações não salvas");
 });

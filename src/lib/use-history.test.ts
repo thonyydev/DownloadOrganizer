@@ -23,17 +23,28 @@ it("inicializa vazio e consulta várias páginas sem duplicar ou reordenar IDs",
   expect(result.current.next_cursor).toBeNull();
 });
 
-it("mantém o cursor e a seleção ao receber novos registros e atualizar a lista explicitamente", async () => {
+it("põe as operações novas no topo sem perder as páginas carregadas", async () => {
   const { result } = renderHook(useHistoryPages);
   act(() => result.current.sync(page(200, 101)));
   mocks.history.mockResolvedValueOnce(page(100, 1)); await act(() => result.current.loadMore());
+  // 201-203 are new; 150 was undone meanwhile.
+  act(() => result.current.sync({ ...page(203, 104), operations: page(203, 104).operations.map(op => op.id === 150 ? { ...op, undone: 1 } : op) }));
+  expect(result.current.operations.map(op => op.id)).toEqual(Array.from({ length: 203 }, (_, i) => 203 - i));
+  expect(result.current.operations.find(op => op.id === 150)?.undone).toBe(1);
+  expect(result.current.next_cursor).toBeNull();
+});
+
+it("recomeça pela página nova quando chegou mais de uma página e descarta uma consulta antiga", async () => {
+  const { result } = renderHook(useHistoryPages);
+  act(() => result.current.sync(page(200, 101)));
+  const stale = deferred<HistoryPage>(); mocks.history.mockReturnValueOnce(stale.promise);
+  let waiting: Promise<void>;
+  act(() => { waiting = result.current.loadMore(); });
+  // Merging 1101-1200 with 101-200 would hide 201-1100.
   act(() => result.current.sync(page(1200, 1101)));
-  expect(result.current.operations).toHaveLength(200);
-  expect(result.current.newAvailable).toBe(true); expect(result.current.next_cursor).toBeNull();
-  mocks.history.mockResolvedValueOnce(page(1200, 1101)); await act(() => result.current.reload(1));
-  expect(result.current.operations).toHaveLength(101);
-  expect(result.current.operations[100].id).toBe(1);
-  expect(result.current.next_cursor).toBe(1101); expect(result.current.newAvailable).toBe(false);
+  await act(async () => { stale.resolve(page(100, 1)); await waiting; });
+  expect(result.current.operations.map(op => op.id)).toEqual(Array.from({ length: 100 }, (_, i) => 1200 - i));
+  expect(result.current.next_cursor).toBe(1101); expect(result.current.loading).toBe(false);
 });
 
 it("preserva registros e cursor após falha e permite tentar novamente sem comandos duplicados", async () => {
