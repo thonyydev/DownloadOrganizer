@@ -4,7 +4,7 @@ import { HistoryView } from "./history";
 import type { Operation } from "@/lib/api";
 import { summarizeOperation } from "@/lib/api";
 
-const queries = vi.hoisted(() => ({ operation: vi.fn(), destinations: vi.fn() }));
+const queries = vi.hoisted(() => ({ operation: vi.fn(), destinations: vi.fn(), revealMovement: vi.fn() }));
 vi.mock("@/lib/api", async original => ({ ...await original<typeof import("@/lib/api")>(), api: queries }));
 
 vi.mock("@/components/motion/feedback", () => ({ useMotionAllowed: () => false, useFeedbackMotion: () => ({ current: null }) }));
@@ -170,4 +170,21 @@ it("mantém 5.000 arquivos virtualizados durante a saída e reabre com movimento
   const next = operationOf(1); next.movements[0].source = "/isolated/latest.txt";
   view.rerender(<HistoryView {...props} history={[next]} />);
   const reopened = explore(); expect(within(reopened).getByText("latest.txt")).toBeTruthy(); expect(within(reopened).queryByText("File-0.txt")).toBeNull();
+});
+
+it("mostra na pasta só os arquivos que ainda estão no destino e explica a falha", async () => {
+  const operation = operationOf(2);
+  operation.movements[1].status = "undone";
+  queries.destinations.mockResolvedValue({ folders: [["/isolated/destination/Documents/", 2]], other_folders: 0, other_files: 0 });
+  queries.operation.mockResolvedValue(operation);
+  queries.revealMovement.mockResolvedValueOnce(undefined).mockRejectedValueOnce("Este arquivo não está mais no destino.");
+  render(<HistoryView {...props} history={[summarizeOperation(operation)]} />);
+  const dialog = explore();
+  await within(dialog).findByText("File-0.txt");
+  expect(within(dialog).queryByRole("button", { name: "Mostrar na pasta: File-1.txt" })).toBeNull();
+  const reveal = within(dialog).getByRole("button", { name: "Mostrar na pasta: File-0.txt" });
+  fireEvent.click(reveal);
+  expect(queries.revealMovement).toHaveBeenCalledWith(42, 1);
+  fireEvent.click(reveal);
+  expect(await within(dialog).findByRole("alert")).toHaveProperty("textContent", "Este arquivo não está mais no destino.");
 });

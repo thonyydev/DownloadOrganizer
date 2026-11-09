@@ -1,8 +1,9 @@
+import { Tooltip } from "radix-ui";
 import { File, ArrowRight, ChevronRight, Eye, SearchX } from "lucide-react";
 import { basename, displayPath, bytes, date, statusLabel, type Category, type FileEntry } from "@/lib/api";
 import { t, useLanguage } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
-import { Fragment, useCallback, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type Ref } from "react";
+import { Fragment, useCallback, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type Ref } from "react";
 import { defaultRangeExtractor, useVirtualizer } from "@tanstack/react-virtual";
 import { Collapse } from "@/components/motion/collapse";
 import { useContentMotion } from "@/components/motion/transitions";
@@ -37,11 +38,16 @@ function FileRow({ file, source, index, preview, fullPaths, category, open, onTo
   const language = useLanguage();
   const size = useMemo(() => bytes(file.size), [file.size, language]);
   const modified = useMemo(() => preview ? "" : date(file.modified), [file.modified, preview, language]);
-  return <tr data-index={index} data-file-path={file.path} aria-rowindex={index + 2} ref={rowRef}>
+  // A double click opens the preview, like in File Explorer; the eye button stays the keyboard path.
+  const openOnDoubleClick = !preview && onView ? (event: MouseEvent<HTMLTableRowElement>) => {
+    const trigger = event.currentTarget.querySelector<HTMLButtonElement>(".file-view-button");
+    if (trigger && !(event.target as HTMLElement).closest("button, input")) onView(file, trigger);
+  } : undefined;
+  return <tr data-index={index} data-file-path={file.path} aria-rowindex={index + 2} ref={rowRef} onDoubleClick={openOnDoubleClick}>
     <td>{preview ? <div className="file-name">{selection && file.status === "ready" ? <input type="checkbox" className="preview-check" aria-label={`${t("Organize")} ${file.name}`} checked={!selection.excluded.has(file.path)} disabled={selection.disabled} onChange={() => selection.onToggle(file.path)} /> : <span className="file-icon"><File size={16} aria-hidden="true" /></span>}<div className="file-copy"><FileName file={file} source={source} /></div></div> : <FileDetails file={file} source={source} open={open} onToggle={() => onToggle(file.path)} />}</td>
     {!preview && <td><span className={"category-label tone-" + file.category}><span className="tone-dot" aria-hidden="true" />{category}</span></td>}
     <td className="tabular number-cell">{size}</td><td>{preview && file.status === "ignored" ? <span className="stays">{t("Stays where it is")}</span> : preview ? <span className="destination" title={displayPath(file.destination)}><ArrowRight size={16} aria-hidden="true" />{fullPaths ? <span>{displayPath(file.destination)}</span> : <><span aria-hidden="true">{plannedFolder(file)}{plannedName(file) !== file.name && <>\{plannedName(file)}</>}</span><span className="sr-only">{displayPath(file.destination)}</span></>}</span> : <span className="tabular">{modified}</span>}</td>
-    <td><div className="status-cell"><div><span className={"status status-" + file.status}>{statusLabel(file.status)}</span>{file.reason && <small className="reason">{file.reason}</small>}</div>{!preview && onView && <Button variant="ghost" size="icon-xs" className="file-view-button" aria-haspopup="dialog" aria-label={`${t("View")} ${file.name}`} onClick={event => onView(file, event.currentTarget)}><Eye className="size-4" aria-hidden="true" /></Button>}</div></td>
+    <td><div className="status-cell"><div><span className={"status status-" + file.status}>{statusLabel(file.status)}</span>{file.reason && <small className="reason">{file.reason}</small>}</div>{!preview && onView && <Tooltip.Root><Tooltip.Trigger asChild><Button variant="ghost" size="icon-xs" className="file-view-button" aria-haspopup="dialog" aria-label={`${t("View")} ${file.name}`} onClick={event => onView(file, event.currentTarget)}><Eye className="size-4" aria-hidden="true" /></Button></Tooltip.Trigger><Tooltip.Portal><Tooltip.Content className="path-tooltip" side="left" sideOffset={6}>{t("View")}</Tooltip.Content></Tooltip.Portal></Tooltip.Root>}</div></td>
   </tr>;
 }
 

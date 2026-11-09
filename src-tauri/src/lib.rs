@@ -819,6 +819,44 @@ async fn open_folder(app: AppHandle, which: String) -> Result<()> {
     .await
 }
 
+/// Shows a moved file selected in File Explorer. The path comes from the history, not from the page.
+#[tauri::command]
+async fn reveal_movement(app: AppHandle, operation_id: i64, movement_id: i64) -> Result<()> {
+    use std::os::windows::process::CommandExt;
+    blocking(move || {
+        let path = moved_destination(
+            &lock(&app.state::<AppState>())?.store,
+            operation_id,
+            movement_id,
+        )?;
+        // The full path keeps a program named explorer.exe elsewhere from being run; /select never opens the file.
+        let windows = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into());
+        std::process::Command::new(Path::new(&windows).join("explorer.exe"))
+            .raw_arg(format!("/select,\"{path}\""))
+            .spawn()
+            .map_err(|_| t("Could not open the folder."))?;
+        Ok(())
+    })
+    .await
+}
+
+/// Where a movement still recorded as moved left its file, if the file is still there.
+fn moved_destination(store: &Store, operation_id: i64, movement_id: i64) -> Result<String> {
+    let missing = t("This file is no longer at the destination.");
+    let path = store
+        .operation(operation_id)?
+        .movements
+        .into_iter()
+        .find(|movement| movement.id == movement_id && movement.status == "moved")
+        .map(|movement| movement.destination)
+        .ok_or(missing)?;
+    if !Path::new(&path).is_file() {
+        return Err(missing.into());
+    }
+    // The history keeps the \\?\ form, which Explorer doesn't read.
+    Ok(file_preview::plain_path(&path))
+}
+
 fn explore(path: &str) -> Result<()> {
     use windows_sys::Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL};
     let wide = |text: &str| text.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
@@ -953,7 +991,8 @@ fn run_application() -> std::result::Result<(), startup::StartupError> {
             check_update,
             install_update,
             retry_monitoring,
-            open_folder
+            open_folder,
+            reveal_movement
         ])
         .build(tauri::generate_context!())
         .map_err(|_| startup::StartupError::Runtime)?;

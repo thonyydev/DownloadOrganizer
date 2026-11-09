@@ -6,10 +6,11 @@ import { AnimatedCount } from "@/components/motion/animated-count";
 import { useMotionAllowed } from "@/components/motion/feedback";
 import { TriageBar, triageCounts } from "@/components/triage";
 import { t } from "@/lib/i18n";
+import type { ReactNode } from "react";
 import { displayPath, basename, bytes, type OperationSummary, type Snapshot } from "@/lib/api";
 
-export function Overview({ data, counts, onFiles, onSettings, onCategory, onHistory, onOperation, onOpenDestination }: {
-  data: Snapshot | null; counts: Map<string, number>; onFiles: () => void; onSettings: () => void; onCategory: (id: string) => void;
+export function Overview({ data, counts, onConflicts, onFiles, onSettings, onCategory, onHistory, onOperation, onOpenDestination }: {
+  data: Snapshot | null; counts: Map<string, number>; onConflicts: () => void; onFiles: () => void; onSettings: () => void; onCategory: (id: string) => void;
   onHistory: () => void; onOperation: (operation: OperationSummary) => void; onOpenDestination: () => void;
 }) {
   const motionAllowed = useMotionAllowed();
@@ -17,10 +18,10 @@ export function Overview({ data, counts, onFiles, onSettings, onCategory, onHist
   const history = data?.history ?? [];
   const triage = triageCounts(files);
   const fullest = Math.max(1, ...counts.values());
-  const stats: [string, number, string, boolean][] = [
+  const stats: [string, number, ReactNode, boolean][] = [
     [t("Available"), files.length, bytes(files.reduce((sum, f) => sum + f.size, 0)), true],
     [t("Ready (plural)"), triage.ready, t("After review"), true],
-    [t("Conflicts"), triage.conflict, t("Preserved"), false],
+    [t("Conflicts"), triage.conflict, triage.conflict ? <button type="button" className="stat-link" onClick={onConflicts}>{t("View conflicts")}</button> : t("Preserved"), false],
     [t("Organized (plural)"), history.reduce((sum, op) => sum + op.moved, 0), t("Last 100 operations"), true],
   ];
   return <div className="overview">

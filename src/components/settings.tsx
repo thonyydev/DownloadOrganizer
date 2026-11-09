@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Tabs } from "radix-ui";
 import { open } from "@tauri-apps/plugin-dialog";
 import { CircleHelp, FolderOpen, ListFilter, Moon, Palette, Plus, Power, RefreshCw, Shapes, Sun, ShieldCheck, Trash2, Zap } from "lucide-react";
@@ -7,6 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { api, displayPath, type Category, type Preferences, type Rule } from "@/lib/api";
 import { t } from "@/lib/i18n";
+import { samePreferences } from "@/lib/experience";
+import { useAudioFeedback } from "@/components/audio/audio-provider";
 import { useMotionAllowed } from "@/components/motion/feedback";
 import { useContentMotion } from "@/components/motion/transitions";
 import { version } from "../../package.json";
@@ -18,21 +20,25 @@ import { firstRuleTutorial, RulesTutorial } from "@/components/rules-tutorial";
 
 // The page's groups. Language and sounds belong to Appearance.
 export type SettingsTab = "folders" | "automation" | "categories" | "rules" | "appearance" | "system";
+// Each tab lists the preferences it edits, so it can show its own unsaved changes.
 const tabs = () => [
-  { id: "folders", label: t("Folders"), icon: FolderOpen },
-  { id: "automation", label: t("Automatic organization"), icon: Zap },
-  { id: "categories", label: t("Categories"), icon: Shapes },
-  { id: "rules", label: t("Custom rules"), icon: ListFilter },
-  { id: "appearance", label: t("Appearance"), icon: Palette },
-  { id: "system", label: t("System"), icon: Power },
+  { id: "folders", label: t("Folders"), icon: FolderOpen, fields: ["source", "destination", "extra_sources"] },
+  { id: "automation", label: t("Automatic organization"), icon: Zap, fields: ["automatic"] },
+  { id: "categories", label: t("Categories"), icon: Shapes, fields: ["enabled_categories"] },
+  { id: "rules", label: t("Custom rules"), icon: ListFilter, fields: ["rules"] },
+  { id: "appearance", label: t("Appearance"), icon: Palette, fields: ["theme", "language"] },
+  { id: "system", label: t("System"), icon: Power, fields: ["autostart", "notifications", "updates"] },
 ] as const;
 
-export function Settings({ draft, categories, busy, dirty, external, tab, onTab, onChange: setDraft, onDiscard, onAcceptExternal }: {
-  draft: Preferences; categories: Category[]; busy: boolean; dirty: boolean; external: Preferences | null;
+export function Settings({ draft, saved, categories, busy, dirty, external, tab, onTab, onChange: setDraft, onDiscard, onAcceptExternal }: {
+  draft: Preferences; saved: Preferences; categories: Category[]; busy: boolean; dirty: boolean; external: Preferences | null;
   tab: SettingsTab; onTab: (tab: SettingsTab) => void;
   onChange: (update: (value: Preferences) => Preferences) => void; onDiscard: () => void; onAcceptExternal: () => void;
 }) {
   const [pickerError, setPickerError] = useState("");
+  const pendingId = useId();
+  const audioDirty = useAudioFeedback().dirty;
+  const pending = (id: SettingsTab, fields: readonly (keyof Preferences)[]) => (id === "appearance" && audioDirty) || !samePreferences(saved, { ...saved, ...Object.fromEntries(fields.map(field => [field, draft[field]])) });
   const [tutorial, setTutorial] = useState(false);
   // Kept as data, so the message follows the language at render.
   const [updateCheck, setUpdateCheck] = useState<{ state: "checking" } | { state: "found"; version: string } | { state: "latest" } | { state: "error"; error: string } | null>(null);
@@ -63,7 +69,7 @@ export function Settings({ draft, categories, busy, dirty, external, tab, onTab,
     {external && <section className="banner error-banner" role="alert"><div><strong>{t("The saved settings were updated")}</strong><p>{t("Your draft was kept. Compare the current version before deciding which to save.")}</p><dl className="external-preferences"><dt>{t("Saved source")}</dt><dd>{[external.source, ...external.extra_sources].map(displayPath).join(", ")}</dd><dt>{t("Saved destination")}</dt><dd>{displayPath(external.destination)}</dd><dt>{t("Saved automation")}</dt><dd>{external.automatic ? t("On") : t("Off")}</dd><dt>{t("Saved categories")}</dt><dd>{categories.filter(c => external.enabled_categories.includes(c.id)).map(c => c.name).join(", ") || t("None")}</dd><dt>{t("Saved theme")}</dt><dd>{external.theme === "dark" ? t("Dark") : t("Light")}</dd><dt>{t("Saved language")}</dt><dd>{languages().find(item => item.id === external.language)?.name}</dd><dt>{t("Saved notifications")}</dt><dd>{external.notifications ? t("On (plural)") : t("Off (plural)")}</dd><dt>{t("Saved updates")}</dt><dd>{external.updates ? t("On (plural)") : t("Off (plural)")}</dd><dt>{t("Saved startup")}</dt><dd>{external.autostart ? t("On") : t("Off")}</dd><dt>{t("Saved rules")}</dt><dd>{external.rules.length}</dd></dl><div className="notice-actions"><Button variant="outline" disabled={busy} onClick={onDiscard}>{t("Discard draft and load current")}</Button><Button variant="outline" disabled={busy} onClick={onAcceptExternal}>{t("Keep draft over this version")}</Button></div></div></section>}
     <p className="draft-status" role="status">{external ? t("The saved settings changed. Review your draft before saving.") : dirty ? t("Unsaved changes. The saved settings are still in use.") : t("All changes are saved.")}</p>
     <Tabs.Root value={tab} onValueChange={value => onTab(value as SettingsTab)}>
-      <Tabs.List className="settings-nav" aria-label={t("Settings sections")}>{tabs().map(({ id, label, icon: Icon }) => <Tabs.Trigger key={id} value={id}><Icon size={14} aria-hidden="true" />{label}</Tabs.Trigger>)}</Tabs.List>
+      <Tabs.List className="settings-nav" aria-label={t("Settings sections")}>{tabs().map(({ id, label, icon: Icon, fields }) => { const changed = pending(id, fields); return <Tabs.Trigger key={id} value={id} aria-describedby={changed ? pendingId : undefined}><Icon size={14} aria-hidden="true" />{label}{changed && <span className="draft-dot" aria-hidden="true" />}</Tabs.Trigger>; })}</Tabs.List><span id={pendingId} className="sr-only">{t("Unsaved changes")}</span>
       <div ref={panel}>
         <Tabs.Content value="folders" className="settings-panel">
           <section data-motion-group className="settings-section" aria-labelledby="directories-heading">

@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { Tooltip } from "radix-ui";
 import { FileTable } from "./file-table";
 import type { FileEntry } from "@/lib/api";
 
@@ -42,7 +43,7 @@ describe("tabela virtual", () => {
   it("oferece visualização apenas nas linhas montadas e navega entre ambos os controles", () => {
     const onView = vi.fn();
     const files = filesOf(10000);
-    const view = render(<FileTable files={files} categories={categories} onView={onView} />);
+    const view = render(<FileTable files={files} categories={categories} onView={onView} />, { wrapper: Tooltip.Provider });
     const table = scroller();
     const first = within(table).getByRole("button", { name: "Visualizar Arquivo-0.pdf" });
     expect(first.getAttribute("aria-haspopup")).toBe("dialog");

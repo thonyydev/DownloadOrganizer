@@ -34,6 +34,7 @@ export const api = {
   checkUpdate: () => invoke<string | null>("check_update"),
   installUpdate: () => invoke<void>("install_update"),
   openFolder: (which: "source" | "destination") => invoke<void>("open_folder", { which }),
+  revealMovement: (operationId: number, movementId: number) => invoke<void>("reveal_movement", { operationId, movementId }),
 };
 
 export function summarizeOperation(operation: Operation | OperationSummary): OperationSummary {

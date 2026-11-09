@@ -24,7 +24,7 @@ function Tabbed({ start, ...props }: Omit<ComponentProps<typeof Settings>, "tab"
 function renderSettings(start: SettingsTab = "rules") {
   let draft = preferences;
   const onChange = vi.fn((update: (value: Preferences) => Preferences) => { draft = update(draft); });
-  render(<AudioProvider><Tabbed start={start} draft={preferences} categories={[]} busy={false} dirty={false} external={null} onChange={onChange} onDiscard={() => {}} onAcceptExternal={() => {}} /></AudioProvider>);
+  render(<AudioProvider><Tabbed start={start} draft={preferences} saved={preferences} categories={[]} busy={false} dirty={false} external={null} onChange={onChange} onDiscard={() => {}} onAcceptExternal={() => {}} /></AudioProvider>);
   return () => draft;
 }
 
@@ -145,4 +145,14 @@ it("mostra só as opções da aba escolhida", () => {
   expect(screen.getByRole("button", { name: "Claro" })).toBeTruthy();
   expect(screen.getByRole("group", { name: "Idioma" })).toBeTruthy();
   expect(screen.getByRole("switch", { name: "Efeitos sonoros" })).toBeTruthy();
+});
+
+it("marca só as abas com alterações não salvas", () => {
+  // The same categories in another order are not a change.
+  const saved = { ...preferences, enabled_categories: ["images", "documents"] };
+  render(<AudioProvider><Tabbed start="folders" draft={{ ...saved, theme: "light", rules: [{ pattern: "*.pdf", folder: "PDFs", keep: false }], enabled_categories: ["documents", "images"] }} saved={saved} categories={[]} busy={false} dirty external={null} onChange={() => {}} onDiscard={() => {}} onAcceptExternal={() => {}} /></AudioProvider>);
+  const marked = screen.getAllByRole("tab").filter(tab => tab.getAttribute("aria-describedby")).map(tab => tab.textContent);
+  expect(marked).toEqual(["Regras personalizadas", "Aparência"]);
+  expect(screen.getByRole("tab", { name: "Aparência" }).getAttribute("aria-describedby")).toBeTruthy();
+  expect(document.getElementById(screen.getByRole("tab", { name: "Aparência" }).getAttribute("aria-describedby")!)?.textContent).toBe("Alterações não salvas");
 });

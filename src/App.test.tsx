@@ -684,6 +684,25 @@ describe("composição desktop", () => {
     expect(screen.getByText("10000 arquivos")).toBeTruthy();
     expect(document.querySelectorAll("tr[data-file-path]").length).toBeLessThan(25);
   });
+  it("leva aos conflitos, salva com Ctrl+S e visualiza com duplo clique", async () => {
+    snapshot.files = [snapshot.files[0], { ...snapshot.files[0], name: "b.txt", path: "/isolated/source/b.txt", status: "conflict", reason: "Já existe" }];
+    await start();
+    fireEvent.click(screen.getByRole("button", { name: "Ver conflitos" }));
+    expect((screen.getByRole("combobox", { name: "Filtrar por categoria" }) as HTMLSelectElement).value).toBe("status:conflict");
+    expect(screen.getByRole("option", { name: "Conflitos (1)" })).toBeTruthy();
+    expect([...document.querySelectorAll("tr[data-file-path] strong")].map(cell => cell.textContent)).toEqual(["b.txt"]);
+    // A double click on the row opens the preview; on the details button it doesn't.
+    fireEvent.doubleClick(document.querySelector(".file-disclosure")!);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.doubleClick(document.querySelector("tr[data-file-path]")!);
+    expect(await screen.findByRole("dialog")).toBeTruthy();
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    navigate("Configurações");
+    fireEvent.click(setting("button", "Claro"));
+    fireEvent.keyDown(window, { key: "s", ctrlKey: true });
+    await waitFor(() => expect(mocks.save).toHaveBeenCalledOnce());
+  });
   it("abre a pasta de destino pelo Explorer e explica quando ela ainda não existe", async () => {
     await start();
     fireEvent.click(screen.getByRole("button", { name: "Abrir pasta de destino" }));
