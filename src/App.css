@@ -375,7 +375,7 @@ tbody tr:has(.file-disclosure[aria-expanded=true]) { background: var(--surface-s
 [data-slot=dialog-footer] { flex-wrap: wrap; padding-top: var(--space-4); border-top: 1px solid var(--border); }
 [data-slot=dialog-content] .progress-panel { margin-bottom: 0; }
 .preview-dialog { width: min(1080px,calc(100vw - 48px)); max-width: min(1080px,calc(100vw - 48px)); }
-.result-dialog { width: min(560px,calc(100vw - 48px)); max-width: min(560px,calc(100vw - 48px)); }
+.result-dialog { width: min(680px,calc(100vw - 48px)); max-width: min(680px,calc(100vw - 48px)); }
 .result-dialog .progress-panel strong, .result-dialog .progress-panel p { font-size: var(--text-body); }
 .file-view-button { width: 24px; height: 24px; flex-shrink: 0; color: var(--faint); }
 .file-preview-dialog { width: min(800px,calc(100vw - 48px)); max-width: min(800px,calc(100vw - 48px)); }

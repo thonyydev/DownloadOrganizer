@@ -103,17 +103,17 @@ function HistorySearch() {
   </div>;
 }
 
-export function HistoryView({ history, expanded, working, openingUndo, onExpand, onUndo, hasMore, loading, pageError, onLoadMore, onRetry, newAvailable, onReload }: {
+export function HistoryView({ history, expanded, working, openingUndo, onExpand, onUndo, hasMore, loading, pageError, onLoadMore, onRetry }: {
   history: (Operation | Summary)[]; expanded: number | null; working: boolean;
   onExpand: (id: number | null) => void; onUndo: (operation: Operation | Summary) => void;
-  hasMore?: boolean; loading?: boolean; pageError?: string; onLoadMore?: () => void; onRetry?: () => void; newAvailable?: boolean; onReload?: () => void;
+  hasMore?: boolean; loading?: boolean; pageError?: string; onLoadMore?: () => void; onRetry?: () => void;
   openingUndo?: number | null;
 }) {
   const motionAllowed = useMotionAllowed();
   const ref = useContentMotion(history.slice(0, 4).map(op => op.id).join(":"), motionAllowed);
   const seen = useSeenOperation(history);
   if (!history.length) return <div ref={ref} data-motion-group className="empty" role="status"><History size={24} aria-hidden="true" /><h2>{t("No recorded operations")}</h2><p>{t("After you organize files, the results and undo options appear here.")}</p></div>;
-  return <><HistorySearch /><div className="table-footer">{plural(history.length, t("operation loaded"), t("operations loaded"))}{t(", newest first")}{newAvailable && <Button variant="outline" size="sm" disabled={loading || working} onClick={onReload}>{t("New operations — refresh the list")}</Button>}</div><div ref={ref} data-motion-group className="history-list" aria-label={t("Recorded operations")}>{history.map((op, index) => <section className={"history-operation" + arrivalClass(op.id, index, seen)} key={op.id} aria-label={t("Operation") + " " + op.id}>
+  return <><HistorySearch /><div className="table-footer">{plural(history.length, t("operation loaded"), t("operations loaded"))}{t(", newest first")}</div><div ref={ref} data-motion-group className="history-list" aria-label={t("Recorded operations")}>{history.map((op, index) => <section className={"history-operation" + arrivalClass(op.id, index, seen)} key={op.id} aria-label={t("Operation") + " " + op.id}>
     <div className="history-header"><Activity operation={op} motionAllowed={motionAllowed} expanded={expanded === op.id} onOpen={() => onExpand(expanded === op.id ? null : op.id)} />
       <Button variant="outline" size="sm" disabled={working || !summarizeOperation(op).moved} onClick={() => onUndo(op)}><Undo2 aria-hidden="true" />{openingUndo === op.id ? t("Preparing restore…") : t("Undo")}</Button>
     </div>

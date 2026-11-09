@@ -159,7 +159,7 @@ describe("histórico paginado", () => {
     expect(within(returned).getByRole("button", { name: /1 arquivo restaurado/, expanded: true })).toBeTruthy();
     expect((within(returned).getByRole("button", { name: "Desfazer" }) as HTMLButtonElement).disabled).toBe(true);
   }, 10_000);
-  it("mantém a página após erro, oferece nova tentativa e sinaliza chegadas sem inserir duplicatas", async () => {
+  it("mantém a página após erro, oferece nova tentativa e insere chegadas no topo sem duplicatas", async () => {
     seedHistory(5);
     mocks.snapshot.mockResolvedValueOnce({ ...snapshotPayload(), history: snapshot.history.slice(0, 2).map(summarizeOperation), history_cursor: 4 });
     await start(); navigate("Histórico");
@@ -173,14 +173,10 @@ describe("histórico paginado", () => {
     fireEvent.click(within(row).getByRole("button", { name: /1 arquivo organizado/ }));
     snapshot.history.unshift({ ...structuredClone(operation), id: 6 });
     await updateSnapshot();
-    expect(screen.queryByRole("region", { name: "Operação 6" })).toBeNull();
-    expect(screen.getByRole("region", { name: "Operação 1" })).toBe(row);
-    mocks.history.mockResolvedValueOnce({ operations: snapshot.history.slice(0, 2).map(summarizeOperation), next_cursor: 5 });
-    fireEvent.click(screen.getByRole("button", { name: "Novas operações — atualizar lista" }));
+    // The new operation joins the top on its own; the open one stays open.
     await screen.findByRole("region", { name: "Operação 6" });
     expect(screen.getByRole("region", { name: "Operação 1" })).toBe(row);
-    fireEvent.click(screen.getByRole("button", { name: "Carregar mais" }));
-    await screen.findByRole("region", { name: "Operação 4" });
+    expect(within(row).getByRole("button", { name: /1 arquivo organizado/ }).getAttribute("aria-expanded")).toBe("true");
     const ids = [...document.querySelectorAll(".history-operation")].map(row => row.getAttribute("aria-label"));
     expect(ids).toHaveLength(new Set(ids).size);
   });
