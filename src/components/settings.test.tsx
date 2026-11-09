@@ -14,7 +14,7 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), isTauri: () => true }));
 afterEach(() => { cleanup(); localStorage.clear(); });
 
-const preferences: Preferences = { source: "/isolated/source", destination: "/isolated/destination", theme: "dark", language: "pt-BR", automatic: false, enabled_categories: [], notifications: true, updates: true, autostart: false, extra_sources: ["/isolated/desktop"], rules: [{ pattern: "*.stl", folder: "Modelos", keep: false }, { pattern: "*.obj", folder: "Malhas", keep: false }] };
+const preferences: Preferences = { source: "/isolated/source", destination: "/isolated/destination", theme: "dark", language: "pt-BR", automatic: false, enabled_categories: [], notifications: true, updates: true, autostart: false, context_menu: true, extra_sources: ["/isolated/desktop"], rules: [{ pattern: "*.stl", folder: "Modelos", keep: false }, { pattern: "*.obj", folder: "Malhas", keep: false }] };
 
 // Settings shows one tab at a time; the page keeps which one, as App does.
 function Tabbed({ start, ...props }: Omit<ComponentProps<typeof Settings>, "tab" | "onTab"> & { start: SettingsTab }) {

@@ -12,7 +12,7 @@ import type { ReactNode } from "react";
 
 const mocks = vi.hoisted(() => ({
   snapshot: vi.fn(), history: vi.fn(), operation: vi.fn(), operationSummary: vi.fn(), destinations: vi.fn(), filePreview: vi.fn(), preview: vi.fn(), organize: vi.fn(), undo: vi.fn(), save: vi.fn(), retryMonitoring: vi.fn(),
-  installUpdate: vi.fn().mockResolvedValue(undefined), openFolder: vi.fn().mockResolvedValue(undefined), close: vi.fn(), hide: vi.fn().mockResolvedValue(undefined), choose: vi.fn(),
+  installUpdate: vi.fn().mockResolvedValue(undefined), openFolder: vi.fn().mockResolvedValue(undefined), takeRequestedFolder: vi.fn(), close: vi.fn(), hide: vi.fn().mockResolvedValue(undefined), choose: vi.fn(),
   events: new Map<string, (event: { payload: unknown }) => void>(),
   closeHandler: null as null | ((event: { preventDefault: () => void }) => void),
   sound: vi.fn(), soundStop: vi.fn(),
@@ -29,7 +29,7 @@ vi.mock("@web-kits/audio/react", () => ({
 }));
 vi.mock("./lib/api", async importOriginal => ({
   ...await importOriginal<typeof import("./lib/api")>(), native: true,
-  api: { snapshot: mocks.snapshot, history: mocks.history, operation: mocks.operation, operationSummary: mocks.operationSummary, destinations: mocks.destinations, filePreview: mocks.filePreview, preview: mocks.preview, organize: mocks.organize, undo: mocks.undo, save: mocks.save, retryMonitoring: mocks.retryMonitoring, installUpdate: mocks.installUpdate, openFolder: mocks.openFolder },
+  api: { snapshot: mocks.snapshot, history: mocks.history, operation: mocks.operation, operationSummary: mocks.operationSummary, destinations: mocks.destinations, filePreview: mocks.filePreview, preview: mocks.preview, organize: mocks.organize, undo: mocks.undo, save: mocks.save, retryMonitoring: mocks.retryMonitoring, installUpdate: mocks.installUpdate, openFolder: mocks.openFolder, takeRequestedFolder: mocks.takeRequestedFolder },
 }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async (name, callback) => {
   mocks.events.set(name, callback); return () => mocks.events.delete(name);
@@ -40,7 +40,7 @@ vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => ({
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: mocks.choose }));
 
 let snapshot: Omit<Snapshot, "history" | "history_cursor"> & { history: Operation[] };
-const initial: Preferences = { source: "/isolated/source", destination: "/isolated/destination", language: "system", theme: "dark", automatic: false, enabled_categories: ["documents"], notifications: true, updates: true, autostart: false, extra_sources: [], rules: [] };
+const initial: Preferences = { source: "/isolated/source", destination: "/isolated/destination", language: "system", theme: "dark", automatic: false, enabled_categories: ["documents"], notifications: true, updates: true, autostart: false, context_menu: true, extra_sources: [], rules: [] };
 const operation: Operation = { id: 42, created: 1_700_000_000, kind: "manual", movements: [{ id: 1, source: "/isolated/source/a.txt", destination: "/isolated/destination/Documentos/a.txt", status: "moved", error: null, size: 1 }] };
 function snapshotPayload(): Snapshot { return { ...snapshot, history: snapshot.history.slice(0, 100).map(summarizeOperation), history_cursor: snapshot.history.length > 100 ? snapshot.history[99].id : null }; }
 
@@ -111,10 +111,11 @@ beforeEach(() => {
     if (!operation) throw new Error("Operação não encontrada");
     return summarizeOperation(operation);
   });
-  mocks.preview.mockImplementation(async (): Promise<Preview> => {
+  mocks.preview.mockImplementation(async (folder: string | null = null): Promise<Preview> => {
     snapshot.preview_id = (snapshot.preview_id ?? 0) + 1;
-    return { id: snapshot.preview_id, created: Math.floor(Date.now() / 1000), files: structuredClone(snapshot.files) };
+    return { id: snapshot.preview_id, created: Math.floor(Date.now() / 1000), files: structuredClone(snapshot.files), folder };
   });
+  mocks.takeRequestedFolder.mockResolvedValue(null);
   mocks.save.mockImplementation(async (prefs: Preferences) => { snapshot.preferences = structuredClone(prefs); return structuredClone(prefs); });
   mocks.close.mockResolvedValue(undefined);
   mocks.choose.mockResolvedValue(null);
@@ -463,14 +464,15 @@ describe("rascunho de áudio no fluxo global", () => {
     await waitFor(() => expect(mocks.organize).toHaveBeenCalledOnce());
     expect(mocks.organize.mock.calls[0].slice(1)).toEqual([[], true]);
   });
-  it("salva as opções de notificações, atualizações e iniciar com o Windows", async () => {
+  it("salva as opções de notificações, atualizações, iniciar com o Windows e menu do Explorador", async () => {
     await start(); navigate("Configurações");
     fireEvent.click(setting("switch", "Mostrar notificações"));
     fireEvent.click(setting("switch", "Iniciar com o Windows"));
     fireEvent.click(setting("switch", "Atualizar automaticamente"));
+    fireEvent.click(setting("switch", "Mostrar no menu do Explorador de Arquivos"));
     fireEvent.click(screen.getByRole("button", { name: "Salvar preferências" }));
     await waitFor(() => expect(mocks.save).toHaveBeenCalledOnce());
-    expect(mocks.save.mock.calls[0][0]).toMatchObject({ notifications: false, updates: false, autostart: true });
+    expect(mocks.save.mock.calls[0][0]).toMatchObject({ notifications: false, updates: false, autostart: true, context_menu: false });
   });
   it("oferece instalar uma nova versão e espera o rascunho ser resolvido", async () => {
     await start();
@@ -577,7 +579,7 @@ describe("feedback de operações breves", () => {
     const target = kind === "preview" ? mocks.preview : mocks.snapshot;
     const name = kind === "preview" ? "Organizar arquivos" : "Atualizar arquivos";
     const heading = kind === "preview" ? "Preparando e verificando arquivos…" : "Verificando o estado atual…";
-    const result = kind === "preview" ? { id: 9, created: Math.floor(Date.now() / 1000), files: snapshot.files } : snapshotPayload();
+    const result = kind === "preview" ? { id: 9, created: Math.floor(Date.now() / 1000), files: snapshot.files, folder: null } : snapshotPayload();
     const quick = deferred<Preview | Snapshot>(); target.mockReturnValueOnce(quick.promise);
     const button = screen.getByRole("button", { name }); const calls = target.mock.calls.length;
     fireEvent.click(button); fireEvent.click(button);
@@ -1003,7 +1005,7 @@ describe("prévia e operações", () => {
     await start();
     mocks.preview.mockImplementationOnce(async () => {
       snapshot.preview_id = 7;
-      return { id: 7, created: Math.floor(Date.now() / 1000) - 301, files: snapshot.files };
+      return { id: 7, created: Math.floor(Date.now() / 1000) - 301, files: snapshot.files, folder: null };
     });
     const dialog = await openPreview();
     expect(within(dialog).getByText(/Esta prévia expirou/)).toBeTruthy();
@@ -1234,6 +1236,17 @@ it("abre o histórico quando a notificação de arquivos organizados é clicada"
   await waitFor(() => expect(mocks.events.has("open-history")).toBe(true));
   act(() => mocks.events.get("open-history")!({ payload: null }));
   expect(screen.getByRole("heading", { name: "Histórico", level: 1 })).toBeTruthy();
+});
+
+it("abre a prévia da pasta pedida pelo menu do Explorador de Arquivos", async () => {
+  await start();
+  await waitFor(() => expect(mocks.events.has("organize-folder")).toBe(true));
+  expect(mocks.preview).not.toHaveBeenCalled();
+  mocks.takeRequestedFolder.mockResolvedValueOnce("/isolated/qualquer pasta");
+  await act(async () => mocks.events.get("organize-folder")!({ payload: null }));
+  await waitFor(() => expect(mocks.preview).toHaveBeenCalledWith("/isolated/qualquer pasta"));
+  const dialog = await screen.findByRole("dialog", { name: "Confira antes de organizar" });
+  expect(within(dialog).getByText("Pasta a organizar: /isolated/qualquer pasta")).toBeTruthy();
 });
 
 it("troca de página pelo teclado e abre a aba certa pelo rodapé da barra lateral", async () => {

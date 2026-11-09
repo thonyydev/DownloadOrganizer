@@ -1,5 +1,6 @@
 use i18n::t;
 mod autostart;
+mod context_menu;
 mod directories;
 mod engine;
 mod file_preview;
@@ -48,6 +49,8 @@ struct AppState {
     file_preview_job: Mutex<()>,
     media_previews: Mutex<media_preview::Sessions>,
     update: Mutex<Option<(tauri_plugin_updater::Update, Vec<u8>)>>,
+    // A folder sent by File Explorer's menu, until the page takes it.
+    requested_folder: Mutex<Option<String>>,
 }
 
 #[derive(Clone, Serialize)]
@@ -291,7 +294,8 @@ fn execute(
     progress(app, 0, total, "", kind, "preparing", None);
     let mut operation_id = None;
     let result = (|| {
-        let prefs = runtime.store.preferences()?;
+        let prefs =
+            engine::preferences_for(runtime.store.preferences()?, preview.folder.as_deref());
         engine::validate_preferences(&prefs)?;
         let ready: Vec<_> = preview
             .files
@@ -537,7 +541,8 @@ fn take_preview(runtime: &mut Runtime, id: u64, now: i64) -> Result<Preview> {
         .as_ref()
         .filter(|p| p.id == id && (0..300).contains(&now.saturating_sub(p.created)))
         .ok_or_else(invalid)?;
-    let current: HashMap<_, _> = engine::scan(&runtime.store.preferences()?)?
+    let prefs = engine::preferences_for(runtime.store.preferences()?, preview.folder.as_deref());
+    let current: HashMap<_, _> = engine::scan(&prefs)?
         .into_iter()
         .map(|file| (file.path.clone(), file))
         .collect();
@@ -726,21 +731,47 @@ async fn operation_destinations(app: AppHandle, operation_id: i64) -> Result<Des
 }
 
 #[tauri::command]
-async fn preview(app: AppHandle) -> Result<Preview> {
+async fn preview(app: AppHandle, folder: Option<String>) -> Result<Preview> {
     blocking(move || {
         let state = app.state::<AppState>();
         let mut runtime = lock(&state)?;
-        let files = engine::scan(&runtime.store.preferences()?)?;
+        let files = engine::scan(&engine::preferences_for(
+            runtime.store.preferences()?,
+            folder.as_deref(),
+        ))?;
         runtime.sequence += 1;
         let preview = Preview {
             id: runtime.sequence,
             files,
             created: engine::now(),
+            folder,
         };
         runtime.preview = Some(preview.clone());
         Ok(preview)
     })
     .await
+}
+
+/// The folder File Explorer asked to organize, once.
+#[tauri::command]
+fn take_requested_folder(app: AppHandle) -> Result<Option<String>> {
+    Ok(app
+        .state::<AppState>()
+        .requested_folder
+        .lock()
+        .map_err(|_| internal_state_error())?
+        .take())
+}
+
+fn request_folder(app: &AppHandle, folder: String) {
+    // A second launch can arrive before the state is managed; the window still opens.
+    if let Some(state) = app.try_state::<AppState>()
+        && let Ok(mut requested) = state.requested_folder.lock()
+    {
+        *requested = Some(folder);
+    }
+    show_main_window(app);
+    let _ = app.emit("organize-folder", ());
 }
 
 #[tauri::command]
@@ -810,6 +841,12 @@ async fn save_preferences(
             *state.update.lock().map_err(|_| internal_state_error())? = None;
         }
         i18n::set_language(&preferences.language);
+        if let Err(error) = context_menu::apply(
+            preferences.context_menu,
+            t("Organize with Download Organizer"),
+        ) {
+            eprintln!("{error}");
+        }
         runtime.preview = None;
         if let Err(error) = monitor::configure(&mut runtime, &state.events) {
             runtime.watch_error = Some(error.clone());
@@ -950,8 +987,11 @@ pub fn run() {
 
 fn run_application() -> std::result::Result<(), startup::StartupError> {
     let app = tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            show_main_window(app);
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            match context_menu::requested_folder(args) {
+                Some(folder) => request_folder(app, folder),
+                None => show_main_window(app),
+            }
         }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
@@ -1038,7 +1078,8 @@ fn run_application() -> std::result::Result<(), startup::StartupError> {
             retry_monitoring,
             open_folder,
             reveal_movement,
-            search_history
+            search_history,
+            take_requested_folder
         ])
         .build(tauri::generate_context!())
         .map_err(|_| startup::StartupError::Runtime)?;
@@ -1063,17 +1104,26 @@ fn run_application() -> std::result::Result<(), startup::StartupError> {
         if let Err(error) = autostart::apply(preferences.autostart) {
             eprintln!("{error}");
         }
+        // Follows the executable after an update and the app's language.
+        if let Err(error) = context_menu::apply(
+            preferences.context_menu,
+            t("Organize with Download Organizer"),
+        ) {
+            eprintln!("{error}");
+        }
     }
     // The worker can't drain this during a batch, and the batch's own moves fill it.
     let (events, receiver) = mpsc::sync_channel(65536);
     if let Err(error) = monitor::configure(&mut runtime, &events) {
         runtime.watch_error = Some(error);
     }
-    let start_hidden = starts_hidden(
-        automatic,
-        runtime.watch_error.is_some(),
-        std::env::args().any(|argument| argument == autostart::LAUNCH_ARGUMENT),
-    );
+    let requested_folder = context_menu::requested_folder(std::env::args());
+    let start_hidden = requested_folder.is_none()
+        && starts_hidden(
+            automatic,
+            runtime.watch_error.is_some(),
+            std::env::args().any(|argument| argument == autostart::LAUNCH_ARGUMENT),
+        );
     app.manage(AppState {
         runtime: Mutex::new(runtime),
         events,
@@ -1081,6 +1131,7 @@ fn run_application() -> std::result::Result<(), startup::StartupError> {
         file_preview_job: Mutex::new(()),
         media_previews: Mutex::new(media_preview::Sessions::default()),
         update: Mutex::new(None),
+        requested_folder: Mutex::new(requested_folder),
     });
     {
         use tauri_plugin_notification::NotificationExt;

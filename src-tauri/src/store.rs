@@ -112,6 +112,7 @@ impl Store {
 
             updates: true,
             autostart: false,
+            context_menu: true,
             rules: Vec::new(),
             extra_sources: Vec::new(),
         };

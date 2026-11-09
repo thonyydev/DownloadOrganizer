@@ -1234,6 +1234,7 @@ fn plan(prefs: &Preferences) -> Preview {
         id: 1,
         created: engine::now(),
         files: engine::scan(prefs).unwrap(),
+        folder: None,
     }
 }
 
@@ -2380,4 +2381,65 @@ fn history_search_matches_file_names_in_any_case_newest_first() {
     assert_eq!(found("contrato", 1), [(newer, second)]);
     assert!(found("   ", 50).is_empty());
     assert!(found("inexistente", 50).is_empty());
+}
+
+#[test]
+fn explorer_launch_names_the_folder_to_organize() {
+    let args = |list: &[&str]| list.iter().map(|arg| arg.to_string()).collect::<Vec<_>>();
+    assert_eq!(
+        context_menu::requested_folder(args(&["app.exe", "--organize", r"C:\Some folder"])),
+        Some(r"C:\Some folder".into())
+    );
+    assert_eq!(
+        context_menu::requested_folder(args(&["app.exe", "--organize"])),
+        None
+    );
+    assert_eq!(
+        context_menu::requested_folder(args(&["app.exe", "--organize", " "])),
+        None
+    );
+    assert_eq!(
+        context_menu::requested_folder(args(&["app.exe", "--autostart"])),
+        None
+    );
+    assert_eq!(
+        context_menu::requested_folder(args(&["app.exe", "--organize", "D:\""])),
+        Some(r"D:\".into())
+    );
+}
+
+#[test]
+fn a_folder_from_explorer_is_organized_in_place_without_touching_the_saved_folders() {
+    let (temp, mut runtime, prefs) = fixture();
+    let folder = temp.path().join("any folder");
+    fs::create_dir(&folder).unwrap();
+    let folder = fs::canonicalize(folder)
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    old_file(&Path::new(&folder).join("a.txt"), b"a");
+    old_file(&Path::new(&prefs.source).join("b.txt"), b"b");
+    let files = engine::scan(&engine::preferences_for(
+        runtime.store.preferences().unwrap(),
+        Some(&folder),
+    ))
+    .unwrap();
+    assert_eq!(files.len(), 1);
+    let preview = Preview {
+        id: 1,
+        created: engine::now(),
+        files,
+        folder: Some(folder.clone()),
+    };
+    runtime.preview = Some(preview.clone());
+    let preview = take_preview(&mut runtime, preview.id, preview.created).unwrap();
+    let destination = PathBuf::from(&preview.files[0].destination);
+    execute(&mut runtime, preview, "manual", None).unwrap();
+    assert_eq!(
+        destination.parent().unwrap().parent().unwrap(),
+        Path::new(&folder)
+    );
+    assert_eq!(fs::read(destination).unwrap(), b"a");
+    assert!(Path::new(&prefs.source).join("b.txt").exists());
+    assert_eq!(runtime.store.preferences().unwrap().source, prefs.source);
 }

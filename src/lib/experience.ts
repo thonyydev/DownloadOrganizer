@@ -12,7 +12,7 @@ export interface Action {
 }
 
 export function samePreferences(a: Preferences, b: Preferences) {
-  return a.source === b.source && a.destination === b.destination && a.automatic === b.automatic && a.theme === b.theme && a.language === b.language && a.notifications === b.notifications && a.updates === b.updates && a.autostart === b.autostart && JSON.stringify(a.rules) === JSON.stringify(b.rules) && JSON.stringify(a.extra_sources) === JSON.stringify(b.extra_sources)
+  return a.source === b.source && a.destination === b.destination && a.automatic === b.automatic && a.theme === b.theme && a.language === b.language && a.notifications === b.notifications && a.updates === b.updates && a.autostart === b.autostart && a.context_menu === b.context_menu && JSON.stringify(a.rules) === JSON.stringify(b.rules) && JSON.stringify(a.extra_sources) === JSON.stringify(b.extra_sources)
     && [...a.enabled_categories].sort().join("\n") === [...b.enabled_categories].sort().join("\n");
 }
 

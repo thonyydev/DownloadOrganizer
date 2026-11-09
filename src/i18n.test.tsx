@@ -78,7 +78,7 @@ describe("tabela de traduções", () => {
   });
 });
 
-const preferences = { source: "/isolated/source", destination: "/isolated/destination", theme: "dark", language: "en", automatic: false, enabled_categories: ["documents"], notifications: true, updates: true, autostart: false, extra_sources: [] as string[], rules: [] as Rule[] } as const;
+const preferences = { source: "/isolated/source", destination: "/isolated/destination", theme: "dark", language: "en", automatic: false, enabled_categories: ["documents"], notifications: true, updates: true, autostart: false, context_menu: true, extra_sources: [] as string[], rules: [] as Rule[] } as const;
 const categories = [{ id: "documents", name: "Documents", extensions: ["pdf"] }, { id: "other", name: "Other", extensions: [] }];
 const files: FileEntry[] = [
   { name: "a.pdf", path: "/isolated/source/a.pdf", extension: "pdf", category: "documents", size: 1536, modified: Date.UTC(2026, 0, 31, 12), destination: "/isolated/destination/Documents/a.pdf", status: "ready", reason: null },
