@@ -24,7 +24,7 @@ use std::{
     sync::{Arc, Mutex, atomic::AtomicU64, mpsc},
     time::Duration,
 };
-use store::{DestinationSummary, HistoryPage, Operation, OperationSummary, Store};
+use store::{DestinationSummary, FoundMovement, HistoryPage, Operation, OperationSummary, Store};
 use tauri::{
     AppHandle, Emitter, Manager,
     menu::{Menu, MenuItem},
@@ -131,6 +131,10 @@ fn sync_tray_status(app: &AppHandle, runtime: &Runtime) {
 
 // The window already shows this feedback while it has focus.
 fn notify(app: &AppHandle, runtime: &Runtime, title: &str, body: &str) {
+    notify_with_id(app, runtime, 0, title, body);
+}
+
+fn notify_with_id(app: &AppHandle, runtime: &Runtime, id: i32, title: &str, body: &str) {
     use tauri_plugin_notification::NotificationExt;
     let enabled = runtime.store.preferences().is_ok_and(|p| p.notifications);
     let focused = app
@@ -138,7 +142,13 @@ fn notify(app: &AppHandle, runtime: &Runtime, title: &str, body: &str) {
         .is_some_and(|window| window.is_focused().unwrap_or(false));
     if enabled && !focused {
         // On Windows the plugin sends it in the background and never reports a failure.
-        let _ = app.notification().builder().title(title).body(body).show();
+        let _ = app
+            .notification()
+            .builder()
+            .id(id)
+            .title(title)
+            .body(body)
+            .show();
     }
 }
 
@@ -162,7 +172,30 @@ fn notify_organized(app: &AppHandle, runtime: &Runtime) {
         && let Some(summary) = page.operations.first()
     {
         let title = t("Automatic organization");
-        notify(app, runtime, title, &organized_message(summary));
+        notify_with_id(
+            app,
+            runtime,
+            ORGANIZED_NOTIFICATION,
+            title,
+            &organized_message(summary),
+        );
+    }
+}
+
+/// The id of the "files organized" notification, so a click on it can open the history.
+const ORGANIZED_NOTIFICATION: i32 = 1;
+
+// Windows reports a click only while the toast is on screen, not from the Action Center.
+fn open_from_notification(app: &AppHandle, performed: &tauri_plugin_notification::ActionPerformed) {
+    if performed.action_id() != "tap" {
+        return;
+    }
+    show_main_window(app);
+    if performed
+        .notification()
+        .is_some_and(|notification| notification.id() == ORGANIZED_NOTIFICATION)
+    {
+        let _ = app.emit("open-history", ());
     }
 }
 
@@ -653,6 +686,18 @@ async fn history_page(app: AppHandle, before: Option<i64>) -> Result<HistoryPage
     .await
 }
 
+/// The history search shows this many matches at most.
+const SEARCH_LIMIT: usize = 50;
+
+#[tauri::command]
+async fn search_history(app: AppHandle, query: String) -> Result<Vec<FoundMovement>> {
+    blocking(move || {
+        let state = app.state::<AppState>();
+        lock(&state)?.store.search_movements(&query, SEARCH_LIMIT)
+    })
+    .await
+}
+
 #[tauri::command]
 async fn operation_summary(app: AppHandle, operation_id: i64) -> Result<OperationSummary> {
     blocking(move || {
@@ -992,7 +1037,8 @@ fn run_application() -> std::result::Result<(), startup::StartupError> {
             install_update,
             retry_monitoring,
             open_folder,
-            reveal_movement
+            reveal_movement,
+            search_history
         ])
         .build(tauri::generate_context!())
         .map_err(|_| startup::StartupError::Runtime)?;
@@ -1036,6 +1082,13 @@ fn run_application() -> std::result::Result<(), startup::StartupError> {
         media_previews: Mutex::new(media_preview::Sessions::default()),
         update: Mutex::new(None),
     });
+    {
+        use tauri_plugin_notification::NotificationExt;
+        let handle = app.handle().clone();
+        let _ = app
+            .notification()
+            .on_action(move |performed| open_from_notification(&handle, performed));
+    }
     let handle = app.handle().clone();
     std::thread::Builder::new()
         .spawn(move || monitor::worker(handle, receiver))

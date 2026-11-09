@@ -1233,6 +1233,13 @@ it("mostra o guia na primeira abertura e não repete na seguinte", async () => {
   expect(screen.queryByRole("dialog")).toBeNull();
 });
 
+it("abre o histórico quando a notificação de arquivos organizados é clicada", async () => {
+  await start();
+  await waitFor(() => expect(mocks.events.has("open-history")).toBe(true));
+  act(() => mocks.events.get("open-history")!({ payload: null }));
+  expect(screen.getByRole("heading", { name: "Histórico", level: 1 })).toBeTruthy();
+});
+
 it("troca de página pelo teclado e abre a aba certa pelo rodapé da barra lateral", async () => {
   await start();
   fireEvent.keyDown(window, { key: "2", ctrlKey: true });

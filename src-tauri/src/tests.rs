@@ -2322,3 +2322,62 @@ fn plain_path_drops_only_the_verbatim_prefix() {
         r"D:\Organized\a.pdf"
     );
 }
+
+#[test]
+fn history_search_matches_file_names_in_any_case_newest_first() {
+    let (_temp, runtime, _) = fixture();
+    let store = &runtime.store;
+    let stamp = Stamp {
+        size: 1,
+        modified: 0,
+    };
+    let first = store.begin("manual").unwrap();
+    let older = store
+        .record(
+            first,
+            r"C:\contratos\Contrato-Ação.pdf",
+            r"D:\Org\Documentos\Contrato-Ação.pdf",
+            "moved",
+            &stamp,
+            "x",
+        )
+        .unwrap();
+    let second = store.begin("automatic").unwrap();
+    let newer = store
+        .record(
+            second,
+            r"C:\Downloads\CONTRATO-AÇÃO (2).pdf",
+            r"D:\Org\Documentos\CONTRATO-AÇÃO (2).pdf",
+            "undone",
+            &stamp,
+            "x",
+        )
+        .unwrap();
+    // The folder name matches, but the search is about file names.
+    store
+        .record(
+            second,
+            r"C:\contratos\foto.png",
+            r"D:\Org\Imagens\foto.png",
+            "moved",
+            &stamp,
+            "x",
+        )
+        .unwrap();
+    let found = |query: &str, limit: usize| {
+        store
+            .search_movements(query, limit)
+            .unwrap()
+            .iter()
+            .map(|movement| (movement.id, movement.operation_id))
+            .collect::<Vec<_>>()
+    };
+    // Non-ASCII letters match in any case, which SQLite's LIKE would miss.
+    assert_eq!(
+        found("  contrato-ação ", 50),
+        [(newer, second), (older, first)]
+    );
+    assert_eq!(found("contrato", 1), [(newer, second)]);
+    assert!(found("   ", 50).is_empty());
+    assert!(found("inexistente", 50).is_empty());
+}

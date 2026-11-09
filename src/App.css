@@ -176,6 +176,11 @@ h1:focus { outline: none; }
 .operation-id { font-family: var(--font-code); font-variant-numeric: tabular-nums; }
 .recent-list > .activity + .activity { border-top: 1px solid var(--border); }
 .history-list { margin-top: var(--space-3); border-top: 1px solid var(--border); }
+.history-search .search-field { display: block; max-width: 480px; }
+.history-search-results { margin-top: var(--space-2); border-top: 1px solid var(--border); }
+.history-search-results small { color: var(--faint); font-size: var(--text-meta); }
+.history-search-route { display: flex; align-items: center; gap: 6px; margin-top: 2px; color: var(--muted); font-family: var(--font-code); font-size: var(--text-meta); overflow-wrap: anywhere; }
+.history-search-note { margin-top: var(--space-2); color: var(--muted); font-size: var(--text-control); }
 .history-operation { border-bottom: 1px solid var(--border); }
 .history-header { display: flex; align-items: center; gap: var(--space-3); padding-right: var(--space-2); }
 .history-header > .activity { flex: 1; }

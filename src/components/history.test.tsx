@@ -4,7 +4,7 @@ import { HistoryView } from "./history";
 import type { Operation } from "@/lib/api";
 import { summarizeOperation } from "@/lib/api";
 
-const queries = vi.hoisted(() => ({ operation: vi.fn(), destinations: vi.fn(), revealMovement: vi.fn() }));
+const queries = vi.hoisted(() => ({ operation: vi.fn(), destinations: vi.fn(), revealMovement: vi.fn(), searchHistory: vi.fn() }));
 vi.mock("@/lib/api", async original => ({ ...await original<typeof import("@/lib/api")>(), api: queries }));
 
 vi.mock("@/components/motion/feedback", () => ({ useMotionAllowed: () => false, useFeedbackMotion: () => ({ current: null }) }));
@@ -187,4 +187,36 @@ it("mostra na pasta só os arquivos que ainda estão no destino e explica a falh
   expect(queries.revealMovement).toHaveBeenCalledWith(42, 1);
   fireEvent.click(reveal);
   expect(await within(dialog).findByRole("alert")).toHaveProperty("textContent", "Este arquivo não está mais no destino.");
+});
+
+it("busca um arquivo no histórico inteiro e mostra para onde ele foi", async () => {
+  const operation = operationOf(1);
+  queries.destinations.mockResolvedValue({ folders: [], other_folders: 0, other_files: 0 });
+  queries.searchHistory.mockImplementation(async (query: string) => query === "contrato" ? [
+    { id: 7, operation_id: 3, created: 1700000000, source: "/isolated/source/Contrato.pdf", destination: "/isolated/destination/Documents/Contrato.pdf", status: "moved" },
+    { id: 5, operation_id: 2, created: 1690000000, source: "/isolated/source/contrato-antigo.pdf", destination: "/isolated/destination/Documents/contrato-antigo.pdf", status: "undone" },
+  ] : []);
+  queries.revealMovement.mockResolvedValue(undefined);
+  render(<HistoryView {...props} history={[summarizeOperation(operation)]} />);
+  const search = screen.getByRole("textbox", { name: "Buscar no histórico" });
+  fireEvent.change(search, { target: { value: "contrato" } });
+  const list = await screen.findByRole("list", { name: "Arquivos encontrados no histórico" });
+  expect(screen.getByRole("status").textContent).toBe("2 arquivos");
+  expect(list.closest("[role=status]")).toBeNull();
+  expect(queries.searchHistory).toHaveBeenCalledExactlyOnceWith("contrato");
+  expect(within(list).getByText("/isolated/destination/Documents/Contrato.pdf")).toBeTruthy();
+  expect(within(list).queryByRole("button", { name: "Mostrar na pasta: contrato-antigo.pdf" })).toBeNull();
+  fireEvent.click(within(list).getByRole("button", { name: "Mostrar na pasta: Contrato.pdf" }));
+  expect(queries.revealMovement).toHaveBeenCalledWith(3, 7);
+  queries.revealMovement.mockRejectedValueOnce("Este arquivo não está mais no destino.");
+  fireEvent.click(within(list).getByRole("button", { name: "Mostrar na pasta: Contrato.pdf" }));
+  expect(await screen.findByRole("alert")).toBeTruthy();
+  fireEvent.change(search, { target: { value: "nada" } });
+  // The old error belongs to the old search.
+  expect(screen.queryByRole("alert")).toBeNull();
+  await waitFor(() => expect(screen.getByRole("status").textContent).toBe("Nenhum arquivo movido tem esse nome."));
+  fireEvent.keyDown(search, { key: "Escape" });
+  expect((search as HTMLInputElement).value).toBe("");
+  expect(screen.getByRole("status").textContent).toBe("");
+  expect(screen.queryByText("Nenhum arquivo movido tem esse nome.")).toBeNull();
 });

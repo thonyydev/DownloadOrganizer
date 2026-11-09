@@ -99,6 +99,14 @@ function OrganizerApp() {
   const mainHeading = useRef<HTMLHeadingElement>(null);
   const setPage = usePagePosition(page, mainHeading, setCurrentPage);
   const openSettings = (tab: SettingsTab) => { setSettingsTab(tab); setPage("settings"); };
+  // A click on the "files organized" notification lands on the history.
+  useEffect(() => {
+    if (!native) return;
+    let disposed = false;
+    let stop: UnlistenFn | undefined;
+    listen("open-history", () => setPage("history")).then(fn => { if (disposed) fn(); else stop = fn; }).catch(() => {});
+    return () => { disposed = true; stop?.(); };
+  }, [setPage]);
   // Ctrl+S saves the settings draft, as in any editor.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
