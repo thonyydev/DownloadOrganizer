@@ -1,8 +1,9 @@
-import { FolderDown, FolderOpen, Loader2, Undo2 } from "lucide-react";
+import { FolderDown, FolderOpen, FolderTree, List, Loader2, Undo2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { FileTable, plannedFolder } from "@/components/file-table";
+import { PreviewTree } from "@/components/preview-tree";
 import { OperationFeedback } from "@/components/operation-feedback";
 import { UndoFileList } from "@/components/undo-file-list";
 import { TriageLegend } from "@/components/triage";
@@ -23,6 +24,7 @@ export function OperationDialogs({ preview, undoTarget, categories, action, busy
 }) {
   // Tied to the preview's id, so a refreshed preview starts with everything selected again.
   const [fullPaths, setFullPaths] = useState(false);
+  const [layout, setLayout] = useState<"list" | "folders">("list");
   const [choice, setChoice] = useState<Selection>(() => ({ id: null, excluded: new Set(), rename: false }));
   const selection = choice.id === (preview?.id ?? null) ? choice : { id: preview?.id ?? null, excluded: noneExcluded, rename: false };
   // Conflicts need a decision, so they come first; the rest group by destination folder.
@@ -57,8 +59,8 @@ export function OperationDialogs({ preview, undoTarget, categories, action, busy
         <OperationFeedback action={previewAction} operation={done(previewAction) || previewAction?.phase === "error" ? operation : undefined} />
         {!done(previewAction) && <>
           {issue && <p className="inline-error" role="alert">{issue}</p>}
-          <div className="preview-toolbar"><TriageLegend counts={counts} /><div className="preview-options"><label className="review-confirmation"><input type="checkbox" checked={fullPaths} onChange={event => setFullPaths(event.target.checked)} />{t("Show full paths")}</label>{hasConflicts && <label className="review-confirmation"><input type="checkbox" checked={selection.rename} disabled={working || !!issue} onChange={event => setChoice({ ...selection, rename: event.target.checked })} />{t("Rename conflicting files")}</label>}</div></div>
-          <div className="preview-files"><FileTable files={files} categories={categories} preview fullPaths={fullPaths} selection={{ excluded: selection.excluded, selected, ready: counts.ready, disabled: working, onToggle: toggleFile, onToggleAll: toggleAll }} /></div>
+          <div className="preview-toolbar"><TriageLegend counts={counts} /><div className="theme-picker" role="group" aria-label={t("Preview layout")}>{(["list", "folders"] as const).map(value => <Button key={value} size="sm" aria-pressed={layout === value} variant={layout === value ? "secondary" : "ghost"} onClick={() => setLayout(value)}>{value === "list" ? <List aria-hidden="true" /> : <FolderTree aria-hidden="true" />}{value === "list" ? t("List") : t("By folder")}</Button>)}</div><div className="preview-options">{layout === "list" && <label className="review-confirmation"><input type="checkbox" checked={fullPaths} onChange={event => setFullPaths(event.target.checked)} />{t("Show full paths")}</label>}{hasConflicts && <label className="review-confirmation"><input type="checkbox" checked={selection.rename} disabled={working || !!issue} onChange={event => setChoice({ ...selection, rename: event.target.checked })} />{t("Rename conflicting files")}</label>}</div></div>
+          <div className="preview-files">{layout === "folders" ? <PreviewTree files={files} excluded={selection.excluded} /> : <FileTable files={files} categories={categories} preview fullPaths={fullPaths} selection={{ excluded: selection.excluded, selected, ready: counts.ready, disabled: working, onToggle: toggleFile, onToggleAll: toggleAll }} />}</div>
           <div className="preview-toolbar"><label className="review-confirmation"><input type="checkbox" checked={reviewed} disabled={working || !!issue} onChange={e => onReviewed(e.target.checked)} />{t("I reviewed the files and destinations in this preview")}</label><p className="preview-selection" role="status">{selected} {t("of")} {counts.ready} {t("selected")}</p></div>
         </>}
         <DialogFooter>{done(previewAction) ? <>{operation && summarizeOperation(operation).moved > 0 && <Button variant="outline" disabled={working} onClick={onUndoResult}><Undo2 aria-hidden="true" />{t("Undo")}</Button>}<Button variant="outline" onClick={onOpenDestination}><FolderOpen aria-hidden="true" />{t("Open destination folder")}</Button>{footer}</> : <>

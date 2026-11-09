@@ -168,6 +168,23 @@ h1:focus { outline: none; }
 .activity:focus-visible { outline-offset: -2px; }
 .activity[aria-expanded=true] { background: var(--surface-selected); }
 .activity-icon { color: var(--faint); display: grid; place-items: center; }
+/* A thin mark on the newest operation, and a tint that fades on one that arrives while the page is open. */
+.activity.latest, .history-operation.latest > .history-header { box-shadow: inset 2px 0 0 var(--brand); }
+.activity.arrived, .history-operation.arrived { animation: arrive 2.4s ease-out; }
+@keyframes arrive { from { opacity: 0; transform: translateY(-6px); background-color: color-mix(in srgb, var(--brand) 16%, transparent); } 25% { opacity: 1; transform: none; } to { background-color: transparent; } }
+.preview-tree { overflow-y: auto; padding: var(--space-2) var(--space-3); }
+.preview-tree-root { display: flex; align-items: center; gap: 6px; padding: var(--space-1) 0 var(--space-2); color: var(--muted); font-family: var(--font-code); font-size: var(--text-meta); }
+.preview-tree-root svg, .preview-tree summary > svg { color: var(--brand); flex-shrink: 0; }
+.preview-tree summary { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-1) var(--space-2); border-radius: var(--radius); cursor: default; font-size: var(--text-control); }
+.preview-tree summary:hover { background: var(--accent); }
+.preview-tree summary:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+.preview-tree-count { color: var(--muted); }
+.preview-tree summary > .preview-tree-chevron { color: var(--faint); }
+.preview-tree details[open] > summary > .preview-tree-chevron { transform: rotate(90deg); }
+.preview-tree details ul { margin: 0 0 var(--space-2) 37px; padding-left: var(--space-3); border-left: 1px solid var(--border); }
+.preview-tree details li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--space-2); padding: 3px 0; font-size: var(--text-control); }
+.preview-tree details li small { flex-basis: 100%; color: var(--muted); font-size: var(--text-meta); }
+.preview-tree .excluded .preview-tree-name { color: var(--faint); text-decoration: line-through; }
 .activity-icon.warning { color: var(--warning-foreground); }
 .activity-copy { flex: 1; min-width: 0; }
 .activity strong { font-size: var(--text-control); font-weight: 500; display: block; }
@@ -369,8 +386,8 @@ tbody tr:has(.file-disclosure[aria-expanded=true]) { background: var(--surface-s
 .file-preview-metadata dt { color: var(--muted); }
 .file-preview-metadata dd { overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 .preview-files { overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius); }
-.preview-files .table-scroll { max-height: max(200px,calc(100dvh - 340px)); border: 0; }
-.preview-dialog:has(.progress-panel) .preview-files .table-scroll { max-height: max(160px,calc(100dvh - 420px)); }
+.preview-files .table-scroll, .preview-tree { max-height: max(200px,calc(100dvh - 340px)); border: 0; }
+.preview-dialog:has(.progress-panel) .preview-files .table-scroll, .preview-dialog:has(.progress-panel) .preview-tree { max-height: max(160px,calc(100dvh - 420px)); }
 .preview-files th { background: var(--card); }
 .preview-check { width: 16px; height: 16px; margin: 2px var(--space-2) 0 0; accent-color: var(--brand); flex-shrink: 0; vertical-align: text-bottom; }
 .preview-check:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }

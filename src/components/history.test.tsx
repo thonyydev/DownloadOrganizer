@@ -220,3 +220,14 @@ it("busca um arquivo no histórico inteiro e mostra para onde ele foi", async ()
   expect(screen.getByRole("status").textContent).toBe("");
   expect(screen.queryByText("Nenhum arquivo movido tem esse nome.")).toBeNull();
 });
+
+it("destaca a operação mais recente e anima só a que chega com a página aberta", () => {
+  const first = { ...summarizeOperation(operationOf(1)), id: 41 };
+  queries.destinations.mockResolvedValue({ folders: [], other_folders: 0, other_files: 0 });
+  const view = render(<HistoryView {...props} expanded={null} history={[first]} />);
+  const section = (id: number) => screen.getByRole("region", { name: "Operação " + id });
+  expect(section(41).className).toBe("history-operation latest");
+  view.rerender(<HistoryView {...props} expanded={null} history={[{ ...first, id: 42 }, first]} />);
+  expect(section(42).className).toBe("history-operation arrived latest");
+  expect(section(41).className).toBe("history-operation");
+});

@@ -43,10 +43,10 @@ function OperationSummary({ operation }: { operation: Operation | Summary }) {
   </div>;
 }
 
-export function Activity({ operation, onOpen, expanded, motionAllowed = false }: { operation: Operation | Summary; onOpen: () => void; expanded?: boolean; motionAllowed?: boolean }) {
+export function Activity({ operation, onOpen, expanded, motionAllowed = false, className = "" }: { operation: Operation | Summary; onOpen: () => void; expanded?: boolean; motionAllowed?: boolean; className?: string }) {
   const { moved, undone, errors } = useMemo(() => summarizeOperation(operation), [operation]);
   const mark = useFeedbackMotion<SVGSVGElement>(`${operation.id}:${moved}:${undone}:${errors}`, motionAllowed && errors === 0);
-  return <button className="activity" onClick={onOpen} aria-expanded={expanded} aria-controls={expanded === undefined ? undefined : "movements-" + operation.id}>
+  return <button className={"activity " + className} onClick={onOpen} aria-expanded={expanded} aria-controls={expanded === undefined ? undefined : "movements-" + operation.id}>
     <span className={"activity-icon " + (errors ? "warning" : "")}>
       {undone ? <Undo2 ref={mark} size={16} aria-hidden="true" /> : <CircleCheck ref={mark} size={16} aria-hidden="true" />}
     </span>
@@ -58,6 +58,13 @@ export function Activity({ operation, onOpen, expanded, motionAllowed = false }:
     {expanded ? <ChevronDown size={16} aria-hidden="true" /> : <ChevronRight size={16} aria-hidden="true" />}
   </button>;
 }
+
+// The newest operation when the page opened: anything newer arrived while it was on screen.
+export function useSeenOperation(history: readonly { id: number }[]) {
+  const [seen] = useState(() => history[0]?.id ?? 0);
+  return seen;
+}
+export const arrivalClass = (id: number, index: number, seen: number) => (id > seen ? " arrived" : "") + (index === 0 ? " latest" : "");
 
 // Matches the backend's SEARCH_LIMIT: a full page means older matches may exist.
 const searchLimit = 50;
@@ -104,8 +111,9 @@ export function HistoryView({ history, expanded, working, openingUndo, onExpand,
 }) {
   const motionAllowed = useMotionAllowed();
   const ref = useContentMotion(history.slice(0, 4).map(op => op.id).join(":"), motionAllowed);
+  const seen = useSeenOperation(history);
   if (!history.length) return <div ref={ref} data-motion-group className="empty" role="status"><History size={24} aria-hidden="true" /><h2>{t("No recorded operations")}</h2><p>{t("After you organize files, the results and undo options appear here.")}</p></div>;
-  return <><HistorySearch /><div className="table-footer">{plural(history.length, t("operation loaded"), t("operations loaded"))}{t(", newest first")}{newAvailable && <Button variant="outline" size="sm" disabled={loading || working} onClick={onReload}>{t("New operations — refresh the list")}</Button>}</div><div ref={ref} data-motion-group className="history-list" aria-label={t("Recorded operations")}>{history.map(op => <section className="history-operation" key={op.id} aria-label={t("Operation") + " " + op.id}>
+  return <><HistorySearch /><div className="table-footer">{plural(history.length, t("operation loaded"), t("operations loaded"))}{t(", newest first")}{newAvailable && <Button variant="outline" size="sm" disabled={loading || working} onClick={onReload}>{t("New operations — refresh the list")}</Button>}</div><div ref={ref} data-motion-group className="history-list" aria-label={t("Recorded operations")}>{history.map((op, index) => <section className={"history-operation" + arrivalClass(op.id, index, seen)} key={op.id} aria-label={t("Operation") + " " + op.id}>
     <div className="history-header"><Activity operation={op} motionAllowed={motionAllowed} expanded={expanded === op.id} onOpen={() => onExpand(expanded === op.id ? null : op.id)} />
       <Button variant="outline" size="sm" disabled={working || !summarizeOperation(op).moved} onClick={() => onUndo(op)}><Undo2 aria-hidden="true" />{openingUndo === op.id ? t("Preparing restore…") : t("Undo")}</Button>
     </div>

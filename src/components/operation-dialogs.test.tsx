@@ -192,3 +192,31 @@ it("só oferece Desfazer no resultado quando nada mais está rodando", () => {
   view.rerender(<OperationDialogs {...props} working preview={preview} action={{ kind: "organize", phase: "completed", operationId: 42 }} operation={operation} />);
   expect((screen.getByRole("button", { name: "Desfazer" }) as HTMLButtonElement).disabled).toBe(true);
 });
+
+it("mostra a prévia por pasta de destino, com conflitos, ignorados e desmarcados", () => {
+  const file = preview.files[0];
+  const files = [
+    { ...file, name: "a.pdf", path: "/isolated/a.pdf", destination: "/isolated/destination/Documents/a.pdf" },
+    { ...file, name: "b.pdf", path: "/isolated/b.pdf", destination: "/isolated/destination/Documents/b.pdf", status: "conflict" as const, reason: "Já existe" },
+    { ...file, name: "c.png", path: "/isolated/c.png", destination: "/isolated/destination/Images/c.png" },
+    { ...file, name: "d.tmp", path: "/isolated/d.tmp", destination: "/isolated/d.tmp", status: "ignored" as const, reason: "Temporário" },
+  ];
+  render(<OperationDialogs {...props} preview={{ ...preview, files }} />);
+  fireEvent.click(screen.getByRole("checkbox", { name: "Organizar c.png" }));
+  fireEvent.click(screen.getByRole("button", { name: "Por pasta" }));
+  expect(screen.getByRole("button", { name: "Por pasta" }).getAttribute("aria-pressed")).toBe("true");
+  expect(screen.queryByRole("table")).toBeNull();
+  const folders = screen.getByRole("list", { name: "Pastas de destino" });
+  expect([...folders.querySelectorAll("summary")].map(summary => summary.textContent)).toEqual(["Documents/2 arquivos1 conflito", "Images/1 arquivo", "Fica onde está1 arquivo"]);
+  expect(screen.getByText("/isolated/destination")).toBeTruthy();
+  // Closed folders render no rows.
+  expect(screen.queryByText("a.pdf")).toBeNull();
+  const [documents, images] = folders.querySelectorAll("details");
+  documents.open = true; fireEvent(documents, new Event("toggle"));
+  images.open = true; fireEvent(images, new Event("toggle"));
+  expect(screen.getByText("a.pdf")).toBeTruthy();
+  expect(screen.getByText("Já existe")).toBeTruthy();
+  expect(screen.getByText("c.png").closest("li")!.textContent).toContain("Não selecionado");
+  fireEvent.click(screen.getByRole("button", { name: "Lista" }));
+  expect(screen.getByRole("table")).toBeTruthy();
+});

@@ -1,7 +1,7 @@
 import { Tooltip } from "radix-ui";
 import { ArrowRight, FolderOpen, History, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Activity } from "@/components/history";
+import { Activity, arrivalClass, useSeenOperation } from "@/components/history";
 import { AnimatedCount } from "@/components/motion/animated-count";
 import { useMotionAllowed } from "@/components/motion/feedback";
 import { TriageBar, triageCounts } from "@/components/triage";
@@ -17,6 +17,7 @@ export function Overview({ data, counts, onConflicts, onFiles, onSettings, onCat
   const files = data?.files ?? [];
   const history = data?.history ?? [];
   const triage = triageCounts(files);
+  const seen = useSeenOperation(history);
   const fullest = Math.max(1, ...counts.values());
   const stats: [string, number, ReactNode, boolean][] = [
     [t("Available"), files.length, bytes(files.reduce((sum, f) => sum + f.size, 0)), true],
@@ -38,7 +39,7 @@ export function Overview({ data, counts, onConflicts, onFiles, onSettings, onCat
         <div className="category-list">{data?.categories.length ? data.categories.map(category => { const count = counts.get(category.id) ?? 0; return <button className={"category-row tone-" + category.id} key={category.id} onClick={() => onCategory(category.id)}><span className="tone-dot" aria-hidden="true" /><span>{category.name}{data.preferences.enabled_categories.includes(category.id) ? <span className="sr-only"> {t("Enabled")}</span> : <small>{t("Paused")}</small>}</span><span className="slot-bar" aria-hidden="true"><i style={{ width: `${count / fullest * 100}%` }} /></span><span className="category-count">{count}</span></button>; }) : <p className="section-empty">{t("Categories will appear when you open the desktop app.")}</p>}</div>
       </section>
       <section data-motion-group aria-labelledby="recent-heading"><div className="section-heading"><h2 id="recent-heading">{t("Recent activity")}</h2><Button variant="ghost" size="sm" onClick={onHistory}>{t("View history")}<ArrowRight aria-hidden="true" /></Button></div>
-        <div className="recent-list">{history.length ? history.slice(0, 4).map(op => <Activity key={op.id} operation={op} motionAllowed={motionAllowed} onOpen={() => onOperation(op)} />) : <div className="empty compact"><History size={16} aria-hidden="true" /><h3>{t("No recent activity")}</h3><p>{t("Results will appear after your first organization.")}</p></div>}</div>
+        <div className="recent-list">{history.length ? history.slice(0, 4).map((op, index) => <Activity key={op.id} className={arrivalClass(op.id, index, seen)} operation={op} motionAllowed={motionAllowed} onOpen={() => onOperation(op)} />) : <div className="empty compact"><History size={16} aria-hidden="true" /><h3>{t("No recent activity")}</h3><p>{t("Results will appear after your first organization.")}</p></div>}</div>
       </section>
     </div>
   </div>;
