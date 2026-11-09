@@ -84,6 +84,7 @@
   "The folder may contain files. Try another name or category.": "La carpeta puede contener archivos. Prueba con otro nombre o categoría.",
   "Files from the selected folder will appear here.": "Los archivos de la carpeta seleccionada aparecerán aquí.",
   "Clear filters": "Borrar filtros",
+  "Never organize this file": "No organizar nunca este archivo",
   "Show in folder": "Mostrar en la carpeta",
   "This file is no longer at the destination.": "Este archivo ya no está en el destino.",
   "View conflicts": "Ver conflictos",

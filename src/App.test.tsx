@@ -301,6 +301,14 @@ describe("feedback sonoro de ações reais", () => {
     await start(); await confirmOrganization();
     await waitFor(() => expect(mocks.sound).toHaveBeenCalledExactlyOnceWith(sounds.warning));
   });
+  it("desfaz direto pela janela de resultado", async () => {
+    mocks.organize.mockImplementationOnce(async () => { snapshot.history = [structuredClone(operation)]; return 42; });
+    await start();
+    const dialog = await confirmOrganization();
+    fireEvent.click(await within(dialog).findByRole("button", { name: "Desfazer" }));
+    expect(await screen.findByRole("dialog", { name: "Restaurar os arquivos para a origem?" })).toBeTruthy();
+    expect(mocks.operation).toHaveBeenCalledWith(42);
+  });
   it.each([true, false])("restauração completa=%s utiliza apenas o feedback adequado", async complete => {
     snapshot.history = [structuredClone(operation)];
     mocks.undo.mockImplementationOnce(async () => {
@@ -702,6 +710,19 @@ describe("composição desktop", () => {
     fireEvent.click(setting("button", "Claro"));
     fireEvent.keyDown(window, { key: "s", ctrlKey: true });
     await waitFor(() => expect(mocks.save).toHaveBeenCalledOnce());
+  });
+  it("cria pela linha uma regra que mantém o arquivo na origem, antes das outras e só uma vez", async () => {
+    snapshot.preferences.rules = [{ pattern: "*.txt", folder: "Textos", keep: false }];
+    await start(); navigate("Arquivos");
+    fireEvent.click(document.querySelector(".file-disclosure")!);
+    fireEvent.click(screen.getByRole("button", { name: "Nunca organizar este arquivo" }));
+    expect(screen.getByRole("tab", { name: "Regras personalizadas" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getAllByRole("textbox", { name: "Padrão do nome do arquivo" }).map(input => (input as HTMLInputElement).value)).toEqual(["a.txt", "*.txt"]);
+    expect((screen.getAllByRole("checkbox", { name: "Deixar no lugar" })[0] as HTMLInputElement).checked).toBe(true);
+    navigate("Arquivos");
+    fireEvent.click(document.querySelector(".file-disclosure")!);
+    fireEvent.click(screen.getByRole("button", { name: "Nunca organizar este arquivo" }));
+    expect(screen.getAllByRole("textbox", { name: "Padrão do nome do arquivo" })).toHaveLength(2);
   });
   it("abre a pasta de destino pelo Explorer e explica quando ela ainda não existe", async () => {
     await start();

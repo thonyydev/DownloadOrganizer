@@ -53,7 +53,14 @@ export function bytes(value: number) {
   const unit = Math.min(Math.floor(Math.log(value) / Math.log(1024)), 3);
   return `${new Intl.NumberFormat(locale(), { maximumFractionDigits: 1 }).format(value / 1024 ** unit)} ${["B", "KB", "MB", "GB"][unit]}`;
 }
-export function date(value: number) { return new Intl.DateTimeFormat(locale(), { dateStyle: "short", timeStyle: "short" }).format(value); }
+export function date(value: number, now = Date.now()) {
+  const midnight = (time: number) => new Date(time).setHours(0, 0, 0, 0);
+  const days = Math.round((midnight(now) - midnight(value)) / 86_400_000);
+  if (days !== 0 && days !== 1) return new Intl.DateTimeFormat(locale(), { dateStyle: "short", timeStyle: "short" }).format(value);
+  // "today" and "yesterday" come from the platform in every language.
+  const day = new Intl.RelativeTimeFormat(locale(), { numeric: "auto" }).format(-days, "day");
+  return `${day[0].toLocaleUpperCase(locale()) + day.slice(1)}, ${new Intl.DateTimeFormat(locale(), { timeStyle: "short" }).format(value)}`;
+}
 export function basename(path: string) { return path.split(/[\\/]/).pop() || path; }
 // Presentation only: keep original paths for identities, persistence and native commands.
 export function displayPath(path: string): string {

@@ -168,3 +168,14 @@ it("mostra a pasta de origem só quando os arquivos vêm de mais de uma", () => 
   rerender(<FileTable files={[{ ...files[0], path: "C:/Users/Ana/Downloads/0.pdf" }, { ...files[1], path: "D:/Downloads/1.pdf" }]} categories={categories} preview />);
   expect(sources()).toEqual(["Origem: C:/Users/Ana/Downloads", "Origem: D:/Downloads"]);
 });
+
+it("não oferece manter na origem um nome que a regra não aceitaria", () => {
+  const [plain, spaced] = filesOf(2).map((file, index) => ({ ...file, status: "ready" as const, name: index ? " relatório.pdf" : file.name }));
+  const onKeep = vi.fn();
+  render(<FileTable files={[plain, spaced]} categories={categories} onKeep={onKeep} />);
+  document.querySelectorAll<HTMLButtonElement>(".file-disclosure").forEach(button => fireEvent.click(button));
+  // Windows allows a leading space; a rule pattern can't have one.
+  expect(screen.getAllByRole("button", { name: "Nunca organizar este arquivo" })).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button", { name: "Nunca organizar este arquivo" }));
+  expect(onKeep).toHaveBeenCalledWith(plain);
+});
