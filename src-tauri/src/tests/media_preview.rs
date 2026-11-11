@@ -249,6 +249,7 @@ fn media_access_requires_the_current_authorized_snapshot() {
         updates: true,
 
         autostart: false,
+        context_menu: true,
         rules: Vec::new(),
         extra_sources: Vec::new(),
     };

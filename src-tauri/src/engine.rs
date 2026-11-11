@@ -140,6 +140,9 @@ pub struct Preferences {
     pub updates: bool,
     #[serde(default)]
     pub autostart: bool,
+    // "Organize with Download Organizer" in File Explorer's right-click menu.
+    #[serde(default = "enabled_by_default")]
+    pub context_menu: bool,
     #[serde(default)]
     pub rules: Vec<Rule>,
     // More folders organized into the same destination as `source`.
@@ -407,6 +410,19 @@ pub struct Preview {
     pub id: u64,
     pub files: Vec<FileEntry>,
     pub created: i64,
+    /// Set when one folder is organized in place from File Explorer, instead of the saved folders.
+    pub folder: Option<String>,
+}
+
+/// The saved preferences, or for one folder organized in place: its files go to category
+/// folders inside it, with the saved categories and rules.
+pub fn preferences_for(mut prefs: Preferences, folder: Option<&str>) -> Preferences {
+    if let Some(folder) = folder {
+        prefs.source = folder.into();
+        prefs.extra_sources.clear();
+        prefs.destination = folder.into();
+    }
+    prefs
 }
 
 pub fn scan(prefs: &Preferences) -> Result<Vec<FileEntry>> {

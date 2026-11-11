@@ -9,7 +9,7 @@ import { UndoFileList } from "@/components/undo-file-list";
 import { TriageLegend } from "@/components/triage";
 import { plural } from "@/lib/utils";
 import { t } from "@/lib/i18n";
-import { summarizeOperation, type Category, type Operation, type OperationSummary, type Preview } from "@/lib/api";
+import { displayPath, summarizeOperation, type Category, type Operation, type OperationSummary, type Preview } from "@/lib/api";
 import type { Action } from "@/lib/experience";
 
 interface Selection { id: number | null; excluded: Set<string>; rename: boolean }
@@ -19,7 +19,7 @@ const statusOrder = { conflict: 0, ready: 1, ignored: 2 };
 export function OperationDialogs({ preview, undoTarget, categories, action, busy, working, issue, reviewed, operation, onReviewed, onUpdate, onOrganize, onUndo, onClose, onViewResult, onOpenDestination, onUndoResult, onRestoreFocus }: {
   preview: Preview | null; undoTarget: Operation | null; categories: Category[]; action: Action | null; busy: boolean; working: boolean;
   issue: string; reviewed: boolean; operation?: Operation | OperationSummary;
-  onReviewed: (value: boolean) => void; onUpdate: () => void; onOrganize: (excluded: string[], renameConflicts: boolean, count: number) => void; onUndo: () => void; onClose: () => void; onViewResult: () => void; onOpenDestination: () => void; onUndoResult: () => void;
+  onReviewed: (value: boolean) => void; onUpdate: () => void; onOrganize: (excluded: string[], renameConflicts: boolean, count: number) => void; onUndo: () => void; onClose: () => void; onViewResult: () => void; onOpenDestination?: () => void; onUndoResult: () => void;
   onRestoreFocus: () => void;
 }) {
   // Tied to the preview's id, so a refreshed preview starts with everything selected again.
@@ -55,7 +55,7 @@ export function OperationDialogs({ preview, undoTarget, categories, action, busy
   return <>
     <Dialog open={!!preview} onOpenChange={close}>
       <DialogContent className={done(previewAction) ? "result-dialog" : "preview-dialog"} {...(done(previewAction) ? { "aria-describedby": undefined } : {})} showCloseButton={!busy} onCloseAutoFocus={e => { e.preventDefault(); onRestoreFocus(); }} onEscapeKeyDown={e => { if (busy) e.preventDefault(); }} onPointerDownOutside={e => { if (busy) e.preventDefault(); }}>
-        <DialogHeader><DialogTitle>{done(previewAction) ? t("Organization result") : t("Review before organizing")}</DialogTitle>{!done(previewAction) && <DialogDescription>{t("Only ready files will be moved. No conflicting file will be overwritten. The preview expires in five minutes.")}</DialogDescription>}</DialogHeader>
+        <DialogHeader><DialogTitle>{done(previewAction) ? t("Organization result") : t("Review before organizing")}</DialogTitle>{!done(previewAction) && <DialogDescription>{preview?.folder && <><strong>{t("Folder to organize")}: {displayPath(preview.folder)}</strong><br /></>}{t("Only ready files will be moved. No conflicting file will be overwritten. The preview expires in five minutes.")}</DialogDescription>}</DialogHeader>
         <OperationFeedback action={previewAction} operation={done(previewAction) || previewAction?.phase === "error" ? operation : undefined} />
         {!done(previewAction) && <>
           {issue && <p className="inline-error" role="alert">{issue}</p>}
@@ -63,7 +63,7 @@ export function OperationDialogs({ preview, undoTarget, categories, action, busy
           <div className="preview-files">{layout === "folders" ? <PreviewTree files={files} excluded={selection.excluded} /> : <FileTable files={files} categories={categories} preview fullPaths={fullPaths} selection={{ excluded: selection.excluded, selected, ready: counts.ready, disabled: working, onToggle: toggleFile, onToggleAll: toggleAll }} />}</div>
           <div className="preview-toolbar"><label className="review-confirmation"><input type="checkbox" checked={reviewed} disabled={working || !!issue} onChange={e => onReviewed(e.target.checked)} />{t("I reviewed the files and destinations in this preview")}</label><p className="preview-selection" role="status">{selected} {t("of")} {counts.ready} {t("selected")}</p></div>
         </>}
-        <DialogFooter>{done(previewAction) ? <>{operation && summarizeOperation(operation).moved > 0 && <Button variant="outline" disabled={working} onClick={onUndoResult}><Undo2 aria-hidden="true" />{t("Undo")}</Button>}<Button variant="outline" onClick={onOpenDestination}><FolderOpen aria-hidden="true" />{t("Open destination folder")}</Button>{footer}</> : <>
+        <DialogFooter>{done(previewAction) ? <>{operation && summarizeOperation(operation).moved > 0 && <Button variant="outline" disabled={working} onClick={onUndoResult}><Undo2 aria-hidden="true" />{t("Undo")}</Button>}{onOpenDestination && <Button variant="outline" onClick={onOpenDestination}><FolderOpen aria-hidden="true" />{t("Open destination folder")}</Button>}{footer}</> : <>
           <Button variant="outline" disabled={busy} onClick={onClose}>{t("Cancel")}</Button>
           {previewAction?.phase === "error" && operation && <Button variant="outline" onClick={onViewResult}>{t("View result in history")}</Button>}
           <Button variant="outline" disabled={working} onClick={onUpdate}>{t("Refresh preview")}</Button>

@@ -5,7 +5,7 @@ import type { Operation, Preview } from "@/lib/api";
 
 vi.mock("@/components/motion/feedback", () => ({ useMotionAllowed: () => false, useFeedbackMotion: () => ({ current: null }) }));
 const operation: Operation = { id: 42, kind: "manual", created: 1700000000, movements: [{ id: 1, source: "/isolated/file.txt", destination: "/isolated/destination/file.txt", status: "moved", size: 1, error: null }] };
-const preview: Preview = { id: 1, created: 1700000000, files: [{ name: "file.txt", path: "/isolated/file.txt", destination: "/isolated/destination/file.txt", size: 1, extension: "txt", category: "documents", modified: 1700000000000, status: "ready", reason: null }] };
+const preview: Preview = { id: 1, created: 1700000000, files: [{ name: "file.txt", path: "/isolated/file.txt", destination: "/isolated/destination/file.txt", size: 1, extension: "txt", category: "documents", modified: 1700000000000, status: "ready", reason: null }], folder: null };
 const props = { preview: null, undoTarget: null, categories: [], action: null, busy: false, working: false, issue: "", reviewed: true, onReviewed: vi.fn(), onUpdate: vi.fn(), onOrganize: vi.fn(), onUndo: vi.fn(), onClose: vi.fn(), onViewResult: vi.fn(), onOpenDestination: vi.fn(), onUndoResult: vi.fn(), onRestoreFocus: vi.fn() };
 const operationOf = (count: number): Operation => ({ ...operation, movements: Array.from({ length: count }, (_, index) => ({ ...operation.movements[0], id: index + 1, source: `/isolated/source/File-${index}.txt`, destination: `/isolated/destination/File-${index}.txt` })) });
 const originalScrollTo = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollTo");
@@ -63,6 +63,13 @@ it.each([0, 1, 100, 5000, 10000])("mostra a contagem real, mantém DOM limitado 
   expect(rows().length).toBeLessThan(25); expect(document.activeElement).toBe(region);
   fireEvent.keyDown(region, { key: "Home" }); expect(within(region).getByText("File-0.txt")).toBeTruthy();
   expect(current.movements).toHaveLength(count); expect(props.onUndo).not.toHaveBeenCalled();
+});
+
+it("mostra a pasta pedida pelo Explorador de Arquivos e omite o botão de destino dela", () => {
+  const { rerender } = render(<OperationDialogs {...props} preview={{ ...preview, folder: "/isolated/any" }} />);
+  expect(screen.getByText("Pasta a organizar: /isolated/any")).toBeTruthy();
+  rerender(<OperationDialogs {...props} onOpenDestination={undefined} preview={{ ...preview, folder: "/isolated/any" }} action={{ kind: "organize", phase: "completed", operationId: 42 }} operation={operation} />);
+  expect(screen.queryByRole("button", { name: "Abrir pasta de destino" })).toBeNull();
 });
 
 it("atualiza movimentos parcialmente reversíveis sem remontar a lista nem perder a rolagem em refresh", () => {

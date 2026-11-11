@@ -180,6 +180,7 @@ impl Queue {
                 id: 0,
                 files,
                 created: engine::now(),
+                folder: None,
             },
             "automatic",
             app,

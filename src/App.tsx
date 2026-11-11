@@ -107,6 +107,24 @@ function OrganizerApp() {
     listen("open-history", () => setPage("history")).then(fn => { if (disposed) fn(); else stop = fn; }).catch(() => {});
     return () => { disposed = true; stop?.(); };
   }, [setPage]);
+  // "Organize with Download Organizer" in File Explorer: preview that folder once the app has loaded.
+  const takeFolder = useRef(() => {});
+  takeFolder.current = () => {
+    api.takeRequestedFolder().then(folder => {
+      if (!folder) return;
+      if (busyRef.current || autoBusyRef.current) { setError(t("Wait for the current action to finish, then try again from File Explorer.")); return; }
+      closeDialogs(); void updatePreview(folder);
+    }).catch(e => setError(errorMessage(e)));
+  };
+  const loaded = !!data;
+  useEffect(() => {
+    if (!native || !loaded) return;
+    takeFolder.current();
+    let disposed = false;
+    let stop: UnlistenFn | undefined;
+    listen("organize-folder", () => takeFolder.current()).then(fn => { if (disposed) fn(); else stop = fn; }).catch(() => {});
+    return () => { disposed = true; stop?.(); };
+  }, [loaded]);
   // Ctrl+S saves the settings draft, as in any editor.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -302,10 +320,10 @@ function OrganizerApp() {
       if (audio.dirty) audio.save(capturedAudio);
     }, "save");
   }
-  async function updatePreview() {
+  async function updatePreview(folder: string | null = null) {
     setReviewed(false);
     return run(async () => {
-      const next = await api.preview();
+      const next = await api.preview(folder);
       setPreview(next); setPreviewError(""); setClock(Date.now());
       setData(current => current ? { ...current, preview_id: next.id } : current);
     }, "preview");
@@ -332,7 +350,7 @@ function OrganizerApp() {
     catch (e) { closeBypass.current = false; setError(errorMessage(e)); }
   }
   const working = busy || isRunning(automatic);
-  const issue = preview ? previewError || data?.scan_error || previewIssue(preview, data?.preview_id ?? null, clock) : "";
+  const issue = preview ? previewError || (preview.folder ? "" : data?.scan_error) || previewIssue(preview, data?.preview_id ?? null, clock) : "";
   const resultOperation = detailOperation?.id === action?.operationId ? detailOperation : undefined;
   const files = data?.files ?? noFiles;
   const categories = data?.categories ?? [];
@@ -382,10 +400,10 @@ function OrganizerApp() {
     </div>
     <FilePreviewDialog file={viewedFile} categories={categories} onClose={() => setViewedFile(null)} onRestoreFocus={() => { const trigger = filePreviewFocus.current; if (trigger?.isConnected) trigger.focus({ preventScroll: true }); else (document.querySelector<HTMLElement>(".files-view .table-scroll") ?? mainHeading.current)?.focus({ preventScroll: true }); }} />
     <OperationDialogs preview={preview} undoTarget={undoTarget} categories={categories} action={action} busy={busy} working={working} issue={issue} reviewed={reviewed} operation={resultOperation}
-      onReviewed={setReviewed} onUpdate={() => void updatePreview()} onClose={closeDialogs} onRestoreFocus={() => mainHeading.current?.focus()}
+      onReviewed={setReviewed} onUpdate={() => void updatePreview(preview?.folder ?? null)} onClose={closeDialogs} onRestoreFocus={() => mainHeading.current?.focus()}
       onOrganize={(excluded, renameConflicts, count) => { if (!preview || issue || !reviewed) return; const id = preview.id; organizeCount.current = count; void run(() => api.organize(id, excluded, renameConflicts), "organize"); }}
       onUndo={() => { if (!undoTarget) return; const id = undoTarget.id; void run(async () => { await api.undo(id); return id; }, "undo"); }}
-      onOpenDestination={openDestination} onUndoResult={() => { const id = action?.operationId; const operation = resultOperation ?? data?.history.find(op => op.id === id); if (!operation) return; closeDialogs(); void openUndo(operation); }} onViewResult={() => { const id = action?.operationId; const operation = resultOperation ?? data?.history.find(op => op.id === id); if (operation) upsertHistory(summarizeOperation(operation)); closeDialogs(); setPage("history"); if (id !== undefined) setExpanded(id); }} />
+      onOpenDestination={preview?.folder ? undefined : openDestination} onUndoResult={() => { const id = action?.operationId; const operation = resultOperation ?? data?.history.find(op => op.id === id); if (!operation) return; closeDialogs(); void openUndo(operation); }} onViewResult={() => { const id = action?.operationId; const operation = resultOperation ?? data?.history.find(op => op.id === id); if (operation) upsertHistory(summarizeOperation(operation)); closeDialogs(); setPage("history"); if (id !== undefined) setExpanded(id); }} />
     {welcome && <Guide kind={welcome} onClose={() => setWelcome(null)} onFinish={() => { setWelcome(null); openSettings("folders"); }} />}
     <Dialog open={closeRequested} onOpenChange={setCloseRequested}><DialogContent><DialogHeader><DialogTitle>{working ? t("An operation is in progress") : dirty ? t("You have unsaved changes") : t("Close the app?")}</DialogTitle><DialogDescription>{working ? t("Wait for it to finish before closing the app.") : dirty ? t("You can save or discard the draft before leaving.") : t("The operation finished. See the history to check the results.")}</DialogDescription></DialogHeader>
       {working && <OperationFeedback action={isRunning(action) ? action : automatic} />}

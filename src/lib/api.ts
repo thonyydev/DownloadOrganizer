@@ -3,7 +3,7 @@ import { locale, t, type Language } from "./i18n";
 
 export interface Category { id: string; name: string; extensions: string[] }
 export interface Rule { pattern: string; folder: string; keep: boolean }
-export interface Preferences { source: string; destination: string; automatic: boolean; enabled_categories: string[]; theme: "dark" | "light"; language: "system" | Language; notifications: boolean; updates: boolean; autostart: boolean; rules: Rule[]; extra_sources: string[] }
+export interface Preferences { source: string; destination: string; automatic: boolean; enabled_categories: string[]; theme: "dark" | "light"; language: "system" | Language; notifications: boolean; updates: boolean; autostart: boolean; context_menu: boolean; rules: Rule[]; extra_sources: string[] }
 export interface FileEntry { name: string; path: string; extension: string; category: string; size: number; modified: number; destination: string; status: "ready" | "ignored" | "conflict"; reason: string | null; rename_to?: string | null }
 export interface FoundMovement { id: number; operation_id: number; created: number; source: string; destination: string; status: string }
 export interface Movement { id: number; source: string; destination: string; status: string; error: string | null; size: number }
@@ -12,7 +12,8 @@ export interface OperationSummary { id: number; created: number; kind: string; t
 export interface HistoryPage { operations: OperationSummary[]; next_cursor: number | null }
 export interface DestinationSummary { folders: [string, number][]; other_folders: number; other_files: number }
 export interface Snapshot { preferences: Preferences; categories: Category[]; files: FileEntry[]; history: OperationSummary[]; history_cursor: number | null; monitoring: boolean; watch_error: string | null; scan_error: string | null; preview_id: number | null; language: Language; update_version: string | null }
-export interface Preview { id: number; created: number; files: FileEntry[] }
+// folder: one folder organized in place from File Explorer, instead of the saved folders.
+export interface Preview { id: number; created: number; files: FileEntry[]; folder: string | null }
 export interface FilePreview { data_url: string | null; width: number | null; height: number | null }
 export interface MediaPreview { token: string; kind: "audio" | "video"; mime: string }
 export interface Progress { completed: number; total: number; name: string; kind: string; operation_id?: number | null; phase: "preparing" | "organizing" | "completed" | "error" }
@@ -24,7 +25,8 @@ export const api = {
   operation: (operationId: number) => invoke<Operation>("operation_details", { operationId }),
   operationSummary: (operationId: number) => invoke<OperationSummary>("operation_summary", { operationId }),
   destinations: (operationId: number) => invoke<DestinationSummary>("operation_destinations", { operationId }),
-  preview: () => invoke<Preview>("preview"),
+  preview: (folder: string | null = null) => invoke<Preview>("preview", { folder }),
+  takeRequestedFolder: () => invoke<string | null>("take_requested_folder"),
   filePreview: (file: FileEntry) => invoke<FilePreview>("file_preview", { path: file.path, size: file.size, modified: file.modified }),
   openMediaPreview: (file: FileEntry) => invoke<MediaPreview>("open_media_preview", { path: file.path, size: file.size, modified: file.modified }),
   closeMediaPreview: (token: string) => invoke<void>("close_media_preview", { token }),
