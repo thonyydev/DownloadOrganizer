@@ -1248,6 +1248,15 @@ fn classifies_extensions_case_and_missing() {
         ("archive.tar.gz", "archives"),
         ("setup.msi", "installers"),
         ("main.rs", "code"),
+        // A sample from the wider lists.
+        ("shot.CR3", "images"),
+        ("clip.flv", "videos"),
+        ("book.m4b", "audio"),
+        ("novel.mobi", "documents"),
+        ("backup.tar.zst", "archives"),
+        ("windows.iso", "installers"),
+        ("app.apk", "installers"),
+        ("index.php", "code"),
         ("LICENSE", "other"),
         ("odd.xyz", "other"),
     ] {

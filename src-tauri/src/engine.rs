@@ -28,37 +28,37 @@ fn build_categories(language: usize) -> Vec<Category> {
         (
             "images",
             "folder.images",
-            "jpg jpeg png gif webp svg bmp ico heic avif tiff tif raw",
+            "jpg jpeg png gif webp svg bmp ico heic heif avif jxl jfif tiff tif raw dng cr2 cr3 nef arw orf rw2 raf psd xcf ai eps",
         ),
         (
             "videos",
             "folder.videos",
-            "mp4 mkv mov avi webm m4v mpg mpeg wmv",
+            "mp4 mkv mov avi webm m4v mpg mpeg wmv flv f4v 3gp 3g2 mts m2ts vob ogv asf rm rmvb divx",
         ),
         (
             "audio",
             "folder.audio",
-            "mp3 wav flac aac ogg m4a opus aiff",
+            "mp3 wav flac aac ogg m4a m4b opus aiff aif wma mka ape wv amr ac3 mid midi",
         ),
         (
             "documents",
             "folder.documents",
-            "pdf doc docx xls xlsx ppt pptx txt csv odt ods rtf epub md",
+            "pdf doc docx docm dotx xls xlsx xlsm xltx ppt pptx pptm potx odt ods odp rtf txt md csv tsv epub mobi azw3 djvu xps oxps pages numbers key vsdx eml msg",
         ),
         (
             "archives",
             "folder.archives",
-            "zip rar 7z tar gz bz2 xz tgz",
+            "zip zipx rar 7z tar gz tgz bz2 tbz2 xz txz zst lz lzma cab",
         ),
         (
             "installers",
             "folder.installers",
-            "exe msi msix appx dmg pkg deb rpm appimage",
+            "exe msi msp msix msixbundle appx appxbundle iso img apk xapk dmg pkg deb rpm appimage snap flatpak",
         ),
         (
             "code",
             "folder.code",
-            "rs ts tsx js jsx py java c cpp h cs go html css json yaml yml toml sql sh ps1 ipynb",
+            "rs ts tsx js jsx mjs cjs py ipynb java kt kts c cc cpp h hpp cs go rb php lua dart swift scala html css scss sass less vue svelte json xml yaml yml toml sql sh bat cmd ps1 psm1 gradle",
         ),
         ("other", "folder.other", ""),
     ]
