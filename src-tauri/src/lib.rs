@@ -25,7 +25,9 @@ use std::{
     sync::{Arc, Mutex, atomic::AtomicU64, mpsc},
     time::Duration,
 };
-use store::{DestinationSummary, FoundMovement, HistoryPage, Operation, OperationSummary, Store};
+use store::{
+    DestinationSummary, FoundMovement, HistoryPage, Operation, OperationSummary, Statistics, Store,
+};
 use tauri::{
     AppHandle, Emitter, Manager,
     menu::{Menu, MenuItem},
@@ -695,6 +697,44 @@ async fn history_page(app: AppHandle, before: Option<i64>) -> Result<HistoryPage
 const SEARCH_LIMIT: usize = 50;
 
 #[tauri::command]
+async fn statistics(app: AppHandle, since: Option<i64>) -> Result<Statistics> {
+    blocking(move || lock(&app.state::<AppState>())?.store.statistics(since)).await
+}
+
+/// The share card is a PNG drawn by the page, sent as raw bytes. The save dialog runs here,
+/// so the page never chooses a path to write to. Returns false when the user cancels.
+#[tauri::command]
+async fn save_share_image(app: AppHandle, request: tauri::ipc::Request<'_>) -> Result<bool> {
+    let tauri::ipc::InvokeBody::Raw(png) = request.body() else {
+        return Err(t("Invalid image").into());
+    };
+    if !valid_share_image(png) {
+        return Err(t("Invalid image").into());
+    }
+    let png = png.clone();
+    blocking(move || {
+        use tauri_plugin_dialog::DialogExt;
+        let Some(path) = app
+            .dialog()
+            .file()
+            .set_file_name("download-organizer-stats.png")
+            .add_filter("PNG", &["png"])
+            .blocking_save_file()
+        else {
+            return Ok(false);
+        };
+        let path = path.into_path().map_err(|e| e.to_string())?;
+        std::fs::write(&path, png).map_err(|e| format!("{}: {e}", path.display()))?;
+        Ok(true)
+    })
+    .await
+}
+
+fn valid_share_image(png: &[u8]) -> bool {
+    png.starts_with(b"\x89PNG\r\n\x1a\n") && png.len() <= 10 * 1024 * 1024
+}
+
+#[tauri::command]
 async fn search_history(app: AppHandle, query: String) -> Result<Vec<FoundMovement>> {
     blocking(move || {
         let state = app.state::<AppState>();
@@ -1079,7 +1119,9 @@ fn run_application() -> std::result::Result<(), startup::StartupError> {
             open_folder,
             reveal_movement,
             search_history,
-            take_requested_folder
+            take_requested_folder,
+            statistics,
+            save_share_image
         ])
         .build(tauri::generate_context!())
         .map_err(|_| startup::StartupError::Runtime)?;

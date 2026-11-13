@@ -4,6 +4,7 @@ use crate::startup::StartupError;
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde::Serialize;
 use std::{
+    collections::HashMap,
     fs::{self, File, OpenOptions},
     path::Path,
 };
@@ -24,6 +25,31 @@ pub struct Movement {
     pub size: i64,
     pub modified: i64,
     pub digest: String,
+}
+
+/// What the Statistics page and the share card show for a period: counts and sizes of the files
+/// that are organized now (undone moves count only as undone), plus the largest files' names.
+#[derive(Serialize, Default, Debug, PartialEq)]
+pub struct Statistics {
+    /// One entry per operation that still has organized files, oldest first.
+    pub operations: Vec<OperationStat>,
+    /// Category id, files and bytes, most files first.
+    pub categories: Vec<(String, i64, i64)>,
+    /// The most common extensions ("" for none) and their files, at most 8.
+    pub extensions: Vec<(String, i64)>,
+    /// File name, size and category id of the largest organized files, at most 5.
+    pub largest: Vec<(String, i64, String)>,
+    pub undone: i64,
+    /// Moves that failed or whose result could not be confirmed.
+    pub failed: i64,
+}
+
+#[derive(Serialize, Debug, PartialEq)]
+pub struct OperationStat {
+    pub created: i64,
+    pub automatic: bool,
+    pub files: i64,
+    pub bytes: i64,
 }
 
 /// A move found by a search of the whole history, with the operation it belongs to.
@@ -221,6 +247,87 @@ impl Store {
             )
             .map_err(|e| e.to_string())?;
         Ok(())
+    }
+
+    /// Statistics of the operations created at or after `since` (all of them for None).
+    pub fn statistics(&self, since: Option<i64>) -> Result<Statistics> {
+        let mut statement = self.db.prepare("SELECT m.source,m.size,m.status,m.operation_id,o.kind,o.created FROM movements m JOIN operations o ON o.id=m.operation_id WHERE o.created>=?1 ORDER BY m.operation_id").map_err(|e| e.to_string())?;
+        let rows = statement
+            .query_map([since.unwrap_or(i64::MIN)], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, i64>(3)?,
+                    r.get::<_, String>(4)?,
+                    r.get::<_, i64>(5)?,
+                ))
+            })
+            .map_err(|e| e.to_string())?;
+        let mut stats = Statistics::default();
+        let mut categories = HashMap::<&'static str, (i64, i64)>::new();
+        let mut extensions = HashMap::<String, i64>::new();
+        let mut last_operation = None;
+        for row in rows {
+            let (source, size, status, operation, kind, created) =
+                row.map_err(|e| e.to_string())?;
+            match status.as_str() {
+                "moved" => (),
+                "undone" => {
+                    stats.undone += 1;
+                    continue;
+                }
+                "failed" | "uncertain" => {
+                    stats.failed += 1;
+                    continue;
+                }
+                _ => continue,
+            }
+            if last_operation != Some(operation) {
+                last_operation = Some(operation);
+                stats.operations.push(OperationStat {
+                    created,
+                    automatic: kind == "automatic",
+                    files: 0,
+                    bytes: 0,
+                });
+            }
+            if let Some(current) = stats.operations.last_mut() {
+                current.files += 1;
+                current.bytes += size;
+            }
+            let path = Path::new(&source);
+            let category = engine::classify(path).id.as_str();
+            let totals = categories.entry(category).or_default();
+            totals.0 += 1;
+            totals.1 += size;
+            let extension = path
+                .extension()
+                .map(|e| e.to_string_lossy().to_lowercase())
+                .unwrap_or_default();
+            *extensions.entry(extension).or_default() += 1;
+            let name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            stats.largest.push((name, size, category.to_owned()));
+            // Keeps only the top five while scanning, so a long history never holds every name.
+            stats.largest.sort_by_key(|file| std::cmp::Reverse(file.1));
+            stats.largest.truncate(5);
+        }
+        stats.categories = categories
+            .into_iter()
+            .map(|(id, (files, bytes))| (id.to_owned(), files, bytes))
+            .collect();
+        stats
+            .categories
+            .sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        stats.extensions = extensions.into_iter().collect();
+        stats
+            .extensions
+            .sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        stats.extensions.truncate(8);
+        Ok(stats)
     }
 
     /// Up to `limit` moves whose file name contains `query`, newest first. The match ignores case

@@ -12,7 +12,7 @@ import type { ReactNode } from "react";
 
 const mocks = vi.hoisted(() => ({
   snapshot: vi.fn(), history: vi.fn(), operation: vi.fn(), operationSummary: vi.fn(), destinations: vi.fn(), filePreview: vi.fn(), preview: vi.fn(), organize: vi.fn(), undo: vi.fn(), save: vi.fn(), retryMonitoring: vi.fn(),
-  installUpdate: vi.fn().mockResolvedValue(undefined), openFolder: vi.fn().mockResolvedValue(undefined), takeRequestedFolder: vi.fn(), close: vi.fn(), hide: vi.fn().mockResolvedValue(undefined), choose: vi.fn(),
+  installUpdate: vi.fn().mockResolvedValue(undefined), openFolder: vi.fn().mockResolvedValue(undefined), takeRequestedFolder: vi.fn(), stats: vi.fn(), statistics: vi.fn().mockResolvedValue({ operations: [], categories: [], extensions: [], largest: [], undone: 0, failed: 0 }), close: vi.fn(), hide: vi.fn().mockResolvedValue(undefined), choose: vi.fn(),
   events: new Map<string, (event: { payload: unknown }) => void>(),
   closeHandler: null as null | ((event: { preventDefault: () => void }) => void),
   sound: vi.fn(), soundStop: vi.fn(),
@@ -29,7 +29,7 @@ vi.mock("@web-kits/audio/react", () => ({
 }));
 vi.mock("./lib/api", async importOriginal => ({
   ...await importOriginal<typeof import("./lib/api")>(), native: true,
-  api: { snapshot: mocks.snapshot, history: mocks.history, operation: mocks.operation, operationSummary: mocks.operationSummary, destinations: mocks.destinations, filePreview: mocks.filePreview, preview: mocks.preview, organize: mocks.organize, undo: mocks.undo, save: mocks.save, retryMonitoring: mocks.retryMonitoring, installUpdate: mocks.installUpdate, openFolder: mocks.openFolder, takeRequestedFolder: mocks.takeRequestedFolder },
+  api: { snapshot: mocks.snapshot, history: mocks.history, operation: mocks.operation, operationSummary: mocks.operationSummary, destinations: mocks.destinations, filePreview: mocks.filePreview, preview: mocks.preview, organize: mocks.organize, undo: mocks.undo, save: mocks.save, retryMonitoring: mocks.retryMonitoring, installUpdate: mocks.installUpdate, openFolder: mocks.openFolder, takeRequestedFolder: mocks.takeRequestedFolder, stats: mocks.stats, statistics: mocks.statistics },
 }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async (name, callback) => {
   mocks.events.set(name, callback); return () => mocks.events.delete(name);
@@ -1231,6 +1231,47 @@ it("mostra o guia na primeira abertura e não repete na seguinte", async () => {
   expect(screen.queryByRole("dialog")).toBeNull();
 });
 
+it("não mostra as configurações como alteradas por fora enquanto a tela recarrega depois de salvar", async () => {
+  await start(); navigate("Configurações");
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "Aparência" }));
+  fireEvent.click(screen.getByRole("button", { name: "Español" }));
+  const slow = deferred<Snapshot>(); mocks.snapshot.mockReturnValueOnce(slow.promise);
+  fireEvent.click(screen.getByRole("button", { name: "Salvar preferências" }));
+  await waitFor(() => expect(mocks.save).toHaveBeenCalledOnce());
+  await act(async () => {});
+  expect(screen.queryByText("As configurações salvas foram atualizadas")).toBeNull();
+  await act(async () => slow.resolve(snapshotPayload()));
+  expect(screen.queryByText("As configurações salvas foram atualizadas")).toBeNull();
+});
+
+it("mostra o aviso de preferências salvas já no idioma novo", async () => {
+  mocks.save.mockImplementationOnce(async (prefs: Preferences) => { snapshot.preferences = structuredClone(prefs); snapshot.language = "es"; return structuredClone(prefs); });
+  await start(); navigate("Configurações");
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "Aparência" }));
+  fireEvent.click(screen.getByRole("button", { name: "Español" }));
+  fireEvent.click(screen.getByRole("button", { name: "Salvar preferências" }));
+  expect(await screen.findByText("Preferencias guardadas. Comprueba también el estado de la supervisión.")).toBeTruthy();
+});
+
+it("mostra Compartilhar estatísticas no cabeçalho da visão geral, dos arquivos e do histórico quando há histórico", async () => {
+  mocks.stats.mockResolvedValue({ files: 3, bytes: 3, automatic: 0, operations: 1, since: 1700000000, categories: [["documents", 3]] });
+  await start();
+  expect(screen.queryByRole("button", { name: "Compartilhar estatísticas" })).toBeNull();
+  snapshot.history = [structuredClone(operation)];
+  await act(async () => mocks.events.get("organizer-changed")!({ payload: null }));
+  await screen.findByRole("button", { name: "Compartilhar estatísticas" });
+  navigate("Histórico");
+  expect(screen.getByRole("button", { name: "Compartilhar estatísticas" })).toBeTruthy();
+  navigate("Arquivos");
+  expect(screen.getByRole("button", { name: "Compartilhar estatísticas" })).toBeTruthy();
+  navigate("Configurações");
+  expect(screen.queryByRole("button", { name: "Compartilhar estatísticas" })).toBeNull();
+  navigate("Visão geral");
+  fireEvent.click(screen.getByRole("button", { name: "Compartilhar estatísticas" }));
+  expect(await screen.findByRole("dialog", { name: "Compartilhar estatísticas" })).toBeTruthy();
+  expect(mocks.stats).toHaveBeenCalledOnce();
+});
+
 it("abre o histórico quando a notificação de arquivos organizados é clicada", async () => {
   await start();
   await waitFor(() => expect(mocks.events.has("open-history")).toBe(true));
@@ -1254,6 +1295,8 @@ it("troca de página pelo teclado e abre a aba certa pelo rodapé da barra later
   fireEvent.keyDown(window, { key: "2", ctrlKey: true });
   expect(screen.getByRole("heading", { name: "Arquivos", level: 1 })).toBeTruthy();
   fireEvent.keyDown(window, { key: "4", ctrlKey: true });
+  expect(screen.getByRole("heading", { name: "Estatísticas", level: 1 })).toBeTruthy();
+  fireEvent.keyDown(window, { key: "5", ctrlKey: true });
   expect(screen.getByRole("heading", { name: "Configurações", level: 1 })).toBeTruthy();
   // Without Ctrl, a digit is just typing.
   fireEvent.keyDown(window, { key: "1" });
