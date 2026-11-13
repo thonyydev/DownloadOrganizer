@@ -1,7 +1,7 @@
 import { StrictMode } from "react";
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { animate } from "motion/react";
+import { AnimatePresence, animate } from "motion/react";
 import { SettingsActions } from "./settings-actions";
 
 vi.mock("motion/react", async importOriginal => ({ ...await importOriginal<typeof import("motion/react")>(), animate: vi.fn(() => ({ stop: vi.fn() })) }));
@@ -52,6 +52,9 @@ it("não remonta nem repete a entrada quando as ações mudam de estado em Stric
   const props = { busy: false, dirty: false, external: false, onSave: vi.fn(), onDiscard: vi.fn() };
   const view = render(<StrictMode><main><SettingsActions {...props} /></main></StrictMode>);
   const dock = screen.getByRole("region", { name: "Ações das configurações" });
+  // The replayed mount effect still animates the entrance instead of showing the bar at once.
+  expect(vi.mocked(animate).mock.lastCall![1]).toMatchObject({ opacity: [0, 1] });
+  expect(dock.style.opacity).not.toBe("1");
   const entrances = vi.mocked(animate).mock.calls.length;
   view.rerender(<StrictMode><main><SettingsActions {...props} dirty /></main></StrictMode>);
   expect(screen.getByRole("region")).toBe(dock);
@@ -66,4 +69,22 @@ it("cancela o deslocamento ao ativar movimento reduzido sem esconder as ações"
   expect(region.style.transform).toBe("none"); expect(region.style.opacity).toBe("1");
   expect(vi.mocked(animate).mock.results[0].value.stop).toHaveBeenCalledOnce();
   expect((screen.getByRole("button", { name: "Salvar preferências" }) as HTMLButtonElement).disabled).toBe(false);
+});
+
+it("sai com animação e só some ao terminar; sem movimento, some na hora", async () => {
+  const actions = (shown: boolean) => <main><div role="tab" aria-selected="true" tabIndex={0}>Sobre</div><AnimatePresence>{shown && <SettingsActions key="actions" busy={false} dirty external={false} onSave={() => {}} onDiscard={() => {}} />}</AnimatePresence></main>;
+  const view = render(actions(true));
+  expect(vi.mocked(animate).mock.calls[0][1]).toMatchObject({ opacity: [0, 1] });
+  screen.getByRole("button", { name: "Descartar alterações" }).focus();
+  view.rerender(actions(false));
+  expect(document.activeElement).toBe(screen.getByRole("tab", { name: "Sobre" }));
+  const [, exit, options] = vi.mocked(animate).mock.lastCall!;
+  expect(exit).toMatchObject({ opacity: [null, 0] });
+  expect(screen.getByRole("region", { hidden: true })).toBeTruthy();
+  act(() => (options as { onComplete: () => void }).onComplete());
+  await waitFor(() => expect(screen.queryByRole("region", { hidden: true })).toBeNull());
+  motionAllowed = false;
+  view.rerender(actions(true));
+  view.rerender(actions(false));
+  await waitFor(() => expect(screen.queryByRole("region", { hidden: true })).toBeNull());
 });

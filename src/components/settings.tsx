@@ -126,7 +126,7 @@ export function Settings({ draft, saved, categories, busy, dirty, external, tab,
         </Tabs.Content>
         <Tabs.Content value="about" className="settings-panel">
           <section data-motion-group className="settings-section" aria-labelledby="about-heading">
-            <div className="settings-section-heading"><img className="about-logo" src={saved.theme === "light" ? brandPrimary : brandWhite} width={40} height={40} alt="" aria-hidden="true" /><h2 id="about-heading">Download Organizer</h2><p>{t("Version")} {version}</p></div>
+            <div className="settings-section-heading about-brand"><img src={saved.theme === "light" ? brandPrimary : brandWhite} width={40} height={40} alt="" aria-hidden="true" /><div><h2 id="about-heading">Download Organizer</h2><p>{t("Version")} {version}</p></div></div>
             <div className="settings-body">
               <div className="setting-row"><div><h3>{t("What it does")}</h3><p>{t("Organizes the files that arrive in your folders by type, with a preview before moving and undo afterwards.")}</p></div><div className="about-actions"><Button variant="outline" size="sm" onClick={() => void link("site")}><ExternalLink aria-hidden="true" />{t("Website")}</Button><Button variant="outline" size="sm" onClick={() => void link("repository")}><ExternalLink aria-hidden="true" />GitHub</Button></div></div>
               <div className="setting-row"><div><h3>{t("Feedback and bugs")}</h3><p>{t("Opens GitHub in your browser. Issues are public and need a GitHub account. Don't include file names, paths or personal data.")}</p></div><div className="about-actions"><Button variant="outline" size="sm" onClick={() => void link("feedback")}><MessageSquare aria-hidden="true" />{t("Send feedback")}</Button><Button variant="outline" size="sm" onClick={() => void link("bug")}><Bug aria-hidden="true" />{t("Report a bug")}</Button></div></div>
@@ -139,6 +139,6 @@ export function Settings({ draft, saved, categories, busy, dirty, external, tab,
       </div>
     </Tabs.Root>
     {tutorial && <RulesTutorial onClose={() => setTutorial(false)} />}
-    <p className="settings-draft-note">{t("Your preferences draft is kept while you navigate.")}</p>
+    {tab !== "about" && <p className="settings-draft-note">{t("Your preferences draft is kept while you navigate.")}</p>}
   </div>;
 }

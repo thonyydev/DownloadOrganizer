@@ -1344,3 +1344,19 @@ it("manda para a lixeira só os arquivos marcados que estão à vista, depois de
   fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Mover para a Lixeira" }));
   expect(await screen.findByText("Não foi possível mover os arquivos para a Lixeira.")).toBeTruthy();
 });
+
+it("mostra a barra de salvar na aba Sobre só com alterações pendentes", async () => {
+  await start(); navigate("Configurações");
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "Sobre" }));
+  expect(screen.queryByRole("region", { name: "Ações das configurações" })).toBeNull();
+  fireEvent.click(setting("button", "Claro"));
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "Sobre" }));
+  expect(screen.getByRole("region", { name: "Ações das configurações" })).toBeTruthy();
+});
+
+it("abre a aba Sobre pelo nome do app na barra lateral", async () => {
+  await start();
+  fireEvent.click(screen.getByRole("button", { name: "Download Organizer, Sobre" }));
+  expect(screen.getByRole("heading", { name: "Configurações", level: 1 })).toBeTruthy();
+  expect(screen.getByRole("tab", { name: "Sobre" }).getAttribute("aria-selected")).toBe("true");
+});

@@ -161,6 +161,8 @@ it("abre os links do Sobre pelo nome, nunca por um endereço", async () => {
   renderSettings("about");
   expect(screen.getByRole("heading", { name: "Download Organizer" })).toBeTruthy();
   expect(screen.getByText(`Versão ${version}`)).toBeTruthy();
+  // Nothing here is a preference, so the draft note stays on the other tabs.
+  expect(screen.queryByText("Seu rascunho das preferências é mantido enquanto você navega.")).toBeNull();
   vi.mocked(invoke).mockResolvedValue(undefined);
   fireEvent.click(screen.getByRole("button", { name: "Reportar um bug" }));
   fireEvent.click(screen.getByRole("button", { name: "Enviar feedback" }));
