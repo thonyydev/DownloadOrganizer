@@ -1,8 +1,9 @@
-import { useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
+import { animate, usePresence } from "motion/react";
 import { Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { t } from "@/lib/i18n";
-import { useContentMotion } from "@/components/motion/transitions";
+import { timing } from "@/components/motion/transitions";
 import { useMotionAllowed } from "@/components/motion/feedback";
 
 export function SettingsActions({ busy, dirty, external, error, onSave, onDiscard }: {
@@ -10,7 +11,36 @@ export function SettingsActions({ busy, dirty, external, error, onSave, onDiscar
   onSave: () => void; onDiscard: () => void;
 }) {
   const railRef = useRef<HTMLDivElement>(null);
-  const surfaceRef = useContentMotion("settings-actions", useMotionAllowed(), true);
+  const surfaceRef = useRef<HTMLDivElement>(null);
+  // Rises in when it appears, and sinks out before it is removed (inside AnimatePresence).
+  const [present, remove] = usePresence();
+  const allowed = useMotionAllowed();
+  // Set only once an entrance finishes: StrictMode replays the mount effect, and the replay must animate too.
+  const shown = useRef(false);
+  useLayoutEffect(() => {
+    const surface = surfaceRef.current;
+    if (!surface) return;
+    // Leaving goes inert: focus inside would drop to the page, so it returns to the open tab.
+    if (!present && surface.contains(document.activeElement)) document.querySelector<HTMLElement>("[role=tab][aria-selected=true]")?.focus();
+    if (!allowed || (present && shown.current)) {
+      surface.style.opacity = present ? "1" : "0"; surface.style.transform = "none";
+      shown.current = present;
+      return;
+    }
+    let stopped = false;
+    // The entrance starts hidden; an exit leaves from wherever the bar is.
+    const animation = animate(surface, { opacity: [present ? 0 : null, present ? 1 : 0], y: [present ? 12 : null, present ? 0 : 12] }, {
+      duration: present ? timing.context : timing.exit, ease: "easeOut",
+      onComplete: () => {
+        if (stopped) return;
+        if (present) { surface.style.transform = "none"; shown.current = true; }
+        else remove?.();
+      },
+    });
+    return () => { stopped = true; animation.stop(); };
+  }, [present, allowed, remove]);
+  // Presence registers the exit in its own layout effect; without motion, removal comes after it.
+  useEffect(() => { if (!present && !allowed) remove?.(); }, [present, allowed, remove]);
   useLayoutEffect(() => {
     const rail = railRef.current;
     const surface = surfaceRef.current;
@@ -47,8 +77,8 @@ export function SettingsActions({ busy, dirty, external, error, onSave, onDiscar
       main.style.removeProperty("--settings-actions-space");
       root.style.scrollPaddingBottom = previousPadding;
     };
-  }, [surfaceRef]);
-  return <div className="settings-actions-rail" ref={railRef}>
+  }, []);
+  return <div className="settings-actions-rail" ref={railRef} inert={!present}>
     <div className="settings-actions" ref={surfaceRef} role="region" aria-label={t("Settings actions")}>
       {/* The page banner announces it; this copy stays in view when the page is scrolled. */}
       {error && <p className="inline-error">{error}</p>}

@@ -1,17 +1,19 @@
 import { useId, useState } from "react";
 import { Tabs } from "radix-ui";
 import { open } from "@tauri-apps/plugin-dialog";
-import { CircleHelp, FolderOpen, ListFilter, Moon, Palette, Plus, Power, RefreshCw, Shapes, Sun, ShieldCheck, Trash2, Zap } from "lucide-react";
+import { Bug, CircleHelp, ExternalLink, FileText, FolderOpen, Info, ListFilter, MessageSquare, Moon, Palette, Plus, Power, RefreshCw, Shapes, Sun, ShieldCheck, Trash2, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { api, displayPath, type Category, type Preferences, type Rule } from "@/lib/api";
 import { t } from "@/lib/i18n";
-import { samePreferences } from "@/lib/experience";
+import { errorMessage, samePreferences } from "@/lib/experience";
 import { useAudioFeedback } from "@/components/audio/audio-provider";
 import { useMotionAllowed } from "@/components/motion/feedback";
 import { useContentMotion } from "@/components/motion/transitions";
 import { version } from "../../package.json";
+import brandPrimary from "@/assets/branding/symbol-primary.svg";
+import brandWhite from "@/assets/branding/symbol-white.svg";
 
 // Each language keeps its own name, so anyone can find theirs.
 const languages = () => [{ id: "system", name: t("System") }, { id: "pt-BR", name: "Português (Brasil)" }, { id: "en", name: "English" }, { id: "es", name: "Español" }, { id: "fr", name: "Français" }, { id: "it", name: "Italiano" }] as const;
@@ -19,7 +21,7 @@ import { AudioSettings } from "@/components/audio/audio-settings";
 import { firstRuleTutorial, RulesTutorial } from "@/components/rules-tutorial";
 
 // The page's groups. Language and sounds belong to Appearance.
-export type SettingsTab = "folders" | "automation" | "categories" | "rules" | "appearance" | "system";
+export type SettingsTab = "folders" | "automation" | "categories" | "rules" | "appearance" | "system" | "about";
 // Each tab lists the preferences it edits, so it can show its own unsaved changes.
 const tabs = () => [
   { id: "folders", label: t("Folders"), icon: FolderOpen, fields: ["source", "destination", "extra_sources"] },
@@ -28,6 +30,7 @@ const tabs = () => [
   { id: "rules", label: t("Custom rules"), icon: ListFilter, fields: ["rules"] },
   { id: "appearance", label: t("Appearance"), icon: Palette, fields: ["theme", "language"] },
   { id: "system", label: t("System"), icon: Power, fields: ["autostart", "context_menu", "notifications", "updates"] },
+  { id: "about", label: t("About"), icon: Info, fields: [] },
 ] as const;
 
 export function Settings({ draft, saved, categories, busy, dirty, external, tab, onTab, onChange: setDraft, onDiscard, onAcceptExternal }: {
@@ -42,6 +45,8 @@ export function Settings({ draft, saved, categories, busy, dirty, external, tab,
   const [tutorial, setTutorial] = useState(false);
   // Kept as data, so the message follows the language at render.
   const [updateCheck, setUpdateCheck] = useState<{ state: "checking" } | { state: "found"; version: string } | { state: "latest" } | { state: "error"; error: string } | null>(null);
+  const [linkError, setLinkError] = useState("");
+  const link = (which: Parameters<typeof api.openLink>[0]) => api.openLink(which).then(() => setLinkError(""), error => setLinkError(errorMessage(error)));
   async function checkUpdates() {
     setUpdateCheck({ state: "checking" });
     try {
@@ -119,9 +124,21 @@ export function Settings({ draft, saved, categories, busy, dirty, external, tab,
             <div className="settings-body"><div className="setting-row"><div><label htmlFor="autostart">{t("Start with Windows")}</label><p>{t("With automatic organization on, the app starts straight in the tray")}</p></div><Switch id="autostart" checked={draft.autostart} disabled={busy} onCheckedChange={autostart => setDraft(p => ({ ...p, autostart }))} /></div><div className="setting-row"><div><label htmlFor="context-menu">{t("Show in the File Explorer menu")}</label><p>{t("Adds “Organize with Download Organizer” when you right-click a folder")}</p></div><Switch id="context-menu" checked={draft.context_menu} disabled={busy} onCheckedChange={context_menu => setDraft(p => ({ ...p, context_menu }))} /></div><div className="setting-row"><div><label htmlFor="notifications">{t("Show notifications")}</label><p>{t("Tells you when automation organizes files or hits a problem, if the window isn't in focus")}</p></div><Switch id="notifications" checked={draft.notifications} disabled={busy} onCheckedChange={notifications => setDraft(p => ({ ...p, notifications }))} /></div><div className="setting-row"><div><label htmlFor="updates">{t("Update automatically")}</label><p>{t("Looks for new versions on GitHub every 6 hours. When off, the app only goes online when you check for updates")}</p></div><Switch id="updates" checked={draft.updates} disabled={busy} onCheckedChange={updates => setDraft(p => ({ ...p, updates }))} /></div><div className="update-check"><Button variant="outline" size="sm" disabled={updateCheck?.state === "checking"} onClick={() => void checkUpdates()}><RefreshCw aria-hidden="true" className={updateCheck?.state === "checking" ? "spin" : ""} />{updateCheck?.state === "checking" ? t("Checking for updates…") : t("Check for updates")}</Button><p className="settings-draft-note" role="status">{updateCheck?.state === "found" ? `${t("New version ready to install")}: ${updateCheck.version}` : updateCheck?.state === "latest" ? `${t("You have the latest version")} (${version})` : updateCheck?.state === "error" ? `${t("Couldn't check for updates")}. ${updateCheck.error}` : ""}</p></div></div>
           </section>
         </Tabs.Content>
+        <Tabs.Content value="about" className="settings-panel">
+          <section data-motion-group className="settings-section" aria-labelledby="about-heading">
+            <div className="settings-section-heading about-brand"><img src={saved.theme === "light" ? brandPrimary : brandWhite} width={40} height={40} alt="" aria-hidden="true" /><div><h2 id="about-heading">Download Organizer</h2><p>{t("Version")} {version}</p></div></div>
+            <div className="settings-body">
+              <div className="setting-row"><div><h3>{t("What it does")}</h3><p>{t("Organizes the files that arrive in your folders by type, with a preview before moving and undo afterwards.")}</p></div><div className="about-actions"><Button variant="outline" size="sm" onClick={() => void link("site")}><ExternalLink aria-hidden="true" />{t("Website")}</Button><Button variant="outline" size="sm" onClick={() => void link("repository")}><ExternalLink aria-hidden="true" />GitHub</Button></div></div>
+              <div className="setting-row"><div><h3>{t("Feedback and bugs")}</h3><p>{t("Opens GitHub in your browser. Issues are public and need a GitHub account. Don't include file names, paths or personal data.")}</p></div><div className="about-actions"><Button variant="outline" size="sm" onClick={() => void link("feedback")}><MessageSquare aria-hidden="true" />{t("Send feedback")}</Button><Button variant="outline" size="sm" onClick={() => void link("bug")}><Bug aria-hidden="true" />{t("Report a bug")}</Button></div></div>
+              <div className="setting-row"><div><h3>{t("Privacy")}</h3><p>{t("No account, no telemetry and no cloud service. The app only goes online to check GitHub for updates.")}</p></div></div>
+              <div className="setting-row"><div><h3>{t("License")}</h3><p>© 2026 Thonyy · {t("MIT License")}</p></div><Button variant="outline" size="sm" onClick={() => void link("notices")}><FileText aria-hidden="true" />{t("Third-party notices")}</Button></div>
+              {linkError && <p className="inline-error" role="alert">{linkError}</p>}
+            </div>
+          </section>
+        </Tabs.Content>
       </div>
     </Tabs.Root>
     {tutorial && <RulesTutorial onClose={() => setTutorial(false)} />}
-    <p className="settings-draft-note">{t("Your preferences draft is kept while you navigate.")}</p>
+    {tab !== "about" && <p className="settings-draft-note">{t("Your preferences draft is kept while you navigate.")}</p>}
   </div>;
 }

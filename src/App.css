@@ -61,6 +61,9 @@ h1:focus { outline: none; }
 .app-shell { min-height: 100dvh; }
 .sidebar { width: var(--sidebar-width); position: fixed; inset: 0 auto 0 0; display: flex; flex-direction: column; padding: var(--space-4) var(--space-3); background: var(--sidebar); border-right: 1px solid var(--border); overflow-y: auto; z-index: 10; }
 .brand { display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 0 var(--space-2); font-size: var(--text-body); font-weight: 600; letter-spacing: -0.01em; line-height: 1.25; }
+button.brand { width: 100%; border-radius: var(--radius); background: transparent; color: inherit; text-align: left; }
+button.brand:hover { background: var(--accent); }
+button.brand:focus-visible { outline-offset: -2px; }
 .brand-icon { display: grid; place-items: center; width: 28px; height: 28px; flex-shrink: 0; }
 .brand-icon img { display: block; width: 28px; height: 28px; }
 .sidebar nav { position: relative; margin-top: var(--space-4); padding-top: var(--space-4); border-top: 1px solid var(--border); display: grid; gap: 2px; }
@@ -518,3 +521,11 @@ tbody tr:has(.file-disclosure[aria-expanded=true]) { background: var(--surface-s
 .stats-data thead th { color: var(--faint); }
 .stats-tip { position: fixed; z-index: 60; display: grid; gap: 2px; padding: var(--space-2) var(--space-3); transform: translate(-50%,calc(-100% - 12px)); pointer-events: none; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 8px 24px rgba(0,0,0,0.25); color: var(--muted); font-size: var(--text-meta); white-space: nowrap; }
 .stats-tip strong { color: var(--foreground); font-size: var(--text-control); font-weight: 600; }
+/* Recycle Bin: the row checkbox sits on the disclosure button's centre line. */
+.file-check { margin: 4px 0 0 var(--space-1); }
+.trash-list { max-height: 200px; overflow: auto; padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius); font-size: var(--text-control); }
+.trash-list li { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; line-height: 1.8; }
+/* About tab */
+.about-brand { display: flex; align-items: center; gap: var(--space-3); align-self: start; }
+.about-brand img { flex-shrink: 0; }
+.about-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); }
