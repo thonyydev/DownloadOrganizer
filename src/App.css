@@ -518,3 +518,10 @@ tbody tr:has(.file-disclosure[aria-expanded=true]) { background: var(--surface-s
 .stats-data thead th { color: var(--faint); }
 .stats-tip { position: fixed; z-index: 60; display: grid; gap: 2px; padding: var(--space-2) var(--space-3); transform: translate(-50%,calc(-100% - 12px)); pointer-events: none; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 8px 24px rgba(0,0,0,0.25); color: var(--muted); font-size: var(--text-meta); white-space: nowrap; }
 .stats-tip strong { color: var(--foreground); font-size: var(--text-control); font-weight: 600; }
+/* Recycle Bin: the row checkbox sits on the disclosure button's centre line. */
+.file-check { margin: 4px 0 0 var(--space-1); }
+.trash-list { max-height: 200px; overflow: auto; padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius); font-size: var(--text-control); }
+.trash-list li { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; line-height: 1.8; }
+/* About tab */
+.about-logo { margin-bottom: var(--space-2); }
+.about-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); }

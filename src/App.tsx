@@ -2,13 +2,12 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Tooltip } from "radix-ui";
-import { ArrowDownToLine, ArrowRight, BarChart3, FolderDown, FolderOpen, History, LayoutDashboard, Loader2, PencilLine, RefreshCw, Search, Settings2, Share2, ShieldCheck, X } from "lucide-react";
+import { ArrowDownToLine, ArrowRight, BarChart3, FolderDown, FolderOpen, History, LayoutDashboard, Loader2, PencilLine, RefreshCw, Settings2, Share2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Overview } from "@/components/overview";
 import { HistoryView } from "@/components/history";
-import { FileTable } from "@/components/file-table";
+import { FilesPage } from "@/components/files-page";
 import { FilePreviewDialog } from "@/components/file-preview-dialog";
 import { ShareStats } from "@/components/share-stats";
 import { StatisticsView } from "@/components/statistics";
@@ -72,9 +71,6 @@ function OrganizerApp() {
   const [closeRequested, setCloseRequested] = useState(false);
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
-  // The order is a habit, so it outlives a restart.
-  const [sort, setSort] = useState<"name" | "newest" | "largest">(() => { const saved = localStorage.getItem("download-organizer-sort"); return saved === "newest" || saved === "largest" ? saved : "name"; });
-  useEffect(() => { localStorage.setItem("download-organizer-sort", sort); }, [sort]);
   // Rules match in order, so the new one goes first to win over broader rules. An exact name never holds * or ?.
   const keepFile = (file: FileEntry) => {
     setDraft(current => current && !current.value.rules.some(rule => rule.keep && rule.pattern === file.name) ? { ...current, value: { ...current.value, rules: [{ pattern: file.name, folder: "", keep: true }, ...current.value.rules] } } : current);
@@ -212,6 +208,7 @@ function OrganizerApp() {
   useEffect(() => () => clearTimeout(feedbackTimer.current), []);
   const [welcome, setWelcome] = useState<"onboarding" | "news" | null>(null);
   const [sharing, setSharing] = useState(false);
+  const [trashed, setTrashed] = useState<number | null>(null);
   const welcomed = useRef(false);
   // Decided once, from the first snapshot: its history tells an update from a new install.
   useEffect(() => {
@@ -306,6 +303,15 @@ function OrganizerApp() {
     } finally { clearTimeout(feedbackTimer.current); feedbackTimer.current = undefined; busyRef.current = false; actionKind.current = null; setBusy(false); }
   }
 
+  async function trashFiles(targets: FileEntry[]) {
+    setTrashed(null);
+    let count = 0;
+    const done = await run(async () => { count = await api.trash(targets); await refresh(true); });
+    if (!done) return false;
+    if (count < targets.length) setError(count ? `${t("Moved to the Recycle Bin")}: ${plural(count, t("file"), t("files"))}. ${t("The others stayed in the folder; they may be open in another program.")}` : t("Could not move the files to the Recycle Bin."));
+    else setTrashed(count);
+    return true;
+  }
   function discardDraft() {
     audio.discard();
     if (action?.kind === "save") { setError(""); setAction(null); }
@@ -361,14 +367,6 @@ function OrganizerApp() {
   const files = data?.files ?? noFiles;
   const categories = data?.categories ?? [];
   const history = historyPages.operations;
-  const searchable = useMemo(() => files.map(file => ({ file, name: file.name.toLocaleLowerCase() })), [files]);
-  const query = search.toLocaleLowerCase();
-  const visible = useMemo(() => {
-    const matching = filter === "all" && !query ? files : searchable.filter(({ file, name }) => (filter === "all" || file.category === filter || "status:" + file.status === filter) && name.includes(query)).map(({ file }) => file);
-    // The backend lists by name; the other orders sort a copy.
-    return sort === "name" ? matching : [...matching].sort(sort === "newest" ? (a, b) => b.modified - a.modified : (a, b) => b.size - a.size);
-  }, [files, searchable, filter, query, sort]);
-  const conflicts = useMemo(() => files.reduce((count, file) => count + Number(file.status === "conflict"), 0), [files]);
   const categoryCounts = useMemo(() => {
     const counts = new Map<string, number>();
     for (const file of files) counts.set(file.category, (counts.get(file.category) ?? 0) + 1);
@@ -382,7 +380,7 @@ function OrganizerApp() {
     <aside className="sidebar">
       <div className="brand"><span className="brand-icon"><img src={data?.preferences.theme === "light" ? brandPrimary : brandWhite} width={32} height={32} alt="" aria-hidden="true" /></span><span>Download Organizer</span></div>
       <nav aria-label={t("Main navigation")}><NavigationIndicator page={page} />{pages.map((item, index) => <button key={item.id} className={"nav-item " + (page === item.id ? "active" : "")} aria-keyshortcuts={`Control+${index + 1}`} aria-label={item.name()} aria-describedby={item.id === "settings" && dirty ? "pending-preferences" : item.id === "files" && data ? "nav-file-count" : undefined} aria-current={page === item.id ? "page" : undefined} onClick={() => setPage(item.id)}><item.icon size={16} aria-hidden="true" /><span>{item.name()}</span>{item.id === "files" && data && <span className="nav-count" id="nav-file-count">{files.length}<span className="sr-only"> {t("files in the folder")}</span></span>}{item.id === "settings" && dirty && <><span className="draft-dot" aria-hidden="true" /><span id="pending-preferences" className="sr-only">{t("Unsaved changes")}</span></>}</button>)}</nav>
-      <div className="sidebar-bottom"><div className="sidebar-folder">{data?.preferences.source && <button type="button" className="sidebar-route" title={[data.preferences.source, ...data.preferences.extra_sources].map(displayPath).join("\n")} onClick={() => openSettings("folders")}><span className="route-from"><FolderOpen size={14} aria-hidden="true" /><span className="ellipsis">{displayPath(basename(data.preferences.source))}{data.preferences.extra_sources.length > 0 && ` +${data.preferences.extra_sources.length}`}</span></span><span className="route-to"><ArrowRight size={14} aria-hidden="true" /><span className="sr-only">{t("Destination")}: </span><span className="ellipsis">{displayPath(basename(data.preferences.destination))}</span></span></button>}<button type="button" className={"monitor-status " + (data?.monitoring ? "online" : "")} onClick={() => openSettings("automation")}><span className="small-dot" />{working ? t("Operation in progress") : data?.monitoring ? t("Monitor on") : t("Monitor paused")}</button></div><div className="app-version"><span>{t("Local storage")}</span><button type="button" aria-label={`${t("Check for updates")} (v${version})`} onClick={() => openSettings("system")}>v{version}</button></div></div>
+      <div className="sidebar-bottom"><div className="sidebar-folder">{data?.preferences.source && <button type="button" className="sidebar-route" title={[data.preferences.source, ...data.preferences.extra_sources].map(displayPath).join("\n")} onClick={() => openSettings("folders")}><span className="route-from"><FolderOpen size={14} aria-hidden="true" /><span className="ellipsis">{displayPath(basename(data.preferences.source))}{data.preferences.extra_sources.length > 0 && ` +${data.preferences.extra_sources.length}`}</span></span><span className="route-to"><ArrowRight size={14} aria-hidden="true" /><span className="sr-only">{t("Destination")}: </span><span className="ellipsis">{displayPath(basename(data.preferences.destination))}</span></span></button>}<button type="button" className={"monitor-status " + (data?.monitoring ? "online" : "")} onClick={() => openSettings("automation")}><span className="small-dot" />{working ? t("Operation in progress") : data?.monitoring ? t("Monitor on") : t("Monitor paused")}</button></div><div className="app-version"><span>{t("Local storage")}</span><button type="button" aria-label={`${t("About")} (v${version})`} onClick={() => openSettings("about")}>v{version}</button></div></div>
     </aside>
     <div className="main-shell">
       <main className="content"><div className="page-heading"><div><h1 ref={mainHeading} tabIndex={-1}>{current.name()}</h1><p>{page === "dashboard" ? t("What arrived, where it goes and what has moved") : page === "files" ? t("Files in the source folder and where each one goes") : page === "history" ? t("Every recorded move, with the option to undo") : page === "statistics" ? t("What you organized, when and how") : t("Folders, rules and organization preferences")}</p></div><div className="heading-actions">{page !== "settings" && !!data?.history.length && <Button variant="outline" size="sm" onClick={() => setSharing(true)}><Share2 aria-hidden="true" />{t("Share your stats")}</Button>}<Button variant="outline" size="sm" aria-label={t("Refresh files")} disabled={!native || working || loading} onClick={() => void run(async () => { await refresh(true); })}><RefreshCw aria-hidden="true" className={loading || (busy && action?.kind === "refresh") ? "spin" : ""} />{t("Refresh")}</Button>{page !== "settings" && <Button disabled={!data || working || loading || !files.length || !!data?.scan_error} onClick={() => void updatePreview()}><FolderDown aria-hidden="true" />{busy && action?.kind === "preview" ? t("Preparing preview…") : t("Organize files")}</Button>}</div></div>
@@ -392,12 +390,13 @@ function OrganizerApp() {
         {error && !preview && !undoTarget && <ProblemNotice title={t("The action didn't finish")} message={error} busy={working} action={t("Check again")} onRecover={() => void run(async () => { await refresh(true); })} onDismiss={() => setError("")} />}
         {data?.scan_error && <ProblemNotice title={t("The folder needs attention")} message={data.scan_error} persistent busy={working} action={t("Review folders")} onRecover={() => openSettings("folders")} />}
         {data?.watch_error && <ProblemNotice title={t("There's a problem with monitoring")} message={data.watch_error} persistent busy={working} action={data.preferences.automatic ? t("Check and restart monitor") : t("Review automation")} onRecover={() => { if (data.preferences.automatic) void run(async () => { await api.retryMonitoring(); }, "monitor"); else openSettings("automation"); }} />}
+        {trashed !== null && <SuccessNotice message={`${t("Moved to the Recycle Bin")}: ${plural(trashed, t("file"), t("files"))}`} onDismiss={() => setTrashed(null)} />}
         {saved && <SuccessNotice message={t("Preferences saved. Check the monitoring status separately.")} onDismiss={() => setSaved(false)} />}
         {!preview && !undoTarget && isRunning(action) && <OperationFeedback action={action} />}
         {automatic && <div className="automatic-feedback"><p>{t("Automatic organization")}</p><OperationFeedback action={automatic} operation={data?.history.find(op => op.id === automatic.operationId)} /></div>}
         {loading ? <div className="loading-state" role="status"><Loader2 className="spin" size={16} aria-hidden="true" /><p>{t("Reading your files safely…")}</p></div> : <PageTransition key={page}>
           {page === "dashboard" && <Overview data={data} onFiles={() => setPage("files")} onSettings={() => openSettings("folders")} onCategory={showCategory} onHistory={() => setPage("history")} onOperation={showOperation} onOpenDestination={openDestination} counts={categoryCounts} onConflicts={() => showCategory("status:conflict")} />}
-          {page === "files" && <section className="files-view"><div className="file-toolbar" data-motion-group><label className="search-field"><span className="sr-only">{t("Search files")}</span><span className="search-input"><Search size={16} aria-hidden="true" /><Input value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === "Escape" && search) { e.preventDefault(); setSearch(""); } }} placeholder={t("Search by name")} aria-label={t("Search files")} />{search && <button type="button" className="search-clear" aria-label={t("Clear search")} onClick={e => { (e.currentTarget.previousElementSibling as HTMLInputElement).focus(); setSearch(""); }}><X size={14} aria-hidden="true" /></button>}</span></label><label className="filter-select"><span className="sr-only">{t("Filter by category")}</span><select value={filter} onChange={e => setFilter(e.target.value)}><option value="all">{t("All categories")}</option>{categories.map(c => <option key={c.id} value={c.id}>{c.name} ({categoryCounts.get(c.id) ?? 0})</option>)}{(conflicts > 0 || filter === "status:conflict") && <optgroup label={t("Status")}><option value="status:conflict">{t("Conflicts")} ({conflicts})</option></optgroup>}</select></label><label className="filter-select"><span className="sr-only">{t("Sort files")}</span><select value={sort} onChange={e => setSort(e.target.value as typeof sort)}><option value="name">{t("Name (A–Z)")}</option><option value="newest">{t("Newest first")}</option><option value="largest">{t("Largest first")}</option></select></label><span className="file-count">{plural(visible.length, t("file"), t("files"))}</span></div><FileTable onKeep={keepFile} onView={(file, trigger) => { filePreviewFocus.current = trigger; setViewedFile(file); }} filterKey={filter + ":" + query + ":" + sort} files={visible} categories={categories} filtered={filter !== "all" || !!search} onClearFilters={() => { setFilter("all"); setSearch(""); }} /><div className="table-footer"><ShieldCheck size={16} aria-hidden="true" />{t("Recent files wait until they stop changing. Refresh to check again.")}</div></section>}
+          {page === "files" && <FilesPage files={files} categories={categories} counts={categoryCounts} filter={filter} search={search} onFilter={setFilter} onSearch={setSearch} working={working} onKeep={keepFile} onView={(file, trigger) => { filePreviewFocus.current = trigger; setViewedFile(file); }} onTrash={trashFiles} onRestoreFocus={() => mainHeading.current?.focus()} />}
           {page === "statistics" && <StatisticsView categories={categories} revision={data} />}
           {page === "history" && <HistoryView history={history} expanded={expanded} working={working} openingUndo={openingUndo} onExpand={setExpanded} onUndo={op => void openUndo(op)} hasMore={historyPages.next_cursor !== null} loading={historyPages.loading} pageError={historyPages.error} onLoadMore={() => void historyPages.loadMore()} onRetry={() => void historyPages.retry()} />}
           {page === "settings" && (data && draft ? <Settings tab={settingsTab} onTab={setSettingsTab} draft={draft.value} saved={draft.base} categories={categories} busy={working} dirty={dirty} external={external} onChange={update => setDraft(current => current ? { ...current, value: update(current.value) } : current)} onDiscard={discardDraft} onAcceptExternal={() => setDraft(current => current && data ? { ...current, base: data.preferences } : current)} /> : <div className="empty"><Settings2 size={24} aria-hidden="true" /><h2>{t("Settings are available on desktop")}</h2><p>{t("Open the Tauri app to select your folders.")}</p></div>)}

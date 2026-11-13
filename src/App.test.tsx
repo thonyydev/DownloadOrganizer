@@ -12,7 +12,7 @@ import type { ReactNode } from "react";
 
 const mocks = vi.hoisted(() => ({
   snapshot: vi.fn(), history: vi.fn(), operation: vi.fn(), operationSummary: vi.fn(), destinations: vi.fn(), filePreview: vi.fn(), preview: vi.fn(), organize: vi.fn(), undo: vi.fn(), save: vi.fn(), retryMonitoring: vi.fn(),
-  installUpdate: vi.fn().mockResolvedValue(undefined), openFolder: vi.fn().mockResolvedValue(undefined), takeRequestedFolder: vi.fn(), stats: vi.fn(), statistics: vi.fn().mockResolvedValue({ operations: [], categories: [], extensions: [], largest: [], undone: 0, failed: 0 }), close: vi.fn(), hide: vi.fn().mockResolvedValue(undefined), choose: vi.fn(),
+  installUpdate: vi.fn().mockResolvedValue(undefined), openFolder: vi.fn().mockResolvedValue(undefined), takeRequestedFolder: vi.fn(), trash: vi.fn(), stats: vi.fn(), statistics: vi.fn().mockResolvedValue({ operations: [], categories: [], extensions: [], largest: [], undone: 0, failed: 0 }), close: vi.fn(), hide: vi.fn().mockResolvedValue(undefined), choose: vi.fn(),
   events: new Map<string, (event: { payload: unknown }) => void>(),
   closeHandler: null as null | ((event: { preventDefault: () => void }) => void),
   sound: vi.fn(), soundStop: vi.fn(),
@@ -29,7 +29,7 @@ vi.mock("@web-kits/audio/react", () => ({
 }));
 vi.mock("./lib/api", async importOriginal => ({
   ...await importOriginal<typeof import("./lib/api")>(), native: true,
-  api: { snapshot: mocks.snapshot, history: mocks.history, operation: mocks.operation, operationSummary: mocks.operationSummary, destinations: mocks.destinations, filePreview: mocks.filePreview, preview: mocks.preview, organize: mocks.organize, undo: mocks.undo, save: mocks.save, retryMonitoring: mocks.retryMonitoring, installUpdate: mocks.installUpdate, openFolder: mocks.openFolder, takeRequestedFolder: mocks.takeRequestedFolder, stats: mocks.stats, statistics: mocks.statistics },
+  api: { snapshot: mocks.snapshot, history: mocks.history, operation: mocks.operation, operationSummary: mocks.operationSummary, destinations: mocks.destinations, filePreview: mocks.filePreview, preview: mocks.preview, organize: mocks.organize, undo: mocks.undo, save: mocks.save, retryMonitoring: mocks.retryMonitoring, installUpdate: mocks.installUpdate, openFolder: mocks.openFolder, takeRequestedFolder: mocks.takeRequestedFolder, trash: mocks.trash, stats: mocks.stats, statistics: mocks.statistics },
 }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async (name, callback) => {
   mocks.events.set(name, callback); return () => mocks.events.delete(name);
@@ -1301,8 +1301,8 @@ it("troca de página pelo teclado e abre a aba certa pelo rodapé da barra later
   // Without Ctrl, a digit is just typing.
   fireEvent.keyDown(window, { key: "1" });
   expect(screen.getByRole("heading", { name: "Configurações", level: 1 })).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: `Verificar atualizações (v${version})` }));
-  expect(screen.getByRole("tab", { name: "Sistema" }).getAttribute("aria-selected")).toBe("true");
+  fireEvent.click(screen.getByRole("button", { name: `Sobre (v${version})` }));
+  expect(screen.getByRole("tab", { name: "Sobre" }).getAttribute("aria-selected")).toBe("true");
   fireEvent.click(screen.getByRole("button", { name: "Monitoramento pausado" }));
   expect(screen.getByRole("tab", { name: "Organização automática" }).getAttribute("aria-selected")).toBe("true");
   fireEvent.click(screen.getByRole("button", { name: /^source.*destination$/ }));
@@ -1317,4 +1317,30 @@ it("troca de página pelo teclado e abre a aba certa pelo rodapé da barra later
   await openPreview();
   fireEvent.keyDown(window, { key: "4", ctrlKey: true });
   expect(screen.getByRole("heading", { name: "Visão geral", level: 1, hidden: true })).toBeTruthy();
+});
+
+it("manda para a lixeira só os arquivos marcados que estão à vista, depois de confirmar", async () => {
+  const b = { ...snapshot.files[0], name: "b.txt", path: "/isolated/source/b.txt", size: 2048 };
+  snapshot.files.push(b);
+  mocks.trash.mockImplementation(async (files: { path: string }[]) => { snapshot.files = snapshot.files.filter(file => !files.some(gone => gone.path === file.path)); return files.length; });
+  await start(); navigate("Arquivos");
+  fireEvent.click(screen.getByRole("checkbox", { name: "Selecionar todos os arquivos exibidos" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Buscar arquivos" }), { target: { value: "b." } });
+  fireEvent.click(screen.getByRole("button", { name: "Mover para a Lixeira (1)" }));
+  const dialog = screen.getByRole("dialog", { name: "Mover para a Lixeira?" });
+  expect(within(dialog).getByText("b.txt")).toBeTruthy();
+  expect(within(dialog).queryByText("a.txt")).toBeNull();
+  fireEvent.click(within(dialog).getByRole("button", { name: "Mover para a Lixeira" }));
+  expect(await screen.findByText("Movidos para a Lixeira: 1 arquivo")).toBeTruthy();
+  expect(mocks.trash).toHaveBeenCalledExactlyOnceWith([b]);
+  // The button that opened the dialog is gone, so focus goes to the page heading, as after other operations.
+  expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Arquivos", level: 1 }));
+  // The picks are cleared after each send; a file left behind is reported, not counted as done.
+  mocks.trash.mockResolvedValueOnce(0);
+  fireEvent.change(screen.getByRole("textbox", { name: "Buscar arquivos" }), { target: { value: "" } });
+  expect(screen.queryByRole("button", { name: /Mover para a Lixeira/ })).toBeNull();
+  fireEvent.click(screen.getByRole("checkbox", { name: "Selecionar a.txt" }));
+  fireEvent.click(screen.getByRole("button", { name: "Mover para a Lixeira (1)" }));
+  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Mover para a Lixeira" }));
+  expect(await screen.findByText("Não foi possível mover os arquivos para a Lixeira.")).toBeTruthy();
 });

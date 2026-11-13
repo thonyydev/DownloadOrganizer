@@ -2491,3 +2491,58 @@ fn only_a_bounded_png_is_saved_as_the_share_image() {
     assert!(!valid_share_image(b"<svg>"));
     assert!(!valid_share_image(&[]));
 }
+
+#[test]
+fn only_listed_unchanged_files_go_to_the_recycle_bin() {
+    let (temp, _runtime, prefs) = fixture();
+    let path = Path::new(&prefs.source).join("setup.exe");
+    old_file(&path, b"installer");
+    let files = engine::scan(&prefs).unwrap();
+    let mut access = file_preview::Access::default();
+    access.update(&prefs, &files);
+    let file = &files[0];
+    let request = |path: &str, size: u64| vec![(path.to_owned(), size, file.modified)];
+    let size = file.size;
+    assert_eq!(
+        trash::checked(&access, &prefs, &request(&file.path, size)).unwrap(),
+        std::slice::from_ref(&file.path)
+    );
+    // A path the list never showed, a stale size, or a file changed since the list.
+    let outside = temp.path().join("test.sqlite3");
+    assert!(trash::checked(&access, &prefs, &request(&outside.to_string_lossy(), size)).is_err());
+    assert!(trash::checked(&access, &prefs, &request(&file.path, size + 1)).is_err());
+    fs::write(&path, b"changed installer").unwrap();
+    assert!(trash::checked(&access, &prefs, &request(&file.path, size)).is_err());
+}
+
+// Puts a temporary file in the real Recycle Bin, so it only runs on request:
+// cargo test --manifest-path src-tauri/Cargo.toml recycles_into_the_bin -- --ignored
+#[test]
+#[ignore]
+fn recycles_into_the_bin() {
+    let (_temp, _runtime, prefs) = fixture();
+    let path = Path::new(&prefs.source).join("download-organizer-trash-test.txt");
+    fs::write(&path, b"temporary").unwrap();
+    let path = path.to_string_lossy().into_owned();
+    assert_eq!(
+        trash::recycle(std::slice::from_ref(&path), std::ptr::null_mut()).unwrap(),
+        1
+    );
+    assert!(!Path::new(&path).exists());
+}
+
+#[test]
+fn about_links_are_fixed_and_the_bug_form_is_prefilled() {
+    let bug = about::url("bug", "0.2.0", "Windows 11 25H2 (build 26300)").unwrap();
+    assert_eq!(
+        bug,
+        "https://github.com/thonyydev/DownloadOrganizer/issues/new?template=bug_report.yml&version=0.2.0&platform=Windows%2011%2025H2%20%28build%2026300%29"
+    );
+    assert!(
+        about::url("notices", "0.2.0", "")
+            .unwrap()
+            .ends_with("/tree/v0.2.0/public")
+    );
+    assert!(about::url("https://example.com", "0.2.0", "").is_none());
+    assert!(about::windows_version().starts_with("Windows"));
+}

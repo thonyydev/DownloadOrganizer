@@ -1,4 +1,5 @@
 use i18n::t;
+mod about;
 mod autostart;
 mod context_menu;
 mod directories;
@@ -12,6 +13,7 @@ mod startup;
 mod store;
 #[cfg(test)]
 mod tests;
+mod trash;
 
 #[cfg(not(windows))]
 compile_error!("Download Organizer only supports Windows");
@@ -734,6 +736,34 @@ fn valid_share_image(png: &[u8]) -> bool {
     png.starts_with(b"\x89PNG\r\n\x1a\n") && png.len() <= 10 * 1024 * 1024
 }
 
+/// Sends listed files to the Recycle Bin. Each must be unchanged since the list was read;
+/// the page sends what it showed, never a path of its own choosing. Returns how many left.
+#[tauri::command]
+async fn trash_files(app: AppHandle, files: Vec<(String, u64, i64)>) -> Result<usize> {
+    blocking(move || {
+        let state = app.state::<AppState>();
+        // Its own statement, so the runtime lock is released before the preview list is locked:
+        // snapshot takes them in the other order, and holding both here could deadlock.
+        let prefs = lock(&state)?.store.preferences()?;
+        let paths = trash::checked(
+            &*state
+                .file_previews
+                .lock()
+                .map_err(|_| internal_state_error())?,
+            &prefs,
+            &files,
+        )?;
+        // No lock from here: Windows may wait on a dialog of its own. An organization holds
+        // each file open while moving it, so the two can't lose a file between them.
+        let window = app
+            .get_webview_window("main")
+            .and_then(|window| window.hwnd().ok())
+            .map_or(std::ptr::null_mut(), |hwnd| hwnd.0);
+        trash::recycle(&paths, window)
+    })
+    .await
+}
+
 #[tauri::command]
 async fn search_history(app: AppHandle, query: String) -> Result<Vec<FoundMovement>> {
     blocking(move || {
@@ -936,7 +966,27 @@ async fn open_folder(app: AppHandle, which: String) -> Result<()> {
                 t("This folder doesn't exist yet. It's created when files are organized.").into(),
             );
         }
-        explore(&path)
+        // "explore" only opens folders: a path swapped for a program is never run.
+        if shell("explore", &path) {
+            Ok(())
+        } else {
+            Err(t("Could not open the folder.").into())
+        }
+    })
+    .await
+}
+
+/// Opens one of the About tab's links in the browser. Takes a name, never an address.
+#[tauri::command]
+async fn open_link(which: String) -> Result<()> {
+    blocking(move || {
+        let version = env!("CARGO_PKG_VERSION");
+        let url = about::url(&which, version, &about::windows_version()).ok_or("Unknown link")?;
+        if shell("open", &url) {
+            Ok(())
+        } else {
+            Err(t("Could not open the link.").into())
+        }
     })
     .await
 }
@@ -979,11 +1029,10 @@ fn moved_destination(store: &Store, operation_id: i64, movement_id: i64) -> Resu
     Ok(file_preview::plain_path(&path))
 }
 
-fn explore(path: &str) -> Result<()> {
+fn shell(verb: &str, target: &str) -> bool {
     use windows_sys::Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL};
     let wide = |text: &str| text.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
-    let (verb, file) = (wide("explore"), wide(path));
-    // "explore" only opens folders: a path swapped for a program is never run.
+    let (verb, file) = (wide(verb), wide(target));
     let code = unsafe {
         ShellExecuteW(
             std::ptr::null_mut(),
@@ -994,11 +1043,7 @@ fn explore(path: &str) -> Result<()> {
             SW_SHOWNORMAL,
         )
     };
-    if code as isize > 32 {
-        Ok(())
-    } else {
-        Err(t("Could not open the folder.").into())
-    }
+    code as isize > 32
 }
 
 #[tauri::command]
@@ -1121,7 +1166,9 @@ fn run_application() -> std::result::Result<(), startup::StartupError> {
             search_history,
             take_requested_folder,
             statistics,
-            save_share_image
+            save_share_image,
+            trash_files,
+            open_link
         ])
         .build(tauri::generate_context!())
         .map_err(|_| startup::StartupError::Runtime)?;

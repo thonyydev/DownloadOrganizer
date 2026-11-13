@@ -49,10 +49,14 @@ export const api = {
   stats: async (): Promise<Stats> => {
     const { operations, categories } = await invoke<Statistics>("statistics", { since: null });
     const sum = (pick: (operation: OperationStat) => number) => operations.reduce((total, operation) => total + pick(operation), 0);
-    return { files: sum(op => op.files), bytes: sum(op => op.bytes), automatic: sum(op => op.automatic ? op.files : 0), operations: operations.length, since: operations.length ? Math.min(...operations.map(op => op.created)) : null, categories: categories.map(([id, files]) => [id, files]) };
+    return { files: sum(op => op.files), bytes: sum(op => op.bytes), automatic: sum(op => op.automatic ? op.files : 0), operations: operations.length, since: operations.length ? operations.reduce((first, op) => Math.min(first, op.created), Infinity) : null, categories: categories.map(([id, files]) => [id, files]) };
   },
   // Raw bytes: the backend asks where to save, so no path comes from the page.
   saveShareImage: (png: Uint8Array) => invoke<boolean>("save_share_image", png),
+  // Each file as listed, so the backend can refuse one that changed since. Returns how many left.
+  // A name, never an address: the backend holds the URLs.
+  openLink: (which: "site" | "repository" | "feedback" | "bug" | "notices") => invoke<void>("open_link", { which }),
+  trash: (files: FileEntry[]) => invoke<number>("trash_files", { files: files.map(file => [file.path, file.size, file.modified]) }),
 };
 
 export function summarizeOperation(operation: Operation | OperationSummary): OperationSummary {

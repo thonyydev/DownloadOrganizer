@@ -132,7 +132,7 @@ it("verifica atualizações quando pedido e diz o resultado", async () => {
 it("mostra só as opções da aba escolhida", () => {
   renderSettings("folders");
   const tabs = screen.getAllByRole("tab");
-  expect(tabs.map(tab => tab.textContent)).toEqual(["Pastas", "Organização automática", "Categorias", "Regras personalizadas", "Aparência", "Sistema"]);
+  expect(tabs.map(tab => tab.textContent)).toEqual(["Pastas", "Organização automática", "Categorias", "Regras personalizadas", "Aparência", "Sistema", "Sobre"]);
   expect(screen.getByRole("tab", { name: "Pastas" }).getAttribute("aria-selected")).toBe("true");
   expect(screen.getByRole("heading", { name: "Pasta de origem" })).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Adicionar regra" })).toBeNull();
@@ -155,4 +155,17 @@ it("marca só as abas com alterações não salvas", () => {
   expect(marked).toEqual(["Regras personalizadas", "Aparência"]);
   expect(screen.getByRole("tab", { name: "Aparência" }).getAttribute("aria-describedby")).toBeTruthy();
   expect(document.getElementById(screen.getByRole("tab", { name: "Aparência" }).getAttribute("aria-describedby")!)?.textContent).toBe("Alterações não salvas");
+});
+
+it("abre os links do Sobre pelo nome, nunca por um endereço", async () => {
+  renderSettings("about");
+  expect(screen.getByRole("heading", { name: "Download Organizer" })).toBeTruthy();
+  expect(screen.getByText(`Versão ${version}`)).toBeTruthy();
+  vi.mocked(invoke).mockResolvedValue(undefined);
+  fireEvent.click(screen.getByRole("button", { name: "Reportar um bug" }));
+  fireEvent.click(screen.getByRole("button", { name: "Enviar feedback" }));
+  expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === "open_link").map(([, args]) => args)).toEqual([{ which: "bug" }, { which: "feedback" }]);
+  vi.mocked(invoke).mockRejectedValueOnce("Não foi possível abrir o link.");
+  fireEvent.click(screen.getByRole("button", { name: "Avisos de terceiros" }));
+  expect((await screen.findByRole("alert")).textContent).toBe("Não foi possível abrir o link.");
 });

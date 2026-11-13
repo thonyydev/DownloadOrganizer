@@ -179,3 +179,23 @@ it("não oferece manter na origem um nome que a regra não aceitaria", () => {
   fireEvent.click(screen.getByRole("button", { name: "Nunca organizar este arquivo" }));
   expect(onKeep).toHaveBeenCalledWith(plain);
 });
+
+it("marca arquivos para a lixeira pela linha, por todos os exibidos e pelo teclado", () => {
+  const files = filesOf(3);
+  const paths = new Set<string>();
+  const picks = { paths, disabled: false, onToggle: vi.fn(), onToggleAll: vi.fn() };
+  const { rerender } = render(<Tooltip.Provider><FileTable files={files} categories={categories} picks={picks} onView={() => {}} /></Tooltip.Provider>);
+  fireEvent.click(screen.getByRole("checkbox", { name: "Selecionar Arquivo-1.pdf" }));
+  expect(picks.onToggle).toHaveBeenCalledWith("/isolated/1.pdf");
+  fireEvent.click(screen.getByRole("checkbox", { name: "Selecionar todos os arquivos exibidos" }));
+  expect(picks.onToggleAll).toHaveBeenCalledWith(files.map(file => file.path), true);
+  rerender(<Tooltip.Provider><FileTable files={files} categories={categories} picks={{ ...picks, paths: new Set([files[0].path]) }} onView={() => {}} /></Tooltip.Provider>);
+  expect((screen.getByRole("checkbox", { name: "Selecionar todos os arquivos exibidos" }) as HTMLInputElement).indeterminate).toBe(true);
+  // Tab from a row's last control lands on the next row's checkbox, and Shift+Tab goes back to the view button.
+  const view = screen.getByRole("button", { name: "Visualizar Arquivo-0.pdf" });
+  view.focus(); fireEvent.keyDown(view, { key: "Tab" });
+  const next = screen.getByRole("checkbox", { name: "Selecionar Arquivo-1.pdf" });
+  expect(document.activeElement).toBe(next);
+  fireEvent.keyDown(next, { key: "Tab", shiftKey: true });
+  expect(document.activeElement).toBe(view);
+});
