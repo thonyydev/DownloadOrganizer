@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Tooltip } from "radix-ui";
-import { ArrowDownToLine, ArrowRight, FolderDown, FolderOpen, History, LayoutDashboard, Loader2, PencilLine, RefreshCw, Search, Settings2, ShieldCheck, X } from "lucide-react";
+import { ArrowDownToLine, ArrowRight, BarChart3, FolderDown, FolderOpen, History, LayoutDashboard, Loader2, PencilLine, RefreshCw, Search, Settings2, Share2, ShieldCheck, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -10,6 +10,8 @@ import { Overview } from "@/components/overview";
 import { HistoryView } from "@/components/history";
 import { FileTable } from "@/components/file-table";
 import { FilePreviewDialog } from "@/components/file-preview-dialog";
+import { ShareStats } from "@/components/share-stats";
+import { StatisticsView } from "@/components/statistics";
 import { Settings, type SettingsTab } from "@/components/settings";
 import { SettingsActions } from "@/components/settings-actions";
 import { OperationDialogs } from "@/components/operation-dialogs";
@@ -33,7 +35,7 @@ import brandPrimary from "@/assets/branding/symbol-primary.svg";
 import brandWhite from "@/assets/branding/symbol-white.svg";
 import "./App.css";
 
-const pages = [{ id: "dashboard", name: () => t("Overview"), icon: LayoutDashboard }, { id: "files", name: () => t("Files"), icon: FolderOpen }, { id: "history", name: () => t("History"), icon: History }, { id: "settings", name: () => t("Settings"), icon: Settings2 }] as const;
+const pages = [{ id: "dashboard", name: () => t("Overview"), icon: LayoutDashboard }, { id: "files", name: () => t("Files"), icon: FolderOpen }, { id: "history", name: () => t("History"), icon: History }, { id: "statistics", name: () => t("Statistics"), icon: BarChart3 }, { id: "settings", name: () => t("Settings"), icon: Settings2 }] as const;
 const noFiles: FileEntry[] = [];
 export default function App() {
   // Motion 14 reads the OS setting once; this follows it live, like the app's own animations.
@@ -50,7 +52,8 @@ function OrganizerApp() {
   const [loading, setLoading] = useState(native);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
+  // A flag, not the text: a save can change the language, so the notice is translated when shown.
+  const [saved, setSaved] = useState(false);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [viewedFile, setViewedFile] = useState<FileEntry | null>(null);
   const filePreviewFocus = useRef<HTMLButtonElement | null>(null);
@@ -208,6 +211,7 @@ function OrganizerApp() {
   useLayoutEffect(() => { if (data) setLanguage(data.language); }, [data]);
   useEffect(() => () => clearTimeout(feedbackTimer.current), []);
   const [welcome, setWelcome] = useState<"onboarding" | "news" | null>(null);
+  const [sharing, setSharing] = useState(false);
   const welcomed = useRef(false);
   // Decided once, from the first snapshot: its history tells an update from a new install.
   useEffect(() => {
@@ -264,7 +268,7 @@ function OrganizerApp() {
     const delayed = kind === "preview";
     const pendingAction: Action = { kind, phase: "preparing", showLoading: !delayed };
     clearTimeout(feedbackTimer.current);
-    setBusy(true); setError(""); setMessage(""); setAction(pendingAction);
+    setBusy(true); setError(""); setSaved(false); setAction(pendingAction);
     if (delayed) feedbackTimer.current = setTimeout(() => {
       setAction(current => current === pendingAction ? { ...current, showLoading: true } : current);
     }, 200);
@@ -286,7 +290,7 @@ function OrganizerApp() {
         if (sound) audio.play(sound);
       }
       if (!fileOperation) setAction({ kind, phase: "completed", operationId });
-      if (kind === "save") setMessage(t("Preferences saved. Check the monitoring status separately."));
+      if (kind === "save") setSaved(true);
       return true;
     } catch (e) {
       if (audible && !(kind === "save" && jobSucceeded)) audio.play("warning");
@@ -314,6 +318,8 @@ function OrganizerApp() {
     return run(async () => {
       if (mainDirty) {
         const saved = await api.save(captured.value, captured.base);
+        // The snapshot that follows takes a while; until then the old preferences would look like an external change.
+        setData(current => current ? { ...current, preferences: saved } : current);
         setDraft({ base: saved, value: saved });
         setPreview(null); setReviewed(false);
       }
@@ -379,19 +385,20 @@ function OrganizerApp() {
       <div className="sidebar-bottom"><div className="sidebar-folder">{data?.preferences.source && <button type="button" className="sidebar-route" title={[data.preferences.source, ...data.preferences.extra_sources].map(displayPath).join("\n")} onClick={() => openSettings("folders")}><span className="route-from"><FolderOpen size={14} aria-hidden="true" /><span className="ellipsis">{displayPath(basename(data.preferences.source))}{data.preferences.extra_sources.length > 0 && ` +${data.preferences.extra_sources.length}`}</span></span><span className="route-to"><ArrowRight size={14} aria-hidden="true" /><span className="sr-only">{t("Destination")}: </span><span className="ellipsis">{displayPath(basename(data.preferences.destination))}</span></span></button>}<button type="button" className={"monitor-status " + (data?.monitoring ? "online" : "")} onClick={() => openSettings("automation")}><span className="small-dot" />{working ? t("Operation in progress") : data?.monitoring ? t("Monitor on") : t("Monitor paused")}</button></div><div className="app-version"><span>{t("Local storage")}</span><button type="button" aria-label={`${t("Check for updates")} (v${version})`} onClick={() => openSettings("system")}>v{version}</button></div></div>
     </aside>
     <div className="main-shell">
-      <main className="content"><div className="page-heading"><div><h1 ref={mainHeading} tabIndex={-1}>{current.name()}</h1><p>{page === "dashboard" ? t("What arrived, where it goes and what has moved") : page === "files" ? t("Files in the source folder and where each one goes") : page === "history" ? t("Every recorded move, with the option to undo") : t("Folders, rules and organization preferences")}</p></div><div className="heading-actions"><Button variant="outline" size="sm" aria-label={t("Refresh files")} disabled={!native || working || loading} onClick={() => void run(async () => { await refresh(true); })}><RefreshCw aria-hidden="true" className={loading || (busy && action?.kind === "refresh") ? "spin" : ""} />{t("Refresh")}</Button>{page !== "settings" && <Button disabled={!data || working || loading || !files.length || !!data?.scan_error} onClick={() => void updatePreview()}><FolderDown aria-hidden="true" />{busy && action?.kind === "preview" ? t("Preparing preview…") : t("Organize files")}</Button>}</div></div>
+      <main className="content"><div className="page-heading"><div><h1 ref={mainHeading} tabIndex={-1}>{current.name()}</h1><p>{page === "dashboard" ? t("What arrived, where it goes and what has moved") : page === "files" ? t("Files in the source folder and where each one goes") : page === "history" ? t("Every recorded move, with the option to undo") : page === "statistics" ? t("What you organized, when and how") : t("Folders, rules and organization preferences")}</p></div><div className="heading-actions">{page !== "settings" && !!data?.history.length && <Button variant="outline" size="sm" onClick={() => setSharing(true)}><Share2 aria-hidden="true" />{t("Share your stats")}</Button>}<Button variant="outline" size="sm" aria-label={t("Refresh files")} disabled={!native || working || loading} onClick={() => void run(async () => { await refresh(true); })}><RefreshCw aria-hidden="true" className={loading || (busy && action?.kind === "refresh") ? "spin" : ""} />{t("Refresh")}</Button>{page !== "settings" && <Button disabled={!data || working || loading || !files.length || !!data?.scan_error} onClick={() => void updatePreview()}><FolderDown aria-hidden="true" />{busy && action?.kind === "preview" ? t("Preparing preview…") : t("Organize files")}</Button>}</div></div>
         {!native && <div className="banner" role="status"><FolderDown size={16} aria-hidden="true" /><div><strong>{t("Open the desktop app to access your files")}</strong><p>{t("Run")} <code>npm run tauri dev</code>. {t("Real operations only run in the Tauri app.")}</p></div></div>}
         {dirty && page !== "settings" && <div className="banner" role="status"><PencilLine size={16} aria-hidden="true" /><div><strong>{t("You have unsaved settings")}</strong><p>{t("Your draft was kept. Operations use the saved settings.")}</p><div className="notice-actions"><Button variant="outline" size="sm" onClick={() => setPage("settings")}>{t("Review changes")}</Button><Button variant="ghost" size="sm" disabled={working} onClick={discardDraft}>{t("Discard changes")}</Button></div></div></div>}
         {data?.update_version && <div className="banner" role="status"><ArrowDownToLine size={16} aria-hidden="true" /><div><strong>{t("New version ready to install")}: {data.update_version}</strong><p>{dirty ? t("Save or discard your changes before installing.") : t("The app closes, installs the new version and opens again.")}</p><div className="notice-actions"><Button size="sm" disabled={working || dirty} onClick={() => void run(() => api.installUpdate())}>{t("Install now")}</Button></div></div></div>}
         {error && !preview && !undoTarget && <ProblemNotice title={t("The action didn't finish")} message={error} busy={working} action={t("Check again")} onRecover={() => void run(async () => { await refresh(true); })} onDismiss={() => setError("")} />}
         {data?.scan_error && <ProblemNotice title={t("The folder needs attention")} message={data.scan_error} persistent busy={working} action={t("Review folders")} onRecover={() => openSettings("folders")} />}
         {data?.watch_error && <ProblemNotice title={t("There's a problem with monitoring")} message={data.watch_error} persistent busy={working} action={data.preferences.automatic ? t("Check and restart monitor") : t("Review automation")} onRecover={() => { if (data.preferences.automatic) void run(async () => { await api.retryMonitoring(); }, "monitor"); else openSettings("automation"); }} />}
-        {message && <SuccessNotice message={message} onDismiss={() => setMessage("")} />}
+        {saved && <SuccessNotice message={t("Preferences saved. Check the monitoring status separately.")} onDismiss={() => setSaved(false)} />}
         {!preview && !undoTarget && isRunning(action) && <OperationFeedback action={action} />}
         {automatic && <div className="automatic-feedback"><p>{t("Automatic organization")}</p><OperationFeedback action={automatic} operation={data?.history.find(op => op.id === automatic.operationId)} /></div>}
         {loading ? <div className="loading-state" role="status"><Loader2 className="spin" size={16} aria-hidden="true" /><p>{t("Reading your files safely…")}</p></div> : <PageTransition key={page}>
           {page === "dashboard" && <Overview data={data} onFiles={() => setPage("files")} onSettings={() => openSettings("folders")} onCategory={showCategory} onHistory={() => setPage("history")} onOperation={showOperation} onOpenDestination={openDestination} counts={categoryCounts} onConflicts={() => showCategory("status:conflict")} />}
           {page === "files" && <section className="files-view"><div className="file-toolbar" data-motion-group><label className="search-field"><span className="sr-only">{t("Search files")}</span><span className="search-input"><Search size={16} aria-hidden="true" /><Input value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === "Escape" && search) { e.preventDefault(); setSearch(""); } }} placeholder={t("Search by name")} aria-label={t("Search files")} />{search && <button type="button" className="search-clear" aria-label={t("Clear search")} onClick={e => { (e.currentTarget.previousElementSibling as HTMLInputElement).focus(); setSearch(""); }}><X size={14} aria-hidden="true" /></button>}</span></label><label className="filter-select"><span className="sr-only">{t("Filter by category")}</span><select value={filter} onChange={e => setFilter(e.target.value)}><option value="all">{t("All categories")}</option>{categories.map(c => <option key={c.id} value={c.id}>{c.name} ({categoryCounts.get(c.id) ?? 0})</option>)}{(conflicts > 0 || filter === "status:conflict") && <optgroup label={t("Status")}><option value="status:conflict">{t("Conflicts")} ({conflicts})</option></optgroup>}</select></label><label className="filter-select"><span className="sr-only">{t("Sort files")}</span><select value={sort} onChange={e => setSort(e.target.value as typeof sort)}><option value="name">{t("Name (A–Z)")}</option><option value="newest">{t("Newest first")}</option><option value="largest">{t("Largest first")}</option></select></label><span className="file-count">{plural(visible.length, t("file"), t("files"))}</span></div><FileTable onKeep={keepFile} onView={(file, trigger) => { filePreviewFocus.current = trigger; setViewedFile(file); }} filterKey={filter + ":" + query + ":" + sort} files={visible} categories={categories} filtered={filter !== "all" || !!search} onClearFilters={() => { setFilter("all"); setSearch(""); }} /><div className="table-footer"><ShieldCheck size={16} aria-hidden="true" />{t("Recent files wait until they stop changing. Refresh to check again.")}</div></section>}
+          {page === "statistics" && <StatisticsView categories={categories} revision={data} />}
           {page === "history" && <HistoryView history={history} expanded={expanded} working={working} openingUndo={openingUndo} onExpand={setExpanded} onUndo={op => void openUndo(op)} hasMore={historyPages.next_cursor !== null} loading={historyPages.loading} pageError={historyPages.error} onLoadMore={() => void historyPages.loadMore()} onRetry={() => void historyPages.retry()} />}
           {page === "settings" && (data && draft ? <Settings tab={settingsTab} onTab={setSettingsTab} draft={draft.value} saved={draft.base} categories={categories} busy={working} dirty={dirty} external={external} onChange={update => setDraft(current => current ? { ...current, value: update(current.value) } : current)} onDiscard={discardDraft} onAcceptExternal={() => setDraft(current => current && data ? { ...current, base: data.preferences } : current)} /> : <div className="empty"><Settings2 size={24} aria-hidden="true" /><h2>{t("Settings are available on desktop")}</h2><p>{t("Open the Tauri app to select your folders.")}</p></div>)}
         </PageTransition>}
@@ -404,6 +411,7 @@ function OrganizerApp() {
       onOrganize={(excluded, renameConflicts, count) => { if (!preview || issue || !reviewed) return; const id = preview.id; organizeCount.current = count; void run(() => api.organize(id, excluded, renameConflicts), "organize"); }}
       onUndo={() => { if (!undoTarget) return; const id = undoTarget.id; void run(async () => { await api.undo(id); return id; }, "undo"); }}
       onOpenDestination={preview?.folder ? undefined : openDestination} onUndoResult={() => { const id = action?.operationId; const operation = resultOperation ?? data?.history.find(op => op.id === id); if (!operation) return; closeDialogs(); void openUndo(operation); }} onViewResult={() => { const id = action?.operationId; const operation = resultOperation ?? data?.history.find(op => op.id === id); if (operation) upsertHistory(summarizeOperation(operation)); closeDialogs(); setPage("history"); if (id !== undefined) setExpanded(id); }} />
+    <ShareStats open={sharing} categories={categories} onClose={() => setSharing(false)} />
     {welcome && <Guide kind={welcome} onClose={() => setWelcome(null)} onFinish={() => { setWelcome(null); openSettings("folders"); }} />}
     <Dialog open={closeRequested} onOpenChange={setCloseRequested}><DialogContent><DialogHeader><DialogTitle>{working ? t("An operation is in progress") : dirty ? t("You have unsaved changes") : t("Close the app?")}</DialogTitle><DialogDescription>{working ? t("Wait for it to finish before closing the app.") : dirty ? t("You can save or discard the draft before leaving.") : t("The operation finished. See the history to check the results.")}</DialogDescription></DialogHeader>
       {working && <OperationFeedback action={isRunning(action) ? action : automatic} />}

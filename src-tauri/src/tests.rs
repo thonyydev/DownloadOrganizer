@@ -2443,3 +2443,51 @@ fn a_folder_from_explorer_is_organized_in_place_without_touching_the_saved_folde
     assert!(Path::new(&prefs.source).join("b.txt").exists());
     assert_eq!(runtime.store.preferences().unwrap().source, prefs.source);
 }
+
+#[test]
+fn statistics_count_only_files_that_stay_organized_in_the_period() {
+    let (_temp, mut runtime, prefs) = fixture();
+    old_file(&Path::new(&prefs.source).join("a.txt"), b"ab");
+    old_file(&Path::new(&prefs.source).join("b.png"), b"abc");
+    old_file(&Path::new(&prefs.source).join("c.PNG"), b"abcd");
+    let op = execute(&mut runtime, plan(&prefs), "manual", None).unwrap();
+    let stats = runtime.store.statistics(None).unwrap();
+    assert_eq!(stats.operations.len(), 1);
+    assert_eq!(
+        (
+            stats.operations[0].files,
+            stats.operations[0].bytes,
+            stats.operations[0].automatic
+        ),
+        (3, 9, false)
+    );
+    assert_eq!(
+        stats.categories,
+        vec![("images".into(), 2, 7), ("documents".into(), 1, 2)]
+    );
+    assert_eq!(stats.extensions, vec![("png".into(), 2), ("txt".into(), 1)]);
+    assert_eq!(
+        stats
+            .largest
+            .iter()
+            .map(|(name, size, _)| (name.as_str(), *size))
+            .collect::<Vec<_>>(),
+        vec![("c.PNG", 4), ("b.png", 3), ("a.txt", 2)]
+    );
+    let created = stats.operations[0].created;
+    assert_eq!(
+        runtime.store.statistics(Some(created + 1)).unwrap(),
+        store::Statistics::default()
+    );
+    undo(&mut runtime, op, None).unwrap();
+    let stats = runtime.store.statistics(None).unwrap();
+    assert!(stats.operations.is_empty() && stats.categories.is_empty() && stats.largest.is_empty());
+    assert_eq!((stats.undone, stats.failed), (3, 0));
+}
+
+#[test]
+fn only_a_bounded_png_is_saved_as_the_share_image() {
+    assert!(valid_share_image(b"\x89PNG\r\n\x1a\nrest"));
+    assert!(!valid_share_image(b"<svg>"));
+    assert!(!valid_share_image(&[]));
+}

@@ -5,6 +5,11 @@ export interface Category { id: string; name: string; extensions: string[] }
 export interface Rule { pattern: string; folder: string; keep: boolean }
 export interface Preferences { source: string; destination: string; automatic: boolean; enabled_categories: string[]; theme: "dark" | "light"; language: "system" | Language; notifications: boolean; updates: boolean; autostart: boolean; context_menu: boolean; rules: Rule[]; extra_sources: string[] }
 export interface FileEntry { name: string; path: string; extension: string; category: string; size: number; modified: number; destination: string; status: "ready" | "ignored" | "conflict"; reason: string | null; rename_to?: string | null }
+// Totals for the share card: counts and sizes only, never file names or paths.
+// The Statistics page's data for a period: counts and sizes, plus the names of the largest files.
+export interface OperationStat { created: number; automatic: boolean; files: number; bytes: number }
+export interface Statistics { operations: OperationStat[]; categories: [string, number, number][]; extensions: [string, number][]; largest: [string, number, string][]; undone: number; failed: number }
+export interface Stats { files: number; bytes: number; automatic: number; operations: number; since: number | null; categories: [string, number][] }
 export interface FoundMovement { id: number; operation_id: number; created: number; source: string; destination: string; status: string }
 export interface Movement { id: number; source: string; destination: string; status: string; error: string | null; size: number }
 export interface Operation { id: number; created: number; kind: string; movements: Movement[] }
@@ -39,6 +44,15 @@ export const api = {
   openFolder: (which: "source" | "destination") => invoke<void>("open_folder", { which }),
   revealMovement: (operationId: number, movementId: number) => invoke<void>("reveal_movement", { operationId, movementId }),
   searchHistory: (query: string) => invoke<FoundMovement[]>("search_history", { query }),
+  statistics: (since: number | null) => invoke<Statistics>("statistics", { since }),
+  // The share card's all-time totals, from the same data as the Statistics page.
+  stats: async (): Promise<Stats> => {
+    const { operations, categories } = await invoke<Statistics>("statistics", { since: null });
+    const sum = (pick: (operation: OperationStat) => number) => operations.reduce((total, operation) => total + pick(operation), 0);
+    return { files: sum(op => op.files), bytes: sum(op => op.bytes), automatic: sum(op => op.automatic ? op.files : 0), operations: operations.length, since: operations.length ? Math.min(...operations.map(op => op.created)) : null, categories: categories.map(([id, files]) => [id, files]) };
+  },
+  // Raw bytes: the backend asks where to save, so no path comes from the page.
+  saveShareImage: (png: Uint8Array) => invoke<boolean>("save_share_image", png),
 };
 
 export function summarizeOperation(operation: Operation | OperationSummary): OperationSummary {
