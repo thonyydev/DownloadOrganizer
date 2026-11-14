@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.2.0 — 2026-11-13
+
+- See your statistics on a new page: files organized, space moved, when you organize most and the largest files, for the last 7 days, 30 days, 12 months or all time. Every chart has a table with its values.
+- Share a card with your totals as an image. It shows no file names or paths.
+- Organize any folder from File Explorer. Right-click the folder, or the empty space inside it, and choose **Organize with Download Organizer**. The folder is organized in place, into category folders inside it, after the usual preview. You can turn this off in Settings.
+- On the Files page, pick files and send them to the Recycle Bin after a confirmation. Windows can restore them from there.
+- Sort files by name, date or size, see how many files each category has, and filter the conflicts. **Never organize this file** adds a rule that keeps a file where it is.
+- After organizing, undo right away or open the destination folder. The review before organizing can also group files by destination folder.
+- Search the history for a file by name, and show a moved file in its folder. New operations appear in the history on their own.
+- Recognize more file types in each category, from 83 to 175, including camera RAW photos, e-books and disk images. Files already in Other stay there.
+- Settings has a tab for each section. The new About tab links to the website and to forms for ideas and bug reports, with your app and Windows versions already filled in.
+- Check for updates from Settings, even with automatic updates turned off.
+- A new look for the sidebar and pages. Ctrl+1 to Ctrl+5 switch pages, and Ctrl+S saves the settings.
+- A click on the "files organized" notification opens the history.
+- The "preferences saved" notice now appears in the language you just chose.
+
+Known limits:
+
+- The installer isn't code-signed yet, so Windows SmartScreen may show a warning.
+- On Windows 11, the File Explorer entry is under **Show more options**.
+
 ## 0.1.3 — 2026-11-06
 
 - Organize several source folders into one destination, such as Downloads and Desktop. With more than one, each file in the preview shows its source folder. If two of them have a file with the same name, the first one goes and the other is kept as a conflict, which you can rename.

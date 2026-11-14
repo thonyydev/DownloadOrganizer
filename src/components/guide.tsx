@@ -20,11 +20,12 @@ const onboarding = (): Step[] => [
 ];
 
 // The version these notes describe. A release without notes shows nothing after updating.
-export const NEWS_VERSION = "0.1.3";
+export const NEWS_VERSION = "0.2.0";
 const news = (): Step[] => [
-  { title: t("Organize several folders at once"), text: t("Add more source folders in Settings, such as your Desktop or a temporary folder. Files from all of them go to the same destination."), image: "folders" },
-  { title: t("Keep some files in place"), text: t("A rule can now keep the files it fits where they are, such as *.torrent. The preview shows that they stay."), image: "rules" },
-  { title: t("See where each file came from"), text: t("With several folders, each file in the preview shows its source folder. Files that are only in the cloud, such as OneDrive online-only files, are left alone and never downloaded."), image: "preview" },
+  { title: t("See your statistics"), text: t("A new page shows how many files you organized, the space they take and when you organize the most. You can share a card with your totals, without any file names."), image: "statistics" },
+  { title: t("Clean up from the Files page"), text: t("Sort and filter your files, then pick the ones you don't need and send them to the Recycle Bin. Windows can still restore them."), image: "files" },
+  { title: t("Organize any folder from File Explorer"), text: t("Right-click a folder and choose Organize with Download Organizer, under Show more options. You see the preview first, as always."), image: "explorer" },
+  { title: t("Undo right after organizing"), text: t("The result now has Undo and a button that opens the destination. In History, you can search for a file by name and show it in its folder."), image: "result" },
 ];
 
 const versionKey = "download-organizer-version";
