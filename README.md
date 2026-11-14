@@ -1,5 +1,5 @@
 <p align="center">
-  <img src=".github/assets/banner.png" alt="Download Organizer" />
+  <img src=".github/assets/banner.png" alt="Download Organizer: keep your Downloads folder clean, without thinking about it. The Overview screen of the app." />
 </p>
 
 <h1 align="center">Download Organizer</h1>
@@ -34,12 +34,15 @@ Download Organizer is a free, open-source desktop app for Windows 11 that sorts 
 - **Custom rules** — Send files to your own folders by name or pattern, like `*.stl` or `invoice*.pdf`, or keep them where they are.
 - **Multiple folders** — Organize Downloads, Desktop or any other folder, all into one destination.
 - **Automatic organization** — Optionally sort new downloads as they arrive, from the system tray.
+- **From File Explorer** — Right-click any folder and choose **Organize with Download Organizer** to sort it in place, after the usual preview.
 
 **Stay in control**
 
 - **Preview first** — See exactly where each file will go, and pick which ones to move. Conflicts are listed first, and images, audio and video can be previewed without changing them.
 - **Undo** — Put moved files back where they were, as long as they haven't changed since.
-- **Activity history** — See what was organized and when.
+- **Activity history** — See what was organized and when, and search for a file by name to find where it went.
+- **Statistics** — See how many files you organized, the space they take and when you organize most. Share a card with your totals, without any file names.
+- **Clean up** — Pick files on the Files page and send them to the Recycle Bin, where Windows can restore them.
 - **No overwrites** — Name conflicts are detected, and existing files are never replaced.
 - **Cloud-aware** — Online-only files, such as OneDrive files that aren't downloaded, stay where they are. The app never downloads them.
 
@@ -62,13 +65,13 @@ Prefer hands-off? Turn on automatic organization and new downloads are sorted wh
 
 | Folder | File types |
 | --- | --- |
-| Images | `jpg` `jpeg` `png` `gif` `webp` `svg` `bmp` `ico` `heic` `avif` `tiff` `tif` `raw` |
-| Videos | `mp4` `mkv` `mov` `avi` `webm` `m4v` `mpg` `mpeg` `wmv` |
-| Audio | `mp3` `wav` `flac` `aac` `ogg` `m4a` `opus` `aiff` |
-| Documents | `pdf` `doc` `docx` `xls` `xlsx` `ppt` `pptx` `txt` `csv` `odt` `ods` `rtf` `epub` `md` |
-| Archives | `zip` `rar` `7z` `tar` `gz` `bz2` `xz` `tgz` |
-| Installers | `exe` `msi` `msix` `appx` `dmg` `pkg` `deb` `rpm` `appimage` |
-| Code | `rs` `ts` `tsx` `js` `jsx` `py` `java` `c` `cpp` `h` `cs` `go` `html` `css` `json` `yaml` `yml` `toml` `sql` `sh` `ps1` `ipynb` |
+| Images | `jpg` `jpeg` `png` `gif` `webp` `svg` `bmp` `ico` `heic` `heif` `avif` `jxl` `jfif` `tiff` `tif` `raw` `dng` `cr2` `cr3` `nef` `arw` `orf` `rw2` `raf` `psd` `xcf` `ai` `eps` |
+| Videos | `mp4` `mkv` `mov` `avi` `webm` `m4v` `mpg` `mpeg` `wmv` `flv` `f4v` `3gp` `3g2` `mts` `m2ts` `vob` `ogv` `asf` `rm` `rmvb` `divx` |
+| Audio | `mp3` `wav` `flac` `aac` `ogg` `m4a` `m4b` `opus` `aiff` `aif` `wma` `mka` `ape` `wv` `amr` `ac3` `mid` `midi` |
+| Documents | `pdf` `doc` `docx` `docm` `dotx` `xls` `xlsx` `xlsm` `xltx` `ppt` `pptx` `pptm` `potx` `odt` `ods` `odp` `rtf` `txt` `md` `csv` `tsv` `epub` `mobi` `azw3` `djvu` `xps` `oxps` `pages` `numbers` `key` `vsdx` `eml` `msg` |
+| Archives | `zip` `zipx` `rar` `7z` `tar` `gz` `tgz` `bz2` `tbz2` `xz` `txz` `zst` `lz` `lzma` `cab` |
+| Installers | `exe` `msi` `msp` `msix` `msixbundle` `appx` `appxbundle` `iso` `img` `apk` `xapk` `dmg` `pkg` `deb` `rpm` `appimage` `snap` `flatpak` |
+| Code | `rs` `ts` `tsx` `js` `jsx` `mjs` `cjs` `py` `ipynb` `java` `kt` `kts` `c` `cc` `cpp` `h` `hpp` `cs` `go` `rb` `php` `lua` `dart` `swift` `scala` `html` `css` `scss` `sass` `less` `vue` `svelte` `json` `xml` `yaml` `yml` `toml` `sql` `sh` `bat` `cmd` `ps1` `psm1` `gradle` |
 | Other | Everything else, including files with no extension |
 
 Folder names follow the app's language. [Custom rules](#features) are checked first: the first rule that matches a file decides where it goes, even if that file's category is turned off.
@@ -117,10 +120,17 @@ Uninstall from **Windows Settings → Apps**. Your organized files are never tou
 - While it's on, closing the window keeps the app running in the system tray. Choose **Quit** from the tray icon to stop it.
 - Notifications cover automatic organization and monitoring problems. You can turn them off in Settings, and you can also have the app start with Windows (off by default).
 
+**File Explorer menu**
+
+- **Organize with Download Organizer** appears when you right-click a folder or the empty space inside one. On Windows 11, it's under **Show more options**.
+- It organizes that folder in place, into category folders inside it, with your categories and rules. Your saved folders don't change.
+- Turn it off in **Settings → System**. Uninstalling removes it.
+
 **Conflicts and undo**
 
 - A file is never overwritten. In the preview, you can choose to rename it instead, like `file (2).pdf`. Automatic organization leaves conflicting files where they are.
 - Undo restores a file only if it hasn't changed since it was moved.
+- Files sent to the Recycle Bin aren't in the history. Restore them from the Windows Recycle Bin.
 
 ## Privacy
 
