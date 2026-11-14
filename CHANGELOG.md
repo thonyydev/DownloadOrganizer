@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0 — 2026-11-13
+## 0.2.0 — 2026-11-14
 
 - See your statistics on a new page: files organized, space moved, when you organize most and the largest files, for the last 7 days, 30 days, 12 months or all time. Every chart has a table with its values.
 - Share a card with your totals as an image. It shows no file names or paths.
